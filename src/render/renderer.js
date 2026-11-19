@@ -1124,13 +1124,14 @@ export class Renderer {
     if (this.entityView && this.entityView.setGhost) { try { this.entityView.setGhost(spec); } catch (e) { /* ignore */ } }
   }
 
-  addMarker(x, z, colorHex = 0x7dff7a) {
+  // radius > 0: the ring closes onto a footprint of that radius and stays around it (a building as the target)
+  addMarker(x, z, colorHex = 0x7dff7a, radius = 0) {
     const mat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 1, depthTest: false, depthWrite: false, side: THREE.DoubleSide, fog: false });
     const mesh = new THREE.Mesh(this._markerGeo, mat);
     mesh.position.set(x, this.groundY(x, z) + 0.12, z);
     mesh.renderOrder = 30;
     this.scene.add(mesh);
-    this._markers.push({ mesh, t: 0 });
+    this._markers.push({ mesh, t: 0, r: radius });
     if (this._markers.length > 24) { const m = this._markers.shift(); this.scene.remove(m.mesh); m.mesh.material.dispose(); }
   }
 
@@ -1140,7 +1141,7 @@ export class Renderer {
       m.t += dt;
       const k = m.t / 0.65;
       if (k >= 1) { this.scene.remove(m.mesh); m.mesh.material.dispose(); this._markers.splice(i, 1); continue; }
-      const s = 1.5 - 1.2 * (1 - (1 - k) * (1 - k));
+      const e = 1 - (1 - k) * (1 - k), s = m.r > 0 ? (m.r / 0.81) * (1.35 - 0.35 * e) : 1.5 - 1.2 * e;
       m.mesh.scale.set(s, 1, s);
       m.mesh.material.opacity = 1 - k * k;
     }

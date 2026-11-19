@@ -405,12 +405,12 @@ export class Input {
       } else if (target.kind === 'building' && target.owner === this.me() && villagers.length) {
         if (!target.done || target.hp < target.maxHp) {
           game.cmdBuild(villagers, target.id, queue);
-          r.addMarker(target.x, target.z, C_BUILD); this.sfx('command');
+          r.addMarker(target.x, target.z, C_BUILD, target.size * 0.71); this.sfx('command');
           return;
         }
         if (target.type === 'farm' || target.type === 'pasture') {
           game.cmdGather(villagers, target.id, queue);
-          r.addMarker(target.x, target.z, C_GATHER); this.sfx('command');
+          r.addMarker(target.x, target.z, C_GATHER, target.size * 0.71); this.sfx('command');
           return;
         }
         // a lumber camp / mine camp: work the nearest matching resource we know of (explored tiles only)
@@ -421,7 +421,7 @@ export class Input {
             if (!game.fog[(e.z | 0) * N + (e.x | 0)]) continue;
             const d = Math.hypot(e.x - target.x, e.z - target.z); if (d < bd) { bd = d; best = e; }
           }
-          if (best && game.cmdGather(villagers, best.id, queue)) { r.addMarker(best.x, best.z, C_GATHER); this.sfx('command'); return; }
+          if (best && game.cmdGather(villagers, best.id, queue)) { r.addMarker(target.x, target.z, C_GATHER, target.size * 0.71); r.addMarker(best.x, best.z, C_GATHER); this.sfx('command'); return; }
         }
       }
     }
