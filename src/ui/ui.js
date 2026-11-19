@@ -982,6 +982,9 @@ export class UI {
           ['hold', 'x-stance-hold', 'Mevzi Koru', 'Hiç yerinden ayrılmaz; yalnızca menziline gireni vurur. Duvar arkasındaki okçu ve mancınıklar için.'],
         ];
         ST.forEach(([st, em, nm, ds], i) => put({ icon: ico(em), name: nm, desc: ds + ' Seçili mod altın çerçeveyle gösterilir.', active: () => cur(st), run: () => safe(() => g.cmdStance(fighters.map((e) => e.id), st), false) !== false }, 5 + i));
+        // next to the stances (J / K): the order is given by the next left click on the ground
+        put({ icon: ico('x-amove'), name: 'Saldırarak Yürü', desc: 'Seçili askerler hedef noktaya yürür, yolda gördüğü düşman birim ve binalarla dövüşür, sonra yoluna devam eder: ardından haritada bir noktaya sol tıkla (Shift: sıraya ekle, Esc: iptal).', run: () => !!safe(() => this.app.input?.startGroundCmd?.('amove'), false) }, 8);
+        put({ icon: ico('x-patrol'), name: 'Devriye', desc: 'Seçili askerler bulundukları yerle hedef nokta arasında gidip gelir, yolda gördüğü düşmanla dövüşür. Başka bir emir verene kadar sürer: ardından haritada bir noktaya sol tıkla (Shift: sıraya ekle, Esc: iptal).', run: () => !!safe(() => this.app.input?.startGroundCmd?.('patrol'), false) }, 9);
       }
       put({ icon: ico('x-stop'), name: 'Dur', desc: 'Seçili birimler mevcut işini bırakır.', run: () => safe(() => g.cmdStop(ids), false) !== false }, 10);
       put({ icon: ico('x-explore'), name: 'Keşfet', desc: 'Seçili birimler haritada kendi kendine dolaşıp keşfedilmemiş bölgeleri açar. Başka bir emir verene kadar sürer.', run: () => safe(() => g.cmdExplore(ids), false) !== false }, 11);
