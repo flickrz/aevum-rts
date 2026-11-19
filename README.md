@@ -49,7 +49,6 @@ Bina yerleştirirken: sol tık yerleştirir, Shift basılıyken yerleştirmeye d
 
 - Modüller paralel yazıldı; bu sürümde uçtan uca oyun testi yapılmadı, hata çıkabilir.
 - Harita editörü ve senaryo/kampanya yok.
-- Kontrol grupları kayda dahil değil (yüklemeden sonra sıfırlanır).
 - Duvarı sürüklerken önizleme yalnızca uç karoyu gösterir.
 - Kayıtlar tarayıcıya özeldir; tarayıcı verisi silinirse kayıtlar da gider.
 
