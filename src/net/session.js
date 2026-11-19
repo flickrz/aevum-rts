@@ -20,11 +20,16 @@ export const MAX_PLAYERS = 8;
 export const MAP_TYPES = ['random', 'river', 'continent', 'highlands', 'plains', 'inlandsea', 'islands'];
 // map climates: view only (the renderer's colours), never read by the simulation
 export const CLIMATES = ['random', 'temperate', 'spring', 'autumn', 'winter', 'arid'];
+const START_RES = ['low', 'normal', 'high'];
+const FOGS = ['explored', 'dark'];
 // a human is dropped only after this much silence WHILE the relay is reachable and other traffic flows
 // (a relay outage stalls everybody and drops nobody)
 export const DROP_SILENT_MS = 60000;
 export const DROP_LEFT_MS = 3000;     // after an explicit 'bye'
 export const KEEP_TURNS = 600;        // command lists kept for re-sends (~60 s)
+// an honest turn list is at most our own scheduled lists (MAX_DELAY) + 1 + the sender's delay ahead of our turn
+// (REDUNDANCY on top is slack); anything further is dropped (a list dropped by mistake is fetched again through 'need')
+const MAX_AHEAD = 2 * MAX_DELAY + REDUNDANCY;
 export const LOBBY_GONE_MS = 8000;    // lobby: a peer the relay reports gone is removed only if it stays gone this long
 export const METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload',
   'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance'];
@@ -49,6 +54,18 @@ const UID_RE = /^[0-9a-f]{32}$/;
 export const cleanUid = u => (typeof u === 'string' && UID_RE.test(u) ? u : null);
 const cleanAv = a => (typeof a === 'string' && /^[a-z0-9-]{1,24}$/.test(a) ? a : null);
 const cleanTp = t => (Number.isInteger(t) && t >= 0 && t < 1e7 ? t : null);
+const isObj = o => !!o && typeof o === 'object';
+// the host's lobby state / start message as a guest takes it: names short strings, teams 1-4, string settings one of
+// the lobby's choices, numbers integers. In place and a no-op on what an honest host sends (the guests' Game cfg
+// must stay identical to the host's). false: not usable at all.
+const SETTING_OK = { mapType: v => MAP_TYPES.includes(v), climate: v => CLIMATES.includes(v), startRes: v => START_RES.includes(v), fog: v => FOGS.includes(v), mapSize: Number.isInteger, startAge: Number.isInteger, seed: Number.isInteger };
+function cleanLobby(st) {
+  if (!isObj(st) || !Array.isArray(st.slots) || !st.slots.every(isObj) || (st.waiting != null && !(Array.isArray(st.waiting) && st.waiting.every(isObj)))) return false;
+  for (const s of st.slots) { if (s.name != null) s.name = String(s.name).slice(0, 20); s.team = Math.max(1, Math.min(4, s.team | 0)); }
+  for (const w of st.waiting || []) if (w.name != null) w.name = String(w.name).slice(0, 20);
+  if (isObj(st.settings)) for (const k in SETTING_OK) if (st.settings[k] != null && !SETTING_OK[k](st.settings[k])) delete st.settings[k];
+  return true;
+}
 
 function randCode() { let s = ''; for (let i = 0; i < 5; i++) s += CODE_CHARS[(Math.random() * CODE_CHARS.length) | 0]; return s; }
 const jsonLen = o => JSON.stringify(o).length;
@@ -295,14 +312,14 @@ export class NetSession {
     // client side
     if (from !== (this.state ? this.state.hostPeer : from)) return;
     this._hostGoneAt = null;
-    if (d.k === 'state' && d.state && this.phase === 'lobby') {
+    if (d.k === 'state' && cleanLobby(d.state) && this.phase === 'lobby') {
       this._verifySlots(d.state.slots);
       this.state = d.state; this.emit('lobby', this.state);
     } else if (d.k === 'kick' && d.to === this.t.id && this.phase === 'lobby') {
       this.close('kicked');
     } else if (d.k === 'full' && d.to === this.t.id) {
       this._rejected = 'Oda dolu (en fazla 8 oyuncu).';
-    } else if (d.k === 'start' && d.start) {
+    } else if (d.k === 'start' && cleanLobby(d.start)) {
       this._verifySlots(d.start.slots);
       if (!this.state) this.state = { code: null, hostPeer: from, settings: d.start.settings, slots: d.start.slots };
       if (d.start.resume) {
@@ -542,11 +559,11 @@ export class NetSession {
     this._hostOnly(); this._notResume();
     const st = this.state.settings;
     if ([256, 320, 384, 448, 512].includes(patch.mapSize)) st.mapSize = patch.mapSize;
-    if (['low', 'normal', 'high'].includes(patch.startRes)) st.startRes = patch.startRes;
+    if (START_RES.includes(patch.startRes)) st.startRes = patch.startRes;
     if (MAP_TYPES.includes(patch.mapType)) st.mapType = patch.mapType;
     if (CLIMATES.includes(patch.climate)) st.climate = patch.climate;
     if (patch.startAge != null) st.startAge = Math.max(0, Math.min(3, patch.startAge | 0));
-    if (patch.fog === 'explored' || patch.fog === 'dark') st.fog = patch.fog;
+    if (FOGS.includes(patch.fog)) st.fog = patch.fog;
     if (patch.seed != null) st.seed = patch.seed | 0;
     this._broadcastLobby();
   }
@@ -747,7 +764,7 @@ export class NetSession {
   _store(pid, turn, c) {
     if (!Array.isArray(c)) return;
     const m = this.recv.get(pid);
-    if (m.has(turn) || turn < DELAY) return;
+    if (m.has(turn) || turn < DELAY || turn > this.turn + MAX_AHEAD) return;
     if (turn < this.turn && this._isActive(pid, turn)) return; // already executed without it?? cannot happen; ignore
     m.set(turn, c.filter(x => Array.isArray(x) && LOCKSTEP_SET.has(x[0]) && Array.isArray(x[1])).slice(0, MAX_CMDS));
   }
@@ -765,7 +782,8 @@ export class NetSession {
       // how early his lists arrive, in turns (pacing, see _onPing)
       if (pid === fromPid) { const s = (d.t | 0) - this.tick / TURN_TICKS, l = this.lead.get(pid); this.lead.set(pid, l == null ? s : l * 0.8 + s * 0.2); }
     }
-    if (Array.isArray(d.r)) for (const e of d.r) if (Array.isArray(e)) this._store(pid, e[0] | 0, e[1]);
+    // (honest packets repeat at most 11 bundled + REDUNDANCY turns, see _flushTurn)
+    if (Array.isArray(d.r)) for (const e of d.r.slice(0, MAX_AHEAD)) if (Array.isArray(e)) this._store(pid, e[0] | 0, e[1]);
     if (d.h != null && pid === fromPid) {
       if (!this.peerHashes.has(d.ht)) this.peerHashes.set(d.ht, new Map());
       this.peerHashes.get(d.ht).set(pid, d.h >>> 0);
