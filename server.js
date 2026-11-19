@@ -67,10 +67,11 @@
   function addPeer(room, peer, pe, r) {
     const old = r.get(peer);
     if (old) { try { old.end(); } catch { /* ignore */ } }
-    // one account = one player: the same uid under another peer id (a second tab) replaces the older connection
+    // one account = one player: the same account under another peer id (a second tab) replaces the older connection
+    // (compared by the verified Firebase id; the profile uid is written by the player himself)
     if (pe.ident) {
       for (const [p, o] of [...r]) {
-        if (p === peer || !o.ident || o.ident.uid !== pe.ident.uid) continue;
+        if (p === peer || !o.ident || o.ident.fb !== pe.ident.fb) continue;
         kicked.set(room + ' ' + p, Date.now());
         tell(o, { type: 'dup' });
         r.delete(p);
@@ -247,7 +248,7 @@
     if (!ident && !NO_AUTH) { bye({ type: 'err', code: 401 }); return; }
     if (kicked.has(room + ' ' + peer)) { bye({ type: 'dup' }); return; }
     const known = rooms.get(room) && rooms.get(room).get(peer);
-    if (known && known.ident && (!ident || ident.uid !== known.ident.uid)) { bye({ type: 'err', code: 403 }); return; }
+    if (known && known.ident && (!ident || ident.fb !== known.ident.fb)) { bye({ type: 'err', code: 403 }); return; }
     const r0 = rooms.get(room);
     if ((!r0 && rooms.size >= MAX_ROOMS) || (r0 && !r0.has(peer) && r0.size >= MAX_PEERS)) { bye({ type: 'err', code: 429 }); return; }
     const pe = makeWsPeer(socket);
@@ -305,6 +306,7 @@
         const me = identOf(req, url);
         if (!me) { reply(res, 401, J, '{"error":"ticket"}'); return; }
         let body; try { body = JSON.parse(buf.toString('utf8') || '{}'); } catch { reply(res, 400, J, '{"error":"bad json"}'); return; }
+        if (!body || typeof body !== 'object') { reply(res, 400, J, '{"error":"bad json"}'); return; }
         if (url.pathname === '/mp/online') {
           const fbs = Array.isArray(body.fbs) ? body.fbs.filter(f => typeof f === 'string' && FB_OK.test(f)).slice(0, 200) : [];
           inboxOf(me.fb).seen = Date.now();
@@ -340,6 +342,7 @@
         const me = identOf(req, url);
         if (!me) { reply(res, 401, J, '{"error":"ticket"}'); return; }
         let body; try { body = JSON.parse(buf.toString('utf8') || '{}'); } catch { reply(res, 400, J, '{"error":"bad json"}'); return; }
+        if (!body || typeof body !== 'object') { reply(res, 400, J, '{"error":"bad json"}'); return; }
         const code = String(body.code || '').toUpperCase();
         if (!/^[A-Z0-9]{5}$/.test(code)) { reply(res, 400, J, '{"error":"bad invite"}'); return; }
         // once every 2 minutes per account (everyone gets a card, so it must not become spam)
@@ -386,7 +389,7 @@
     if (kicked.has(room + ' ' + peer)) { reply(res, 409, J, '{"error":"dup"}'); return; }
     // a peer id belongs to the identity that registered it
     const known = rooms.get(room) && rooms.get(room).get(peer);
-    if (known && known.ident && (!ident || ident.uid !== known.ident.uid)) { reply(res, 403, J, '{"error":"peer"}'); return; }
+    if (known && known.ident && (!ident || ident.fb !== known.ident.fb)) { reply(res, 403, J, '{"error":"peer"}'); return; }
     if (url.pathname === '/mp/events' && req.method === 'GET') {
       const r0 = rooms.get(room);
       if ((!r0 && rooms.size >= MAX_ROOMS) || (r0 && !r0.has(peer) && r0.size >= MAX_PEERS)) { reply(res, 429, {}, 'full'); return; }
@@ -430,6 +433,8 @@
     }
     if (url.pathname === '/mp/blob' && req.method === 'POST') {
       // a saved match handed from the host to the other players (in memory, per room, 30 min)
+      // only a peer in the room may upload (its identity is checked above), or anyone could push out a room's save
+      if (!known) { reply(res, 403, J, '{"error":"peer"}'); return; }
       readBody(req, BLOB_MAX, (err, buf) => {
         if (err) { reply(res, err === 'big' ? 413 : 400, { Connection: 'close' }, err === 'big' ? 'too big' : ''); return; }
         let m = blobs.get(room); if (!m) { m = new Map(); blobs.set(room, m); }
@@ -473,9 +478,12 @@
     let rel;
     try { rel = decodeURIComponent((req.url || '/').split('?')[0].split('#')[0]); }
     catch { res.writeHead(400); res.end('Bad request'); return; }
+    if (rel.includes('\0')) { res.writeHead(400); res.end('Bad request'); return; }   // (fs.stat would throw)
     if (rel.endsWith('/')) rel += 'index.html';
     const file = path.normalize(path.join(ROOT, rel));
     if (file !== ROOT && !file.startsWith(ROOT + path.sep)) { res.writeHead(403); res.end('Forbidden'); return; }
+    // never serve dotfiles (.git, .env) or logs; ':' also catches Windows streams (server-error.log::$DATA)
+    if (rel.split(/[\\/]/).some(s => s.startsWith('.')) || /\.log(:|$)/i.test(rel)) { res.writeHead(403); res.end('Forbidden'); return; }
     fs.stat(file, (err, st) => {
       if (err || !st.isFile()) {
         res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });

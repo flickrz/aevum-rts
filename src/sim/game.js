@@ -250,7 +250,7 @@ export class Game {
     if (!CMD_SET.has(method) || !this.players[pid] || this.players[pid].left) return false;
     const a = Array.isArray(args) ? args.slice() : [];
     const own = id => { const e = this.entities.get(id); return !!e && e.owner === pid && !e.dead; };
-    const ids = v => Array.isArray(v) ? v.filter(own) : [];
+    const ids = v => Array.isArray(v) ? [...new Set(v.slice(0, 2000))].filter(own) : [];   // (a repeated id would queue the same order again and again)
     const fin = v => typeof v === 'number' && Number.isFinite(v);
     switch (method) {
       case 'cmdMove': a[0] = ids(a[0]); if (!a[0].length || !fin(a[1]) || !fin(a[2])) return false; break;
@@ -258,7 +258,8 @@ export class Game {
       case 'cmdAttack': case 'cmdGather': case 'cmdBuild': case 'cmdStop': case 'cmdExplore': case 'cmdBoard': case 'cmdReturn':
         a[0] = ids(a[0]); if (!a[0].length) return false; break;
       case 'cmdUnload': if (!own(a[0]) || !fin(a[1]) || !fin(a[2])) return false; break;
-      case 'train': case 'research': case 'ageUp': case 'cancelQueue': case 'deleteEntity': case 'cmdOpenGate': if (!own(a[0])) return false; break;
+      case 'cancelQueue': if (!own(a[0]) || !Number.isInteger(a[1])) return false; break;
+      case 'train': case 'research': case 'ageUp': case 'deleteEntity': case 'cmdOpenGate': if (!own(a[0])) return false; break;
       case 'setRally': if (!own(a[0]) || !fin(a[1]) || !fin(a[2])) return false; break;
       case 'placeBuilding': a[0] = pid; a[4] = ids(a[4] || []); break;
       case 'placeLine': a[0] = pid; if (!Array.isArray(a[2])) return false; a[2] = a[2].slice(0, 200); a[3] = ids(a[3] || []); break;
@@ -718,7 +719,7 @@ export class Game {
   _refund(owner, cost) { const p = this.players[owner]; for (const k in cost) p.res[k] += cost[k]; }
   isUnlocked(owner, kind, id) {
     const p = this.players[owner]; if (!p) return false;
-    const d = kind === 'unit' ? UNITS[id] : kind === 'building' ? BUILDINGS[id] : TECHS[id];
+    const tbl = kind === 'unit' ? UNITS : kind === 'building' ? BUILDINGS : TECHS, d = Object.hasOwn(tbl, id) ? tbl[id] : null;   // (own keys only: 'constructor' is not a building)
     if (!d || d.age > p.age || d.legacy) return false;   // (legacy: the mill, kept for old saves only)
     if (kind === 'tech' && p.techs.has(id)) return false;
     return true;
@@ -790,7 +791,7 @@ export class Game {
 
   // ---------- building commands ----------
   canPlace(type, tx, tz, owner) {
-    const d = BUILDINGS[type]; if (!d) return false; const m = this.map, N = m.size;
+    const d = Object.hasOwn(BUILDINGS, type) ? BUILDINGS[type] : null; if (!d) return false; const m = this.map, N = m.size;
     tx |= 0; tz |= 0;
     // walls, gates and towers may stand on the outer tile ring too (it is impassable: a wall can run right to
     // the map's edge); everything else keeps one tile off it

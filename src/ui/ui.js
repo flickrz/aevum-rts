@@ -829,7 +829,7 @@ export class UI {
       s.push(`<span>${ico('x-speed')} <b>${d.speed ?? '-'}</b></span>`);
       if (e.type === 'transport' || Array.isArray(e.cargo)) s.push(`<span>${ico('u-transport')} <b>${(e.cargo || []).length}/10</b></span>`);
       if (e.carry && e.carry.amount > 0) s.push(`<span>${RES_ICON[e.carry.type] || ico('x-cargo')} <b>${Math.floor(e.carry.amount)}</b></span>`);
-      s.push(`<span>Durum: <b>${STATE_TR[e.state] || e.state || '-'}</b></span>`);
+      s.push(`<span>Durum: <b>${esc(STATE_TR[e.state] || e.state || '-')}</b></span>`);
     } else if (e.kind === 'building') {
       if (!e.done) s.push(`<span>İnşaat: <b>%${Math.floor((e.progress || 0) * 100)}</b></span>`);
       if (d.atk) {
@@ -1727,7 +1727,7 @@ export class UI {
         row.append(el('span', 'lb-kind ' + s.kind, s.kind === 'ai' ? 'Yapay Zekâ' : 'İnsan'));
         const canTeam = mine || (host && s.kind === 'ai');
         if (canTeam) row.append(sel(TEAMS, s.team || 1, (v) => (mine ? call('setTeam', +v) : call('setSlot', i, { team: +v })), 'lb-team'));
-        else row.append(el('span', 'lb-teamtag', 'Takım ' + (s.team || 1)));
+        else row.append(el('span', 'lb-teamtag', 'Takım ' + esc(s.team || 1)));
         if (s.kind === 'ai') {
           if (host) row.append(sel(DIFF, s.difficulty || 'normal', (v) => call('setSlot', i, { difficulty: v })));
           else row.append(el('span', 'lb-teamtag', (DIFF.find((d) => d[0] === s.difficulty) || DIFF[1])[1]));
@@ -1754,7 +1754,7 @@ export class UI {
         body.append(sg);
       } else {
         const sets = st.settings || {};
-        body.append(el('div', 'lb-hint', `Harita: ${({ 256: 'Küçük', 320: 'Orta', 384: 'Büyük', 448: 'Çok Büyük', 512: 'Dev' })[sets.mapSize] || sets.mapSize || '-'} · Tür: ${MAP_TYPE_TR[sets.mapType || 'river'] || '-'} · İklim: ${(CLIMATE_OPTS.find((c) => c[0] === (sets.climate || 'random')) || CLIMATE_OPTS[0])[1]} · Kaynak: ${({ low: 'Düşük', normal: 'Normal', high: 'Yüksek' })[sets.startRes] || '-'} · Çağ: ${AGES[sets.startAge ?? 0]?.name || '-'}`));
+        body.append(el('div', 'lb-hint', `Harita: ${esc(({ 256: 'Küçük', 320: 'Orta', 384: 'Büyük', 448: 'Çok Büyük', 512: 'Dev' })[sets.mapSize] || sets.mapSize || '-')} · Tür: ${MAP_TYPE_TR[sets.mapType || 'river'] || '-'} · İklim: ${(CLIMATE_OPTS.find((c) => c[0] === (sets.climate || 'random')) || CLIMATE_OPTS[0])[1]} · Kaynak: ${({ low: 'Düşük', normal: 'Normal', high: 'Yüksek' })[sets.startRes] || '-'} · Çağ: ${AGES[sets.startAge ?? 0]?.name || '-'}`));
       }
       foot.innerHTML = '';
       const mySlot = slots.find((s) => s.kind === 'human' && s.peer === me);

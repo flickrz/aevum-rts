@@ -242,6 +242,26 @@ async function readSse(url, ms, until) {
     ok(off.online === false, 'friends: an offline player gets nothing (online:false)');
     let lim = 0; for (let i = 0; i < 25; i++) if ((await post('/mp/invite', A.ticket, { to: 'fbB', code: 'ROOM1' })).status === 429) lim++;
     ok(lim > 0, 'friends: invites are rate limited');
+    for (const p of ['/mp/online', '/mp/invite', '/mp/invite-all']) ok((await post(p, A.ticket, null)).status === 400, 'friends: a null body is refused, not left hanging (' + p + ')');
+    // another account that copied A's profile uid: neither replaces A nor takes over A's peer id
+    const C = await auth('fbC', 'a'.repeat(32), 'Copy');
+    const evA2 = readSse(base(port) + '/mp/events?room=ROOM2&peer=pa&tk=' + encodeURIComponent(A.ticket), 1500);
+    await new Promise((r) => setTimeout(r, 300));
+    const evC = readSse(base(port) + '/mp/events?room=ROOM2&peer=pc&tk=' + encodeURIComponent(C.ticket), 1200);
+    await new Promise((r) => setTimeout(r, 300));
+    const take = await fetch(base(port) + '/mp/send?room=ROOM2&peer=pa', { method: 'POST', headers: { 'X-Aevum-Ticket': C.ticket }, body: JSON.stringify({ topic: 'lobby', data: {} }) });
+    ok(take.status === 403, 'relay: the same profile uid on another account cannot post under my peer id (' + take.status + ')');
+    // saved-match blobs: only a peer in the room uploads
+    const blob = (peer, tk) => fetch(base(port) + '/mp/blob?room=ROOM2&peer=' + peer, { method: 'POST', headers: { 'X-Aevum-Ticket': tk }, body: 'save' });
+    ok((await blob('pa', A.ticket)).status === 200, 'blob: a peer in the room uploads');
+    ok((await blob('pb', B.ticket)).status === 403, 'blob: someone outside the room cannot upload');
+    ok((await blob('pa', B.ticket)).status === 403, 'blob: nor under a member\'s peer id');
+    const ga2 = await evA2; await evC;
+    ok(ga2.got.some((m) => m.type === 'joined' && m.peer === 'pc') && !ga2.got.some((m) => m.type === 'dup'), 'relay: a copied profile uid does not kick the real player');
+    // static files: NUL bytes, dotfiles and logs
+    ok((await fetch(base(port) + '/index.html%00')).status === 400, 'static: a NUL byte -> 400');
+    for (const p of ['/.gitignore', '/.git/config', '/server-error.log', '/server-error.log::$DATA', '/x/.env']) ok((await fetch(base(port) + p)).status === 403, 'static: ' + p + ' refused');
+    ok((await fetch(base(port) + '/index.html')).status === 200, 'static: normal files still served');
   } finally { srv.kill(); }
 }
 

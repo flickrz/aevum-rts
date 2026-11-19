@@ -93,6 +93,7 @@ console.log('Normal lobby carries the uid');
   H.start();
   ok(await until(() => started === 3), 'all started');
   ok(J.start0.slots.find(s => s.peer === J.id).uid === UA && J.start0.slots[0].uid === UH, 'start message slots keep the uid on the joiner');
+  ok(JSON.stringify(J.start0) === JSON.stringify(H.start0) && JSON.stringify(X.start0) === JSON.stringify(H.start0), 'the joiners\' start message (cleaned on receipt) equals the host\'s');
   const cfg = J.cfg, cj = JSON.stringify(cfg);
   ok(!cj.includes(UA) && !cj.includes(UH) && !('uid' in cfg.players[0]), 'Game cfg built from the start message has no uid');
   closeAll(H, J, X);
@@ -158,6 +159,7 @@ console.log('Continue: same profile in a second tab, stranger with a matching na
   ok(await until(() => st.every(Boolean)), 'host, A and M started the continued match');
   const sl = A1.start0.slots;
   ok(sl[0].uid === UH && sl[1].uid === UA && sl[2].uid === UM && sl[3].uid == null, 'start message stores the uid per human slot (for the next save record)');
+  ok(JSON.stringify(A1.start0) === JSON.stringify(H.start0) && JSON.stringify(M.start0) === JSON.stringify(H.start0), 'continued match: the joiners\' start message (cleaned on receipt) equals the host\'s');
   ok(st.every(d => !JSON.stringify(d.cfg).includes(UA)), 'continued Game cfg has no uid');
   ok(st[0].cfg.me === 0 && st[1].cfg.me === 1 && st[2].cfg.me === 2, 'each client got its own me (0,1,2)');
   closeAll(H, A1, A2, S, M);

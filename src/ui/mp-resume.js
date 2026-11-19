@@ -107,7 +107,7 @@ export function showResumeLobby(ui, session) {
       const row = el('div', 'lb-slot team' + (s.team || 1) + (mine ? ' mine' : ''));
       row.append(el('span', 'lb-sw', '')); row.lastChild.style.background = hex(PLAYER_COLORS[i] ?? 0xffffff);
       row.append(el('span', 'lb-name', esc(s.name) + (s.peer && s.peer === st.hostPeer ? ' <small>👑</small>' : '') + (mine ? ' <small>(sen)</small>' : '')));
-      row.append(el('span', 'lb-teamtag', 'Takım ' + (s.team || 1)));
+      row.append(el('span', 'lb-teamtag', 'Takım ' + esc(s.team || 1)));
       if (s.kind === 'ai') {
         row.append(el('span', 'lb-kind ai', 'Yapay Zekâ'));
         if (host) row.append(sel(DIFF, s.difficulty || 'normal', (v) => call('setSlot', i, { difficulty: v })));
