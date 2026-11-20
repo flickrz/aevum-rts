@@ -1,6 +1,7 @@
 // Aevum - read every player's multiplayer chat log from Firestore (users/{uid}/chatlog/*, written by
 // CloudSync.logChat for each line a player sends) and print it in time order.
-//   node tools/read-chatlog.mjs [--since 2026-11-15] [--room ABCDE] [--out file.txt]
+//   node tools/read-chatlog.mjs [--since 2026-11-15] [--room ABCDE] [--claude] [--out file.txt]
+// --claude: only the feedback lines (players write @claude in the chat, multiplayer or single player = room TEK)
 // Needs a Firebase service-account key (Firebase console -> Project settings -> Service accounts -> Generate new
 // private key). Looked up in $AEVUM_SA, else ~/.aevum/firebase-sa.json. Never commit that file.
 import fs from 'fs';
@@ -40,7 +41,8 @@ for (;;) {   // a collection-group query over every users/*/chatlog, 300 at a ti
   last = docs[docs.length - 1].name;
 }
 const since = arg('--since'), room = arg('--room');
-const lines = rows.filter((r) => (!since || (r.t || r.at) >= since) && (!room || r.room === room.toUpperCase()))
+const onlyClaude = process.argv.includes('--claude');
+const lines = rows.filter((r) => (!since || (r.t || r.at) >= since) && (!room || r.room === room.toUpperCase()) && (!onlyClaude || /@claude/i.test(r.text)))
   .sort((a, b) => (a.at || a.t).localeCompare(b.at || b.t))
   .map((r) => `${r.t || r.at}  [${r.room || '-'}]  ${r.name}: ${r.text}`);
 const txt = lines.join('\n') + '\n';

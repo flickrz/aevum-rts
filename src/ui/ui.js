@@ -1,9 +1,13 @@
 // Aevum UI: main menu, HUD, minimap, tooltips, overlays. DOM only, no three.js.
 import { AGES, UNITS, BUILDINGS, TECHS, PLAYER_COLORS } from '../data.js';
-import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus } from '../sim/game.js';
+import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS } from '../sim/game.js';
 import { firstLaunch, menuProfile } from './profile-ui.js';
 import { levelOf } from '../rank.js';
 import { menuHud, saveBadge, saveBadgeTitle, confirmDeleteSave, loginScreen, avatarEl, tpText } from './cloud-ui.js';
+import { logChat } from '../chatlog.js';
+import { withMention } from './mention.js';
+import { menuUpdates, hasUnseen } from './updates-ui.js';
+import { mapPreview, previewClimate } from './map-preview.js';
 import { ico, applyIcons, keepIcons, stripIcons, RES_ICONS, CAT_ICONS, NATURE_ICONS } from '../icons.js';
 
 // developer mode (a sandbox game: no TP, no match history): offered on a local dev server, or with ?dev=1 in the URL
@@ -51,8 +55,29 @@ const DIR_TR = ['doğusunda', 'güneydoğusunda', 'güneyinde', 'güneybatısın
 // map types (must match the generator's cfg.mapType values; 'random' is resolved by the simulation)
 const MAP_TYPES = [['random', 'Rastgele'], ['river', 'Nehir Vadisi'], ['continent', 'Kıta'], ['highlands', 'Yaylalar'], ['plains', 'Ovalar'], ['inlandsea', 'İç Deniz'], ['islands', 'Adalar']];
 const MAP_TYPE_TR = Object.fromEntries(MAP_TYPES);
+// what each map type plays like (the "Yeni Oyun" screen)
+const MAP_DESC = {
+  random: 'Her oyunda türlerden biri rastgele seçilir; ne çıkacağını oyun başlayınca görürsün.',
+  river: 'Haritayı ortadan kıvrılarak ikiye bölen bir nehir; geçitler ve sığ yerler savaşın düğüm noktası olur.',
+  continent: 'Denizle çevrili tek büyük kara parçası. Herkes karadan ulaşılabilir; kıyılarda balık var.',
+  highlands: 'Sırt sırt uzanan dağlar ve aralarında dar geçitler. Savunması kolay, saldırması zor bir harita.',
+  plains: 'Dağsız, açık ve düz araziler. Ordular her yönden gelebilir; hızlı akınlara uygun.',
+  inlandsea: 'Haritanın ortasında büyük bir iç deniz; yerleşimler kıyı boyunca, deniz yolları da önemli.',
+  islands: 'Her oyuncu kendi adasında başlar. Rakibe ulaşmak için gemi ve deniz gücü şart.',
+};
+const MAP_FACTS = {
+  random: 'Nehir · Kıta · Yaylalar · Ovalar · İç Deniz · Adalar',
+  river: 'Su: nehir · Dağ: orta · Orman: orta',
+  continent: 'Su: çevrede deniz · Dağ: orta · Orman: orta',
+  highlands: 'Su: az · Dağ: çok · Orman: bol',
+  plains: 'Su: göller · Dağ: yok · Orman: az',
+  inlandsea: 'Su: ortada deniz · Dağ: orta · Orman: orta',
+  islands: 'Su: her yerde · Dağ: az · Orman: orta · Gemi gerekir',
+};
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// an escaped chat line with @claude (feedback to the developer) highlighted
+const mention = (h) => h.replace(/@claude/gi, '<span class="cmention">@claude</span>');
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 const safe = (fn, def) => { try { return fn(); } catch (err) { return def; } };
 const fmtTime = (s) => { s = Math.max(0, Math.floor(s)); const m = Math.floor(s / 60); return (m < 10 ? '0' : '') + m + ':' + String(s % 60).padStart(2, '0'); };
@@ -248,6 +273,7 @@ export class UI {
     cont.disabled = true;
     Promise.resolve(safe(() => this.app.listSaves(), [])).then((l) => { cont.disabled = !(l && l.length); }).catch(() => {});
     this._mbtn(box, 'Nasıl Oynanır', () => this._menuHowto());
+    this._mbtn(box, 'Güncellemeler' + (hasUnseen() ? ' <span class="up-badge">Yeni</span>' : ''), () => menuUpdates(this));
     this._mbtn(box, 'Ayarlar', () => this._menuSettings());
     // the game's owner: player statistics (the server says who that is)
     Promise.resolve(safe(() => this.app.cloud.isOwner(), false)).then((own) => {
@@ -256,6 +282,8 @@ export class UI {
       const set = [...box.querySelectorAll('.mbtn')].find((x) => x.textContent === 'Ayarlar');
       if (set) set.after(b);
     }).catch(() => {});
+    // feedback: anything written to @claude in the game's chat reaches the developer (tools/read-chatlog.mjs --claude)
+    box.append(el('div', 'menu-fb', '💬 Hata mı buldun, önerin mi var? Oyunda <kbd>Enter</kbd> ile sohbeti aç, <b class="cmention">@claude</b> yazıp mesajını bırak; doğrudan geliştiriciye gider.'));
     if (this.game && !this.game.over && !this.app.demo && !this.app.net) this._mbtn(box, 'Oyuna Dön', () => { this.showHUD(); this.app.setPaused?.(false); });
     safe(() => menuHud(this));   // the player plate (avatar, name, level, TP) and account chips around the menu
     void saves; void firstLaunch;
@@ -277,27 +305,88 @@ export class UI {
     }
     row.append(seg); parent.append(row);
   }
+  // "Yeni Oyun" (owner 2026-11-20: "buttons jump around while picking a map, and you can't tell what map you get"):
+  // the map types as cards with a real picture each (src/ui/map-preview.js), the chosen one large with a line on what
+  // it plays like, and every other setting in fixed-width rows on the right, so nothing moves when something is picked
   _menuSetup() {
     const box = this._menuBox('<h2>Yeni Oyun</h2>');
-    this._seg(box, 'Harita Boyutu', 'mapSize', [[256, 'Küçük'], [320, 'Orta'], [384, 'Büyük'], [448, 'Çok Büyük'], [512, 'Dev']]);
-    this._seg(box, 'Harita Türü', 'mapType', MAP_TYPES, 'wrap');
-    this._seg(box, 'İklim', 'climate', CLIMATE_OPTS, 'wrap');
-    this._seg(box, 'Düşman Sayısı', 'enemies', [[1, '1'], [2, '2'], [3, '3']]);
-    this._seg(box, 'Zorluk', 'difficulty', [['easy', 'Kolay'], ['normal', 'Normal'], ['hard', 'Zor']]);
-    this._seg(box, 'Başlangıç Kaynakları', 'startRes', [['low', 'Düşük'], ['normal', 'Normal'], ['high', 'Yüksek']]);
-    this._seg(box, 'Başlangıç Çağı', 'startAge', AGES.map((a, i) => [i, a.name.split(' ')[0]]));
-    this._seg(box, 'Harita', 'fog', [['explored', 'Keşfedilmiş'], ['dark', 'Karanlık']]);   // (Empire Earth's explored map: land shaded, nothing seen until scouted)
+    box.classList.add('setup');
+    const S = this.setup;
+    const grid = el('div', 'su-grid'); box.append(grid);
+    // ---- left: the map ----
+    const left = el('section', 'su-left'); grid.append(left);
+    const big = el('div', 'su-big');
+    const bigPic = el('div', 'su-bigpic'), bigTxt = el('div', 'su-bigtxt');
+    big.append(bigPic, bigTxt); left.append(big);
+    left.append(el('div', 'su-h', 'Harita Türü'));
+    const cards = el('div', 'su-types'); left.append(cards);
+    const pic = (type, holder, px) => {
+      holder.innerHTML = '';
+      holder.dataset.t = type;
+      if (type === 'random') { holder.append(el('div', 'su-rand', '?')); return; }
+      const put = (c) => {
+        if (!c || holder.dataset.t !== type) return;
+        holder.innerHTML = '';
+        const k = document.createElement('canvas'); k.width = px; k.height = px;
+        const x = k.getContext('2d'); x.imageSmoothingEnabled = true; x.drawImage(c, 0, 0, px, px);
+        holder.append(k);
+      };
+      const c = mapPreview(type, S.enemies | 0, previewClimate(S.climate), put);
+      if (c) put(c); else holder.append(el('div', 'su-wait', ''));
+    };
+    const drawBig = () => {
+      const t = S.mapType || 'random';
+      pic(t, bigPic, 236);
+      bigTxt.innerHTML = '';
+      const nm = el('b', 'su-name'); nm.textContent = MAP_TYPE_TR[t] || t;
+      const ds = el('p', 'su-desc'); ds.textContent = MAP_DESC[t] || '';
+      const fx = el('div', 'su-facts'); fx.textContent = MAP_FACTS[t] || '';
+      bigTxt.append(nm, ds, fx);
+    };
+    const drawCards = () => {
+      cards.innerHTML = '';
+      for (const [t, name] of MAP_TYPES) {
+        const b = el('button', 'su-card' + ((S.mapType || 'random') === t ? ' on' : ''));
+        b.type = 'button'; b.title = MAP_DESC[t] || '';
+        const ph = el('div', 'su-thumb'); b.append(ph); pic(t, ph, 84);
+        const n = el('span', 'su-cname'); n.textContent = name; b.append(n);
+        b.onclick = () => { this._click(); S.mapType = t; cards.querySelectorAll('.su-card').forEach((x) => x.classList.toggle('on', x === b)); drawBig(); };
+        cards.append(b);
+      }
+    };
+    // ---- right: the other settings ----
+    const right = el('section', 'su-right'); grid.append(right);
+    const row = (label, key, opts, after) => {
+      const r = el('div', 'su-row'); r.append(el('label', '', label));
+      const g = el('div', 'su-seg'); g.style.setProperty('--n', String(Math.min(opts.length, 6)));
+      for (const [v, t] of opts) {
+        const b = el('button', S[key] === v ? 'on' : ''); b.type = 'button'; b.textContent = t;
+        b.onclick = () => { this._click(); S[key] = v; g.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); if (after) after(); };
+        g.append(b);
+      }
+      r.append(g); right.append(r);
+    };
+    const redraw = () => { drawBig(); drawCards(); };
+    row('Harita Boyutu', 'mapSize', [[256, 'Küçük'], [320, 'Orta'], [384, 'Büyük'], [448, 'Çok Büyük'], [512, 'Dev']]);
+    row('İklim', 'climate', CLIMATE_OPTS, redraw);
+    row('Düşman Sayısı', 'enemies', [[1, '1'], [2, '2'], [3, '3']], redraw);
+    row('Zorluk', 'difficulty', [['easy', 'Kolay'], ['normal', 'Normal'], ['hard', 'Zor']]);
+    row('Başlangıç Kaynakları', 'startRes', [['low', 'Düşük'], ['normal', 'Normal'], ['high', 'Yüksek']]);
+    row('Başlangıç Çağı', 'startAge', AGES.map((a, i) => [i, a.name.split(' ')[0]]));
+    row('Harita Görünürlüğü', 'fog', [['explored', 'Keşfedilmiş'], ['dark', 'Karanlık']]);   // (explored: land shaded, nothing seen until scouted)
     // developer mode (devModeOffered): a sandbox game (no TP, no match history) with the map open and endless resources
     const dev = el('label', 'frow devrow hidden', '<input type="checkbox"> <span>Geliştirici modu</span> <small>tüm harita açık, sınırsız kaynak, çağ değiştirme</small>');
     const devBox = dev.querySelector('input'); devBox.checked = !!this.devOn;
     devBox.onchange = () => { this._click(); this.devOn = devBox.checked; };
-    box.append(dev);
+    right.append(dev);
     if (devModeOffered()) dev.classList.remove('hidden'); else this.devOn = false;
-    this._mbtn(box, 'Başla', () => {
+    const acts = el('div', 'su-acts'); right.append(acts);
+    this._mbtn(acts, 'Geri', () => this._menuMain());
+    this._mbtn(acts, 'Başla', () => {
       const d = !!this.devOn && !dev.classList.contains('hidden');
       this.app.newGame({ ...this.setup, sandbox: d, dev: d, seed: (Math.random() * 1e9) | 0 });
     }, 'primary');
-    this._mbtn(box, 'Geri', () => this._menuMain());
+    redraw();
   }
   _menuSaves(errText) {
     const box = this._menuBox('<h2>Kayıtlı Oyunlar</h2><div class="mperr hidden"></div><div class="savelist">Yükleniyor...</div>');
@@ -918,7 +1007,7 @@ export class UI {
     let sig = this.page + '|' + (p?.age ?? 0) + '|' + (p?.techs?.size ?? 0) + '|' + ents.length + '|';
     if (ents.length) {
       const e = ents[0];
-      sig += e.id + e.type + (e.done ? 'd' : 'u') + (e.queue ? e.queue.map((q) => q.kind + q.id).join(';') : '') + ents.some((x) => x.type === 'villager') + (ents.length > 1 ? ents.map((x) => x.type + (x.done ? 'd' : 'u')).join(',') : '');
+      sig += e.id + e.type + (e.done ? 'd' : 'u') + (e.queue ? e.queue.map((q) => q.kind + q.id).join(';') : '') + ents.some((x) => x.type === 'villager') + (ents.length > 1 ? ents.map((x) => x.type + (x.done ? 'd' : 'u')).join(',') : '') + ents.map((x) => x.form || '').join('');
     }
     if (sig !== this.cardSig) { this.cardSig = sig; this._renderCard(ents); }
     for (const b of this.buttons) {
@@ -982,6 +1071,12 @@ export class UI {
           ['hold', 'x-stance-hold', 'Mevzi Koru', 'Hiç yerinden ayrılmaz; yalnızca menziline gireni vurur. Duvar arkasındaki okçu ve mancınıklar için.'],
         ];
         ST.forEach(([st, em, nm, ds], i) => put({ icon: ico(em), name: nm, desc: ds + ' Seçili mod altın çerçeveyle gösterilir.', active: () => cur(st), run: () => safe(() => g.cmdStance(fighters.map((e) => e.id), st), false) !== false }, 5 + i));
+        // formation of the group on a move (players 2026-11-19): one button cycling line -> box -> V
+        const FM = { line: ['Hat', 'Geniş ve sığ saf: yakın dövüşçüler önde, okçular arkada (varsayılan).'], box: ['Kare', 'Sıkı bir kare blok: her yöne karşı toplu durur.'], wedge: ['V', 'Ok ucu gibi V dizilişi: öndeki birim yolu açar, diğerleri iki kanatta ilerler.'] };
+        const fNow = () => { const n = { line: 0, box: 0, wedge: 0 }; for (const e of fighters) n[e.form || 'line']++; return Object.keys(n).sort((p, q) => n[q] - n[p])[0]; };
+        const fIcon = (f) => '<svg class="gi" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">' + (f === 'box' ? [5, 12, 19].flatMap((y) => [5, 12, 19].map((x) => `<circle cx="${x}" cy="${y}" r="2.6"/>`)).join('') : f === 'wedge' ? [[12, 5], [8, 10], [16, 10], [4, 15], [20, 15], [1.8, 20], [22.2, 20]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.4"/>`).join('') : [3, 9, 15, 21].flatMap((x) => [9, 15].map((y) => `<circle cx="${x}" cy="${y}" r="2.5"/>`)).join('')) + '</svg>';
+        const f0 = fNow(), fNext = FORMATIONS[(FORMATIONS.indexOf(f0) + 1) % FORMATIONS.length];
+        put({ icon: fIcon(f0), name: 'Diziliş: ' + FM[f0][0], desc: FM[f0][1] + ' Tıklayınca sıradakine geçer (' + FM[fNext][0] + '). Bir sonraki hareket emrinde bu dizilişe girerler.', run: () => safe(() => g.cmdFormation(fighters.map((e) => e.id), fNext), false) !== false }, slots[8] == null ? 8 : 9);
       }
       put({ icon: ico('x-stop'), name: 'Dur', desc: 'Seçili birimler mevcut işini bırakır.', run: () => safe(() => g.cmdStop(ids), false) !== false }, 10);
       put({ icon: ico('x-explore'), name: 'Keşfet', desc: 'Seçili birimler haritada kendi kendine dolaşıp keşfedilmemiş bölgeleri açar. Başka bir emir verene kadar sürer.', run: () => safe(() => g.cmdExplore(ids), false) !== false }, 11);
@@ -1337,7 +1432,8 @@ export class UI {
   }
   // is the in-game menu showing? (single player: paused; multiplayer: opened, or the match is paused)
   gameMenuVisible() {
-    if (this.mode !== 'hud' || !this.game || this.gameOverShown) return false;
+    // (after the match: hidden only while the result window is up; "Haritayı İzle" closes it and Esc works again)
+    if (this.mode !== 'hud' || !this.game || (this.gameOverShown && !this.modalEl.classList.contains('hidden'))) return false;
     const net = this.app.net;
     return net ? !!(this.menuOpen || net.paused) : !!this.app.paused;
   }
@@ -1623,7 +1719,7 @@ export class UI {
   }
   _menuMulti(errText) {
     if (!this._signedIn()) { this._menuMain(); return; }
-    const box = this._menuBox('<h2>Çok Oyunculu</h2><div class="mpnote">Arkadaşınla aynı takımda ya da karşı takımlarda oyna. Yapay zekâ rakipleri istediğin takıma ekle.</div>');
+    const box = this._menuBox('<h2>Çok Oyunculu</h2><div class="mpnote">Bir oda kur, sağdaki listeden çevrimiçi oyuncuları davet et; daveti kabul eden lobine girer. Aynı takımda ya da karşı takımlarda oynayın, yapay zekâ rakipleri istediğin takıma ekle.</div>');
     const p = safe(() => this.app.getProfile(), null);
     const who = el('div', 'mp-who');
     who.append(avatarEl(p?.avatar, p?.uid, 'av-sm'));
@@ -1645,12 +1741,6 @@ export class UI {
     };
     btns.push(this._mbtn(box, 'Oda Kur', () => go(null), 'primary'));
     this._mbtn(box, 'Arkadaşlar · Davet Et', () => import('./friends-ui.js').then((m) => m.menuFriends(this)));
-    const jr = el('div', 'frow mpjoin', '<label>Oda Kodu</label>');
-    const code = el('input', 'mpinput mpcode'); code.maxLength = 5; code.placeholder = 'ABCDE'; code.autocomplete = 'off';
-    code.oninput = () => { code.value = code.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5); };
-    jr.append(code); box.append(jr);
-    btns.push(this._mbtn(box, 'Odaya Katıl', () => { if (code.value.length !== 5) { fail(new Error('5 karakterlik oda kodunu gir')); return; } go(code.value); }));
-    code.onkeydown = (ev) => { ev.stopPropagation(); if (ev.key === 'Enter') btns[1].click(); };
     // continue a saved multiplayer match (src/ui/mp-resume.js)
     btns.push(this._mbtn(box, 'Kayıtlı Maça Devam Et', () => {
       import('./mp-resume.js').then((m) => m.menuResume(this)).catch((e) => fail(e));
@@ -1676,17 +1766,17 @@ export class UI {
     const head = el('div', 'lb-head');
     const body = el('div', 'lb-body');
     const chat = el('div', 'lb-chat', '<div class="lb-log"></div>');
-    const ci = el('input', 'mpinput'); ci.placeholder = 'Mesaj yaz, Enter'; ci.maxLength = 160;
-    chat.append(ci);
+    const ci = el('input', 'mpinput'); ci.placeholder = 'Mesaj yaz, Enter · @claude: hata / öneri bildir'; ci.maxLength = 160;
+    chat.append(withMention(ci));
     const foot = el('div', 'lb-foot');
     // online friends with "Davet Et" (the code below works as before)
     const inv = el('div', 'lb-invite-slot');
     import('./friends-ui.js').then((m) => { if (this.lobbySession === session) inv.append(m.lobbyInvites(this, session)); }).catch(() => {});
     this._lobbyNoteEl = el('div', 'mperr prof-ok hidden');
     box.append(head, this._lobbyNoteEl, body, inv, chat, foot);
-    const sendChat = (t) => { t = String(t || '').trim(); if (!t) return; safe(() => (session.chat || session.sendChat || session.say)?.call(session, t)); };
+    const sendChat = (t) => { t = String(t || '').trim(); if (!t) return; safe(() => (session.chat || session.sendChat || session.say)?.call(session, t)); if (/@claude/i.test(t)) this._lobbyNote('✔ Geri bildirimin geliştiriciye iletildi, teşekkürler!'); };
     ci.onkeydown = (ev) => { ev.stopPropagation(); if (ev.key === 'Enter') { sendChat(ci.value); ci.value = ''; } };
-    const drawLog = () => { const l = chat.querySelector('.lb-log'); l.innerHTML = chatLog.slice(-40).map((m) => `<div><b>${esc(m.name || '?')}:</b> ${esc(m.text)}</div>`).join(''); l.scrollTop = l.scrollHeight; };
+    const drawLog = () => { const l = chat.querySelector('.lb-log'); l.innerHTML = chatLog.slice(-40).map((m) => `<div><b>${esc(m.name || '?')}:</b> ${mention(esc(m.text))}</div>`).join(''); l.scrollTop = l.scrollHeight; };
     const call = (fn, ...a) => { this._click(); safe(() => { const r = session[fn]?.(...a); if (r?.catch) r.catch(() => {}); }); };
     const sel = (opts, val, onch, cls = '') => {
       const s = el('select', 'mpsel ' + cls);
@@ -1706,14 +1796,7 @@ export class UI {
       lastKey = key;
       const nmFocused = !!(document.activeElement && document.activeElement.classList?.contains('lb-myname'));
       const host = session.isHost ?? (st.hostPeer != null && st.hostPeer === me);
-      head.innerHTML = `<h2>Lobi</h2><div class="lb-code"><span>Oda kodu</span><b class="lb-codetxt">${esc(st.code || session.code || '-----')}</b></div><div class="lb-hint">Aynı sayfayı açıp bu kodu girsin: Çok Oyunculu → Odaya Katıl</div>`;
-      const cp = el('button', 'mbtn small', 'Kodu kopyala');
-      cp.onclick = () => {
-        const txt = st.code || session.code || ''; const codeEl = head.querySelector('.lb-codetxt');
-        const selTxt = () => { try { const r = document.createRange(); r.selectNodeContents(codeEl); const s = getSelection(); s.removeAllRanges(); s.addRange(r); } catch (e) { /* ignore */ } };
-        try { navigator.clipboard.writeText(txt).then(() => { cp.textContent = 'Kopyalandı ✔'; }, () => { selTxt(); cp.textContent = 'Seçildi, Ctrl+C'; }); } catch (e) { selTxt(); cp.textContent = 'Seçildi, Ctrl+C'; }
-      };
-      head.querySelector('.lb-code').append(cp);
+      head.innerHTML = '<h2>Lobi</h2><div class="lb-hint">Sağdaki listeden çevrimiçi oyuncuları davet et; daveti kabul eden lobine girer.</div>';
       body.innerHTML = '';
       const list = el('div', 'lb-slots');
       slots.forEach((s, i) => {
@@ -1803,11 +1886,13 @@ export class UI {
     this.netEl.textContent = st.text || 'Bekleniyor…';
     if (st.type === 'desync') { const n = this.netEl; setTimeout(() => { if (this.netEl === n) { n.remove(); this.netEl = null; } }, 6000); }
   }
-  // ------------------------------------------------------------------ in-game chat (multiplayer only)
+  // ------------------------------------------------------------------ in-game chat (multiplayer; single player: @claude feedback only)
+  _chatAllowed() { return this.mode === 'hud' && (!!this.app.net || (!!this.game && !this.app.demo)); }
+  _chatKey() { return this.app.net || this.game || null; }
   // Docked at the left edge between the scoreboard and the minimap. Closed: the last <=6 lines float
   // there and fade ~12 s after arriving. Open (Enter / 💬): glass panel with the whole match history + input.
   _chatEnsure() {
-    if (!this.app.net) return null;
+    if (!this.app.net && !(this.game && !this.app.demo)) return null;
     if (!this.chatDock) {
       const d = el('div', 'chatdock hidden');
       const head = el('div', 'chathead');
@@ -1819,8 +1904,8 @@ export class UI {
       head.append(tg, el('span', 'chattitle', 'Sohbet · Enter: gönder · Esc: kapat'));
       const feed = el('div', 'chatfeed', '<div class="cspacer"></div>');
       const row = el('div', 'chatin');
-      const i = el('input', 'mpinput'); i.maxLength = 200; i.placeholder = 'Mesaj yaz…'; i.autocomplete = 'off'; i.spellcheck = false;
-      row.append(i);
+      const i = el('input', 'mpinput'); i.maxLength = 200; i.placeholder = 'Mesaj yaz… (@claude: hata / öneri bildir)'; i.autocomplete = 'off'; i.spellcheck = false;
+      row.append(withMention(i));
       d.append(head, feed, row);
       const stop = (ev) => ev.stopPropagation();
       i.addEventListener('keyup', stop); i.addEventListener('keypress', stop);
@@ -1828,10 +1913,9 @@ export class UI {
         ev.stopPropagation();
         if (ev.key === 'Enter') {
           ev.preventDefault();
-          const t = i.value.trim().slice(0, 200), s = this.app.net;
+          const t = i.value.trim().slice(0, 200);
           if (!t) { this.closeChat(); return; }
-          if (s) safe(() => (s.chat || s.sendChat || s.say)?.call(s, t));
-          i.value = '';
+          if (this._chatSend(t)) i.value = '';
         } else if (ev.key === 'Escape') { ev.preventDefault(); this.closeChat(); }
       };
       i.onblur = () => setTimeout(() => { if (this.chatOpen && document.activeElement !== i && !this._chatHover) this.closeChat(); }, 150);
@@ -1843,13 +1927,26 @@ export class UI {
       Object.assign(this, { chatDock: d, chatFeed: feed, chatInput: i, chatBadge: tg.querySelector('.chatbadge') });
       this.chatOpen = false; this.chatUnread = 0;
     }
-    if (this._chatSess !== this.app.net) this._chatReset();
+    if (this._chatSess !== this._chatKey()) this._chatReset();
     return this.chatDock;
   }
   _chatReset() {
-    this._chatSess = this.app.net; this.chatLog = []; this.chatUnread = 0;
+    this._chatSess = this._chatKey(); this.chatLog = []; this.chatUnread = 0;
     if (this.chatFeed) this.chatFeed.innerHTML = '<div class="cspacer"></div>';
     this._chatBadge();
+    if (this.chatFeed) this._chatPush({ sys: true, text: '💬 Hata ya da önerin mi var? Enter ile sohbeti aç, @claude yazıp gönder; geliştiriciye gider.' });
+  }
+  // a line typed into the chat -> true when it was sent. Multiplayer: to everyone in the room. Single player: only
+  // @claude lines go anywhere (the cloud chat log, read with tools/read-chatlog.mjs --claude)
+  _chatSend(t) {
+    const s = this.app.net, fb = /@claude/i.test(t);
+    if (s) safe(() => (s.chat || s.sendChat || s.say)?.call(s, t));
+    else if (fb) {
+      this._chatPush({ mine: true, text: t });
+      safe(() => logChat({ room: 'TEK', name: this._mpName() || '?', text: t, mine: true }));
+    } else { this._chatPush({ sys: true, text: 'Tek oyunculu oyunda sohbet geri bildirim içindir: mesajının başına @claude yaz.' }); return false; }
+    if (fb) setTimeout(() => this._chatPush({ sys: true, text: '✔ Geri bildirimin geliştiriciye iletildi, teşekkürler!' }), 300);
+    return true;
   }
   _chatBadge() {
     const b = this.chatBadge; if (!b) return;
@@ -1860,7 +1957,7 @@ export class UI {
   _chatPush(m) {
     if (!m || !this._chatEnsure()) return;
     const s = this.app.net, g = this.game;
-    const mine = !m.sys && m.from != null && m.from === safe(() => s.id);
+    const mine = !m.sys && (!!m.mine || (m.from != null && m.from === safe(() => s.id)));
     let pid = mine ? this._me() : safe(() => s.pidOf?.get(m.from));
     const p = pid != null ? g?.players?.[pid] : null;
     const line = el('div', 'cl' + (m.sys ? ' sys' : '') + (mine ? ' mine' : '') + ' new live');
@@ -1872,7 +1969,11 @@ export class UI {
       if (col != null) n.style.color = typeof col === 'number' ? hex(col) : String(col);
       line.append(n);
     }
-    const tx = el('span', 'cx'); tx.textContent = String(m.text || '').slice(0, 200); line.append(tx);
+    const tx = el('span', 'cx');
+    for (const part of String(m.text || '').slice(0, 200).split(/(@claude)/i)) {
+      if (/^@claude$/i.test(part)) tx.append(el('span', 'cmention', '@claude')); else if (part) tx.append(document.createTextNode(part));
+    }
+    line.append(tx);
     const f = this.chatFeed, nearBottom = f.scrollHeight - f.scrollTop - f.clientHeight < 40;
     f.append(line);
     const item = { at: performance.now(), el: line };
@@ -1888,11 +1989,12 @@ export class UI {
   }
   _chatSys(text) { if (this.app.net && text) safe(() => this._chatPush({ sys: true, text })); }
   _chatTick() {
+    const on = this._chatAllowed();
+    if (on && !this.chatDock) this._chatEnsure();
     const d = this.chatDock; if (!d) return;
-    const on = !!this.app.net && this.mode === 'hud';
     d.classList.toggle('hidden', !on);
     if (!on) { if (this.chatOpen) this.closeChat(); return; }
-    if (this._chatSess !== this.app.net) this._chatReset();
+    if (this._chatSess !== this._chatKey()) this._chatReset();
     // start right below the multiplayer scoreboard (top-left), never under it
     const sb = this.scoreEl && !this.scoreEl.classList.contains('hidden') ? this.scoreEl.getBoundingClientRect() : null;
     const top = Math.round((sb && sb.height ? sb.bottom : 48) + 10);
@@ -1907,7 +2009,7 @@ export class UI {
     }
   }
   openChat() {
-    if (!this.app.net || this.mode !== 'hud' || !this._chatEnsure()) return false;
+    if (!this._chatAllowed() || !this._chatEnsure()) return false;
     const d = this.chatDock;
     d.classList.remove('hidden');
     if (!this.chatOpen) {

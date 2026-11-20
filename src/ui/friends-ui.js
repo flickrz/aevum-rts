@@ -29,7 +29,7 @@ export function menuFriends(ui, note) {
   const box = ui._menuBox('');
   box.classList.add('friends');
   box.append(h('h2', '', 'Arkadaşlar'),
-    h('div', 'mpnote', 'Arkadaşlarını ekle; çevrimiçi olanları tek tıkla oyununa davet et. Oda koduyla katılma da her zamanki gibi çalışır.'));
+    h('div', 'mpnote', 'Arkadaşlarını ekle; çevrimiçi olanları tek tıkla oyununa davet et.'));
   const msg = h('div', 'mperr' + (note ? ' prof-ok' : ' hidden'), note || ''); msg.setAttribute('role', 'status'); box.append(msg);
   const say = (t, good) => { msg.textContent = t; msg.className = 'mperr' + (good ? ' prof-ok' : ''); };
 
@@ -126,7 +126,7 @@ async function inviteFromMenu(ui, f, say, b) {
     ui.showLobby(s);
     const r = await ui.app.cloud.invite(f.fb, s.state.code);
     safe(() => ui.toast(r.online ? '✉ ' + f.name + ' davet edildi.' : f.name + ' şu an çevrimdışı.', r.online ? 'good' : 'warn'));
-    safe(() => ui._lobbyNote?.(r.online ? f.name + ' davet edildi; kabul edince lobiye girer.' : f.name + ' çevrimdışı; oda kodunu ona gönderebilirsin.'));
+    safe(() => ui._lobbyNote?.(r.online ? f.name + ' davet edildi; kabul edince lobiye girer.' : f.name + ' şu an çevrimdışı.'));
   } catch (e) { say('Davet edilemedi: ' + errText(e), false); b.disabled = false; }
 }
 
@@ -156,7 +156,7 @@ export function lobbyInvites(ui, session) {
     const inRoom = new Set(((session.state && session.state.slots) || []).filter((s) => s.kind === 'human' && s.peer).map((s) => String(s.name).toLocaleLowerCase('tr')));
     list.textContent = '';
     const on = friends.filter((f) => onl.has(f.fb) && !inRoom.has(String(f.name).toLocaleLowerCase('tr')));
-    if (!on.length) { list.append(h('span', 'prof-dim', 'Davet edilebilecek çevrimiçi arkadaşın yok. Oda kodunu paylaşabilirsin.')); return true; }
+    if (!on.length) { list.append(h('span', 'prof-dim', 'Davet edilebilecek çevrimiçi arkadaşın yok. Sağdaki listeden herkesi davet edebilirsin.')); return true; }
     for (const f of on) {
       const chip = h('span', 'lb-friend');
       chip.append(avatarEl(f.avatar, f.fb, 'av-sm'), h('span', '', f.name));
@@ -194,7 +194,7 @@ export function showInvite(ui, m) {
   const t = h('div', 'invite-txt');
   t.append(h('b', '', m.from.name || 'Bir oyuncu'), h('span', '', ' seni oyununa davet ediyor'));
   const L = levelOf(m.from.tp | 0);
-  t.append(h('small', '', 'Seviye ' + L.level + ' · ' + tpText(m.from.tp | 0) + ' · Oda ' + m.code));
+  t.append(h('small', '', 'Seviye ' + L.level + ' · ' + tpText(m.from.tp | 0)));
   top.append(t);
   const acts = h('div', 'invite-acts');
   const close = () => { card.remove(); clearTimeout(timer); };

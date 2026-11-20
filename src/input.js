@@ -473,7 +473,7 @@ export class Input {
 
     if (code === 'F5') { e.preventDefault(); if (this.active && !app.net) app.saveGame(); return; }
     if (!this.active) return;
-    if (k === 'Enter' && app.net) { e.preventDefault(); try { app.ui.openChat?.(); } catch (err) { /* ignore */ } return; }
+    if (k === 'Enter' && (app.net || (game && !app.demo))) { e.preventDefault(); try { app.ui.openChat?.(); } catch (err) { /* ignore */ } return; }
     if (code === 'F10' || ((k === 'p' || k === 'P') && !e.ctrlKey)) {
       e.preventDefault();
       // single player: pause; multiplayer: pause / resume the match for everybody

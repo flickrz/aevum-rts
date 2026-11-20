@@ -17,7 +17,7 @@ let allAt = 0, allCode = '';
 // the lobby we are in (a normal room with a code), or a new room opened for the invite
 async function roomFor(ui) {
   const s = ui.lobbySession;
-  if (s && s.state && s.state.code && !s.state.resume) return s;
+  if (s && s.state && s.state.code) return s;
   const n = await ui._mpSession();
   await n.host();
   ui.showLobby(n);

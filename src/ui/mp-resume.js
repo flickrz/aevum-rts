@@ -1,6 +1,7 @@
 // Aevum - "Kayıtlı Maça Devam Et": pick a multiplayer save, open its lobby, continue the match.
 // Kept out of ui.js on purpose; it reuses the lobby's CSS classes (lb-*) and the UI's menu helpers.
 import { PLAYER_COLORS } from '../data.js';
+import { withMention } from './mention.js';
 import { saveBadge, saveBadgeTitle, confirmDeleteSave } from './cloud-ui.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -15,7 +16,7 @@ function myName(ui) { return safe(() => ui._mpName(), '') || 'Komutan'; }
 // ---------- save picker (host) ----------
 export function menuResume(ui, errText) {
   const app = ui.app;
-  const box = ui._menuBox('<h2>Kayıtlı Maça Devam Et</h2><div class="mpnote">Kaydettiğin bir çok oyunculu maçı seç. Bir oda açılır; arkadaşın odaya katılınca profilinden tanınıp kendi yerine oturur.</div>');
+  const box = ui._menuBox('<h2>Kayıtlı Maça Devam Et</h2><div class="mpnote">Kaydettiğin bir çok oyunculu maçı seç. Bir oda açılır; davet ettiğin oyuncular gelince hesabından tanınıp kendi yerine oturur.</div>');
   const err = el('div', 'mperr hidden'); box.append(err);
   const list = el('div', 'savelist', 'Yükleniyor...'); box.append(list);
   const fail = (e) => { err.textContent = (e && e.message) || String(e || 'Hata'); err.classList.remove('hidden'); };
@@ -68,15 +69,16 @@ export function showResumeLobby(ui, session) {
   const chatLog = [];
   const head = el('div', 'lb-head'), body = el('div', 'lb-body');
   const chat = el('div', 'lb-chat', '<div class="lb-log"></div>');
-  const ci = el('input', 'mpinput'); ci.placeholder = 'Mesaj yaz, Enter'; ci.maxLength = 160; chat.append(ci);
+  const ci = el('input', 'mpinput'); ci.placeholder = 'Mesaj yaz, Enter · @claude: hata / öneri bildir'; ci.maxLength = 160; chat.append(withMention(ci));
   const foot = el('div', 'lb-foot');
-  // online friends with "Davet Et": the invited player joins with this room's code and takes his own seat
+  // online friends with "Davet Et": the invited player joins this room and takes his own seat
   const inv = el('div', 'lb-invite-slot');
   import('./friends-ui.js').then((m) => { if (ui.lobbySession === session) inv.append(m.lobbyInvites(ui, session)); }).catch(() => {});
   box.append(head, body, inv, chat, foot);
+  safe(() => ui._onlinePanel(box));
   const active = () => !left && ui.lobbySession === session && ui.mode === 'menu';
-  const drawLog = () => { const l = chat.querySelector('.lb-log'); l.innerHTML = chatLog.slice(-40).map((m) => `<div><b>${esc(m.name || '?')}:</b> ${esc(m.text)}</div>`).join(''); l.scrollTop = l.scrollHeight; };
-  ci.onkeydown = (ev) => { ev.stopPropagation(); if (ev.key === 'Enter') { const t = ci.value.trim(); if (t) safe(() => session.chat(t)); ci.value = ''; } };
+  const drawLog = () => { const l = chat.querySelector('.lb-log'); l.innerHTML = chatLog.slice(-40).map((m) => `<div><b>${esc(m.name || '?')}:</b> ${esc(m.text).replace(/@claude/gi, '<span class="cmention">@claude</span>')}</div>`).join(''); l.scrollTop = l.scrollHeight; };
+  ci.onkeydown = (ev) => { ev.stopPropagation(); if (ev.key === 'Enter') { const t = ci.value.trim(); if (t) safe(() => session.chat(t)); if (/@claude/i.test(t)) safe(() => ui._lobbyNote('✔ Geri bildirimin geliştiriciye iletildi, teşekkürler!')); ci.value = ''; } };
   const call = (fn, ...a) => { safe(() => ui._click()); safe(() => { const r = session[fn]?.(...a); if (r && r.catch) r.catch((e) => { loading = ''; showErr(e); render(true); }); }); };
   let errText = '';
   const showErr = (e) => { errText = (e && e.message) || String(e || ''); };
@@ -93,12 +95,9 @@ export function showResumeLobby(ui, session) {
     if (!force && key != null && key === lastKey) return;
     lastKey = key;
     const rs = st.resume || {};
-    head.innerHTML = `<h2>Kayıtlı Maça Devam</h2><div class="lb-code"><span>Oda kodu</span><b class="lb-codetxt">${esc(st.code || '-----')}</b></div>` +
+    head.innerHTML = '<h2>Kayıtlı Maça Devam</h2>' +
       `<div class="lb-hint">${esc(rs.name || '')}${rs.tick ? ' · ' + mins(rs.tick) + '. dakika' : ''}</div>` +
-      `<div class="lb-hint">Arkadaşını aşağıdan davet et ya da bu kodu ver (Çok Oyunculu → Odaya Katıl). Gelince hesabından tanınır ve kendi yerine oturur.</div>`;
-    const cp = el('button', 'mbtn small', 'Kodu kopyala');
-    cp.onclick = () => { try { navigator.clipboard.writeText(st.code || '').then(() => { cp.textContent = 'Kopyalandı ✔'; }, () => {}); } catch (e) { /* ignore */ } };
-    head.querySelector('.lb-code').append(cp);
+      `<div class="lb-hint">Oyuncuları sağdaki listeden ya da aşağıdan davet et. Gelince hesabından tanınır ve kendi yerine oturur.</div>`;
     body.innerHTML = '';
     const amWaiting = waiting.some((w) => w.peer === my);
     const list = el('div', 'lb-slots');
