@@ -86,7 +86,7 @@ export const TREE_WOOD = 800;
 export const TOWER_AGE_RANGE = 1;
 export const towerAgeBonus = (type, age) => (type === 'tower' ? Math.max(0, (age | 0) - 1) * TOWER_AGE_RANGE : 0);
 // commands a client may send over the network (Game.execCommand); the app may wrap these on the instance
-export const CMD_METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload', 'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation'];
+export const CMD_METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload', 'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol'];
 const CMD_SET = new Set(CMD_METHODS);
 const _strH = new Map();
 function strHash(s) { let h = _strH.get(s); if (h !== undefined) return h; h = 2166136261; const t = String(s); for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 16777619); h >>>= 0; _strH.set(s, h); return h; }
@@ -270,7 +270,7 @@ export class Game {
     const ids = v => Array.isArray(v) ? v.filter(own) : [];
     const fin = v => typeof v === 'number' && Number.isFinite(v);
     switch (method) {
-      case 'cmdMove': a[0] = ids(a[0]); if (!a[0].length || !fin(a[1]) || !fin(a[2])) return false; break;
+      case 'cmdMove': case 'cmdAttackMove': case 'cmdPatrol': a[0] = ids(a[0]); if (!a[0].length || !fin(a[1]) || !fin(a[2])) return false; break;
       case 'cmdStance': a[0] = ids(a[0]); if (!a[0].length || !STANCES.includes(a[1])) return false; break;
       case 'cmdFormation': a[0] = ids(a[0]); if (!a[0].length || !FORMATIONS.includes(a[1])) return false; break;
       case 'cmdAttack': case 'cmdGather': case 'cmdBuild': case 'cmdStop': case 'cmdExplore': case 'cmdBoard': case 'cmdReturn':
@@ -993,22 +993,25 @@ export class Game {
     return true;
   }
   // Shift-queue (playtest 2026-11-14): an open-ended order (gathering: trees, farms, endless mines...; trade runs;
-  // fishing) never finishes on its own, so nothing queued behind it would ever run. Queuing behind one ends it now
+  // fishing; patrols) never finishes on its own, so nothing queued behind it would ever run. Queuing behind one ends it now
   // (queued open-ended orders are dropped the same way); a villager walking to drop off a load delivers it first.
-  _setOrder(u, o, queue) { u.explore = false; if (queue && u.order && !u.order.auto) { const open = q => !!q && (q.type === 'gather' || q.type === 'trade' || q.type === 'fish'); for (let i = u.queue.length - 1; i >= 0; i--) if (open(u.queue[i])) u.queue.splice(i, 1); u.queue.push(o); if (open(u.order)) this._next(u); else if (u.order.type === 'return') u.order.resume = null; return; } if (u.order && u.order.type === 'gather') this._unhunt(u.order); u.queue.length = 0; u.order = o; u.targetId = o.targetId || null; u.path = null; u.pk = null; u.rpT = 0; }
+  _setOrder(u, o, queue) { u.explore = false; if (queue && u.order && !u.order.auto) { const open = q => !!q && (q.type === 'gather' || q.type === 'trade' || q.type === 'fish' || (q.type === 'move' && !!q.pat)); for (let i = u.queue.length - 1; i >= 0; i--) if (open(u.queue[i])) u.queue.splice(i, 1); u.queue.push(o); if (open(u.order)) this._next(u); else if (u.order.type === 'return') u.order.resume = null; return; } if (u.order && u.order.type === 'gather') this._unhunt(u.order); u.queue.length = 0; u.order = o; u.targetId = o.targetId || null; u.path = null; u.pk = null; u.rpT = 0; }
   _unhunt(o) { const t = this.entities.get(o.targetId); if (t && t.type === 'deer') t.hunted = false; }
-  cmdMove(ids, x, z, queue = false) {
+  // mode 'am' (attack-move) / 'pat' (patrol): only fighters get the marks (see the move case), the rest of the
+  // selection walks there as on a plain move, in the same formation
+  cmdMove(ids, x, z, queue = false, mode = null) {
     const us = this._live(ids); if (!us.length) return false;
     const N = this.map.size; x = Math.min(N - 1.01, Math.max(1, x)); z = Math.min(N - 1.01, Math.max(1, z));
     const land = us.filter(u => !u.naval), sea = us.filter(u => u.naval);
+    const mv = (u, o) => { const d = UNITS[u.type]; if ((mode === 'am' || mode === 'pat') && d.cls !== 'civil' && d.atk > 0) { o.am = 1; if (mode === 'pat') o.pat = 1; } return o; };
     // a flow field pays off for a crowd, or a few units on a long trip; a lone unit (scouts, explorers: often sent
     // at unreachable tiles, where a field costs two whole-map sweeps) and a few units going a short way keep plain A*
     let mx = 0, mz = 0; for (const u of land) { mx += u.x; mz += u.z; }
     const far = land.length && Math.hypot(mx / land.length - x, mz / land.length - z) > 40;
     const grp = land.length >= 6 || (far && land.length >= 2) ? { path: null, tx: x, tz: z } : null;
     if (!grp && land.length) {
-      if (land.length === 1) { const f = this._freeNear(x, z, land[0].owner); this._setOrder(land[0], { type: 'move', x: f.x, z: f.z }, queue); }
-      else for (const s of this._formation(land, x, z)) { const f = this._freeNear(s.x, s.z, s.u.owner); this._setOrder(s.u, { type: 'move', x: f.x, z: f.z }, queue); }
+      if (land.length === 1) { const f = this._freeNear(x, z, land[0].owner); this._setOrder(land[0], mv(land[0], { type: 'move', x: f.x, z: f.z }), queue); }
+      else for (const s of this._formation(land, x, z)) { const f = this._freeNear(s.x, s.z, s.u.owner); this._setOrder(s.u, mv(s.u, { type: 'move', x: f.x, z: f.z }), queue); }
     }
     if (grp) {
       const owner = land[0].owner, d = this._flowField(grp, owner, land[0], land), used = new Set();
@@ -1023,16 +1026,20 @@ export class Game {
         }
         return this._freeNear(sx, sz, owner);
       };
-      for (const s of this._formation(land, grp.sx + 0.5, grp.sz + 0.5)) { const p = spot(s.x, s.z); this._setOrder(s.u, { type: 'move', x: p.x, z: p.z, grp }, queue); }
+      for (const s of this._formation(land, grp.sx + 0.5, grp.sz + 0.5)) { const p = spot(s.x, s.z); this._setOrder(s.u, mv(s.u, { type: 'move', x: p.x, z: p.z, grp }), queue); }
     }
     const cols = Math.ceil(Math.sqrt(sea.length));
     sea.forEach((u, i) => {
       const ox = ((i % cols) - (cols - 1) / 2) * 1.6, oz = (Math.floor(i / cols) - (Math.ceil(sea.length / cols) - 1) / 2) * 1.6;
       this._navMode = true; const f = this._freeNear(x + ox, z + oz, u.owner); this._navMode = false;
-      this._setOrder(u, { type: 'move', x: f.x, z: f.z }, queue);
+      this._setOrder(u, mv(u, { type: 'move', x: f.x, z: f.z }), queue);
     });
     return true;
   }
+  // walk there and fight what comes into sight on the way (buildings too), then go on; patrol: back and forth between
+  // where each unit starts the order and its spot at (x, z), attack-moving both ways, until another order
+  cmdAttackMove(ids, x, z, queue = false) { return this.cmdMove(ids, x, z, queue, 'am'); }
+  cmdPatrol(ids, x, z, queue = false) { return this.cmdMove(ids, x, z, queue, 'pat'); }
   // Line formation facing the direction of travel: melee in the front ranks, ranged behind them,
   // siege and civilians at the back. Each rank is wide and shallow ("like a rope"), and units are
   // matched to slots left-to-right by their current lateral position so paths do not cross.
@@ -1542,7 +1549,7 @@ export class Game {
     if (u.stance === 'hold' && this._edge(u, t) > (UNITS[u.type].range > 0 ? this._wRange(u) : 1.0)) return;
     if (u.stance === 'defensive' && Math.hypot(u.x - t.x, u.z - t.z) > Math.max(DEF_LEASH + 3, UNITS[u.type].range > 0 ? this._wRange(u) : 0)) return;
     const o = u.order;
-    if (o && o.type === 'move') u.queue.unshift(o.grp ? { type: 'move', x: o.x, z: o.z, grp: o.grp } : { type: 'move', x: o.x, z: o.z });
+    if (o && o.type === 'move') { const m = o.grp ? { type: 'move', x: o.x, z: o.z, grp: o.grp } : { type: 'move', x: o.x, z: o.z }; if (o.am) { m.am = 1; if (o.pat) { m.pat = 1; m.px = o.px; m.pz = o.pz; } } u.queue.unshift(m); }   // (an attack-move / patrol goes on as one)
     const d = UNITS[u.type], tr = t.kind === 'unit' ? UNITS[t.type].range || 0 : t.kind === 'building' ? BUILDINGS[t.type].range || 0 : 0;
     u.order = { type: 'attack', targetId: t.id, auto: true, ox: u.x, oz: u.z, lr: Math.max(d.los, tr + 4, reach || 0) }; u.targetId = t.id; u.path = null; u.pk = null;
   }
@@ -1665,7 +1672,14 @@ export class Game {
     switch (o.type) {
       case 'move': {
         u.state = 'move'; u.anim = 'walk';
-        if (!u.naval && UNITS[u.type].atk > 0 && UNITS[u.type].cls !== 'civil' && u.type !== 'ram') {
+        if (o.am) {
+          // attack-move / patrol: the idle soldier's scan (buildings too, rams and warships as well), fought through
+          // _engage so the stance limits apply and the walk resumes afterwards; a patrol's far end is where it starts.
+          // A building given up as out of reach (_giveUp) is passed by: _acquire would offer it again at every scan.
+          if (o.pat && o.px == null) { o.px = u.x; o.pz = u.z; }
+          const d = UNITS[u.type]; u.scanT -= dt;
+          if (u.scanT <= 0) { u.scanT = 0.5; const t = this._acquire(u, u.stance === 'hold' ? (d.range > 0 ? this._wRange(u) : 1.6) : d.los, false, u.type === 'ram'); if (t && !(t.kind === 'building' && this.time < (t['nh' + u.owner] || 0))) { this._engage(u, t); if (u.order !== o) break; } }
+        } else if (!u.naval && UNITS[u.type].atk > 0 && UNITS[u.type].cls !== 'civil' && u.type !== 'ram') {
           u.scanT -= dt;
           // (players 2026-11-19: "the scout I pull away keeps turning to attack": on the move a unit only fights what is
           // right on its way - within its reach plus a little - and goes on once that foe is MOVE_LEASH tiles behind)
@@ -1683,6 +1697,9 @@ export class Game {
           if (u.fpp) { delete u.fpp; u.path = null; break; }   // end of a flow-field stretch: next one
           // a route that ends short of the goal (a partial search, or something built across it): plan again from here
           if (Math.hypot(u.x - o.x, u.z - o.z) > 1.6 && (o.rp = (o.rp || 0) + 1) <= 3) { u.path = null; break; }
+          // patrol: turn round (each unit on its own path back: the group's field leads to the old end only); one
+          // whose two ends are a step apart just stops there (it would turn and ask for a path every tick)
+          if (o.pat && Math.hypot(o.px - o.x, o.pz - o.z) > 1.6) { const x = o.x, z = o.z; o.x = o.px; o.z = o.pz; o.px = x; o.pz = z; o.rp = 0; delete o.grp; u.path = null; u.pk = null; break; }
           this._next(u);
         }
         break;

@@ -28,7 +28,7 @@ export const DROP_LEFT_MS = 3000;     // after an explicit 'bye'
 export const KEEP_TURNS = 600;        // command lists kept for re-sends (~60 s)
 export const LOBBY_GONE_MS = 8000;    // lobby: a peer the relay reports gone is removed only if it stays gone this long
 export const METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload',
-  'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation'];
+  'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol'];
 // session-level commands: travel and execute in lockstep like game commands, but are handled by the session
 export const SESSION_CMDS = ['@save', '@pause'];
 const METHOD_SET = new Set(METHODS);

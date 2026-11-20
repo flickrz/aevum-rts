@@ -199,17 +199,25 @@ export class Input {
     }
   }
 
-  // ---------- one-shot targeting (transport unload) ----------
+  // ---------- one-shot targeting (transport unload, attack-move, patrol) ----------
   startUnload(transportId) {
     if (!this.game.cmdUnload) return false;
+    return this.startTargeting({ kind: 'unload', id: transportId }, '⚓ Boşaltma noktası: kıyıya sol tık · Esc / sağ tık: iptal');
+  }
+  // kind 'amove' / 'patrol': the next left click on the ground gives the order to the selected units (Shift: queued)
+  startGroundCmd(kind) {
+    if (!this.ownUnits().length) return false;
+    return this.startTargeting({ kind }, kind === 'patrol' ? '🔁 Devriye: hedef noktaya sol tık · Shift: sıraya ekle · Esc / sağ tık: iptal' : '⚔ Saldırarak yürü: hedef noktaya sol tık · Shift: sıraya ekle · Esc / sağ tık: iptal');
+  }
+  startTargeting(t, label) {
     this.cancelPlacement();
-    this.targeting = { kind: 'unload', id: transportId };
+    this.targeting = t;
     if (!this.tgtLbl) {
       this.tgtLbl = document.createElement('div');
       this.tgtLbl.style.cssText = 'position:fixed;z-index:60;pointer-events:none;padding:2px 7px;border-radius:4px;font:600 12px system-ui,sans-serif;background:rgba(10,12,16,.82);color:#bfe6ff;white-space:nowrap';
       document.body.appendChild(this.tgtLbl);
     }
-    this.tgtLbl.textContent = '⚓ Boşaltma noktası: kıyıya sol tık · Esc / sağ tık: iptal';
+    this.tgtLbl.textContent = label;
     this.tgtLbl.style.left = (this.mouse.x + 16) + 'px'; this.tgtLbl.style.top = (this.mouse.y + 18) + 'px';
     this.tgtLbl.style.display = 'block';
     try { this.canvas.style.cursor = 'crosshair'; } catch (err) { /* ignore */ }
@@ -226,6 +234,8 @@ export class Input {
     const g = this.app.renderer.screenToGround(e.clientX, e.clientY);
     if (!g) return;
     if (t.kind === 'unload' && this.game.cmdUnload?.(t.id, g.x, g.z)) { this.app.renderer.addMarker(g.x, g.z, C_MOVE); this.sfx('command'); }
+    // (the whole selection in one command: the sim gives villagers, carts and unarmed ships a plain move in the same formation)
+    else if ((t.kind === 'amove' || t.kind === 'patrol') && this.game[t.kind === 'patrol' ? 'cmdPatrol' : 'cmdAttackMove'](this.ownUnits(), g.x, g.z, !!e.shiftKey)) { this.app.renderer.addMarker(g.x, g.z, C_ATTACK); this.sfx('command'); }
     else this.sfx('error');
   }
 
