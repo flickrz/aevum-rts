@@ -247,7 +247,7 @@ export class UI {
     this.cardSig = null; this.selSig = null; this.questSig = null;
   }
   _menuBox(html) {
-    this.menuEl.innerHTML = ''; this.menuEl.classList.remove('with-hud');
+    this.menuEl.innerHTML = ''; this.menuEl.classList.remove('with-hud', 'm-left');
     const box = el('div', 'menu-box panel', html);
     this.menuEl.append(box);
     return box;
@@ -262,29 +262,44 @@ export class UI {
   _menuMain(note) {
     // nothing is playable before signing in with Google (one account = one player)
     if (!this._signedIn()) { loginScreen(this); if (note) this._menuNote(note); return; }
+    // (owner 2026-11-20: the layout of the draft he liked - one column on the left over the live demo, the big
+    //  "Yeni Oyun" first, the rest as a list, three small buttons in a row, the feedback note bottom left, the
+    //  player plate top right - in the game's own look: the same panel and gold buttons as before)
     const box = this._menuBox('<div class="logo">AEVUM</div><div class="tagline">Çağları aş · Uygarlığını kur</div>');
+    box.classList.add('main');
+    this.menuEl.classList.add('m-left');
     if (note) this._menuNote(note);
-    this._mbtn(box, 'Yeni Oyun', () => this._menuSetup(), 'primary');
-    this._mbtn(box, 'Çok Oyunculu', () => this._menuMulti());
-    this._mbtn(box, 'Arkadaşlar', () => import('./friends-ui.js').then((m) => m.menuFriends(this)));
-    this._mbtn(box, 'Sandbox', () => this.app.newGame({ mapSize: 256, enemies: 1, difficulty: 'normal', startRes: 'high', startAge: 0, sandbox: true, seed: (Math.random() * 1e9) | 0 }));
-    const cont = this._mbtn(box, 'Devam Et', () => Promise.resolve(safe(() => this.app.continueLast(), false)).then((ok) => { if (!ok && this.app.lastLoadError && this.mode === 'menu') this._menuSaves(this.app.lastLoadError); }).catch(() => {}));
-    const saves = this._mbtn(box, 'Kayıtlı Oyunlar', () => this._menuSaves());
+    const item = (icon, text, meta, fn, cls = '') => {
+      const btn = this._mbtn(box, `<span class="mi">${ico(icon)}</span><span class="mt">${text}</span>${meta != null ? `<span class="mm">${meta}</span>` : ''}`, fn, 'mitem ' + cls);
+      return btn;
+    };
+    item('b-towncenter', 'Yeni Oyun', 'harita ve ayarlar', () => this._menuSetup(), 'primary');
+    if (this.game && !this.game.over && !this.app.demo && !this.app.net) item('x-speed', 'Oyuna Dön', 'kaldığın yer', () => { this.showHUD(); this.app.setPaused?.(false); });
+    item('x-ally', 'Çok Oyunculu', 'davet et, birlikte oyna', () => this._menuMulti());
+    item('u-villager', 'Arkadaşlar', null, () => import('./friends-ui.js').then((m) => m.menuFriends(this)));
+    item('x-build', 'Sandbox', 'serbest kur', () => this.app.newGame({ mapSize: 256, enemies: 1, difficulty: 'normal', startRes: 'high', startAge: 0, sandbox: true, seed: (Math.random() * 1e9) | 0 }));
+    const cont = item('x-explore', 'Devam Et', '', () => Promise.resolve(safe(() => this.app.continueLast(), false)).then((ok) => { if (!ok && this.app.lastLoadError && this.mode === 'menu') this._menuSaves(this.app.lastLoadError); }).catch(() => {}));
+    const saves = item('x-save', 'Kayıtlı Oyunlar', '', () => this._menuSaves());
     cont.disabled = true;
-    Promise.resolve(safe(() => this.app.listSaves(), [])).then((l) => { cont.disabled = !(l && l.length); }).catch(() => {});
-    this._mbtn(box, 'Nasıl Oynanır', () => this._menuHowto());
-    this._mbtn(box, 'Güncellemeler' + (hasUnseen() ? ' <span class="up-badge">Yeni</span>' : ''), () => menuUpdates(this));
-    this._mbtn(box, 'Ayarlar', () => this._menuSettings());
+    Promise.resolve(safe(() => this.app.listSaves(), [])).then((l) => {
+      const n = (l && l.length) | 0; cont.disabled = !n;
+      const c = cont.querySelector('.mm'); if (c) c.textContent = n ? 'son kayıttan' : 'kayıt yok';
+      const v = saves.querySelector('.mm'); if (v) v.textContent = n ? n + ' kayıt' : '';
+    }).catch(() => {});
+    // three small ones in a row
+    const row = el('div', 'mrow'); box.append(row);
+    const small = (icon, text, fn, badge) => this._mbtn(row, `${badge ? '<span class="up-badge">' + badge + '</span>' : ''}${ico(icon)}<span>${text}</span>`, fn, 'small msq');
+    small('x-quests', 'Nasıl Oynanır', () => this._menuHowto());
+    small('x-tech', 'Güncellemeler', () => menuUpdates(this), hasUnseen() ? 'Yeni' : '');
+    small('x-stance-def', 'Ayarlar', () => this._menuSettings());
     // the game's owner: player statistics (the server says who that is)
     Promise.resolve(safe(() => this.app.cloud.isOwner(), false)).then((own) => {
       if (!own || !box.isConnected) return;
-      const b = this._mbtn(box, 'İstatistikler', () => import('./stats-ui.js').then((m) => m.menuStats(this)));
-      const set = [...box.querySelectorAll('.mbtn')].find((x) => x.textContent === 'Ayarlar');
-      if (set) set.after(b);
+      const st = item('x-stats', 'İstatistikler', 'oyuncu sayıları', () => import('./stats-ui.js').then((m) => m.menuStats(this)));
+      box.insertBefore(st, row);   // (a list row: four small buttons did not fit their names)
     }).catch(() => {});
     // feedback: anything written to @claude in the game's chat reaches the developer (tools/read-chatlog.mjs --claude)
-    box.append(el('div', 'menu-fb', '💬 Hata mı buldun, önerin mi var? Oyunda <kbd>Enter</kbd> ile sohbeti aç, <b class="cmention">@claude</b> yazıp mesajını bırak; doğrudan geliştiriciye gider.'));
-    if (this.game && !this.game.over && !this.app.demo && !this.app.net) this._mbtn(box, 'Oyuna Dön', () => { this.showHUD(); this.app.setPaused?.(false); });
+    this.menuEl.append(el('div', 'menu-fb panel', `<span class="mi">${ico('x-chat')}</span><span>Hata mı buldun, önerin mi var? Oyunda <kbd>Enter</kbd> ile sohbeti aç, <b class="cmention">@claude</b> yaz; doğrudan geliştiriciye gider.</span>`));
     safe(() => menuHud(this));   // the player plate (avatar, name, level, TP) and account chips around the menu
     void saves; void firstLaunch;
   }

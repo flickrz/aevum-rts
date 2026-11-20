@@ -6,7 +6,7 @@ export const CHANGELOG = [
     items: [
       'Sohbete @claude yazarak hata ve önerilerini doğrudan geliştiriciye iletebilirsin; "@" yazınca liste açılır, yazarken etiket vurgulanır.',
       'Tek oyunculu oyunda da sohbet açılır (Enter): orada yalnızca @claude geri bildirimleri gider.',
-      'Ana menüye "Güncellemeler" ekranı geldi.',
+      'Ana menü yeni düzende: solda tek sütun, arkada dönen dünya daha çok görünüyor; her butonun simgesi ve kısa açıklaması var, profil kartı sağ üstte. Menüye "Güncellemeler" ekranı geldi.',
       'Yeni Oyun ekranı yenilendi: her harita türünün küçük bir resmi ve ne tür bir oyun çıkaracağını anlatan açıklaması var, seçim yaparken butonlar artık yer değiştirmiyor.',
       'Oda kodu kalktı: odalara artık sağdaki çevrimiçi oyuncular listesinden davetle girilir.',
       'Askerler için diziliş butonu: Hat, Kare ve V.',

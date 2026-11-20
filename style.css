@@ -727,8 +727,6 @@ button.gbtn, button.gbtn .gbtn-t { color: #1f1f1f !important; text-shadow: none 
 
 /* ---- @claude feedback in the chats and the main menu note ---- */
 .cmention { color: #ffd98a; background: rgba(232,194,106,.18); border: 1px solid rgba(232,194,106,.45); border-radius: 5px; padding: 0 4px; font-weight: 600; white-space: nowrap; }
-.menu-fb { margin: 16px 0 0; padding: 10px 12px; border: 1px dashed rgba(232,194,106,.35); border-radius: 8px; background: rgba(232,194,106,.06); color: var(--dim); font-size: 12.5px; line-height: 1.55; text-align: center; }
-.menu-fb kbd { padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; background: rgba(255,255,255,.07); color: var(--ink); font-family: inherit; font-size: 11.5px; }
 /* ---- @claude while typing (src/ui/mention.js) ---- */
 .mn-wrap { position: relative; flex: 1 1 auto; min-width: 0; display: block; }
 .mn-wrap > .mpinput { width: 100%; box-sizing: border-box; }
@@ -791,3 +789,34 @@ button.gbtn, button.gbtn .gbtn-t { color: #1f1f1f !important; text-shadow: none 
 .su-acts .mbtn { margin: 0; }
 @media (max-width: 900px) { .su-grid { grid-template-columns: 1fr; } .su-types { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .su-left .su-desc { font-size: 14px; }
+/* ---- main menu layout (owner 2026-11-20): one column on the left over the live demo, the game's own panel and
+   gold buttons; feedback note bottom left; the player plate top right ---- */
+.menu.m-left { justify-content: flex-start; }
+.menu.m-left .menu-hud { flex-direction: row-reverse; }
+.menu.m-left .menu-box.main { width: min(400px, 92vw); margin: 0 0 0 clamp(28px, 6vw, 120px); padding: 24px 24px 20px; text-align: left; }
+.menu.with-hud.m-left .menu-box.main { margin-top: 0; }
+.menu-box.main .logo { font-size: clamp(50px, 6.6vh, 64px); letter-spacing: 12px; margin: 0 0 2px; }
+.menu-box.main .tagline { margin: 0 0 18px 2px; }
+.menu-box.main .mitem { display: flex; align-items: center; gap: 12px; margin: 7px 0; padding: 9px 14px 9px 9px; text-align: left; letter-spacing: 1px; }
+.menu-box.main .mitem.primary { padding: 12px 16px 12px 11px; font-size: 18px; margin-bottom: 12px; }
+.menu-box.main .mi { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; background: rgba(0,0,0,.28); color: var(--gold); }
+.menu-box.main .mitem.primary .mi { width: 36px; height: 36px; background: rgba(26,20,8,.22); color: #1a1408; }
+.menu-box.main .mi .gi { width: 70%; height: 70%; }
+.menu-box.main .mt { flex: 1 1 auto; white-space: nowrap; }
+.menu-box.main .mm { flex: none; font-size: 12px; letter-spacing: .3px; color: var(--dim); }
+.menu-box.main .mitem.primary .mm { color: rgba(26,20,8,.65); }
+.menu-box.main .mrow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.menu-box.main .msq { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-width: 0; margin: 0; padding: 11px 4px 10px; font-size: 12px; letter-spacing: .3px; white-space: nowrap; }
+.menu-box.main .msq span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.menu-box.main .msq .gi { width: 22px; height: 22px; color: var(--gold); }
+.menu-box.main .msq .up-badge { position: absolute; top: -8px; right: 6px; margin: 0; }
+.menu-fb { position: absolute; left: clamp(28px, 6vw, 120px); bottom: clamp(16px, 3vh, 28px); display: flex; align-items: center; gap: 10px; max-width: 460px; padding: 9px 14px 9px 9px; font-size: 12.5px; line-height: 1.45; color: var(--dim); }
+.menu-fb .mi { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; background: rgba(0,0,0,.28); color: var(--gold); }
+.menu-fb .mi .gi { width: 70%; height: 70%; }
+.menu-fb kbd { padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; background: rgba(255,255,255,.07); color: var(--ink); font-family: inherit; font-size: 11.5px; }
+@media (max-width: 760px) {
+  .menu.m-left { justify-content: flex-start; }
+  .menu.m-left .menu-box.main { margin: 12px auto 16px; }
+  .menu-fb { position: static; margin: 0 auto 16px; }
+}
+@media (max-height: 760px) { .menu-box.main .mitem { margin: 5px 0; padding-top: 7px; padding-bottom: 7px; } .menu-box.main .tagline { margin-bottom: 12px; } }
