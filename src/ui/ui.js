@@ -10,7 +10,7 @@ import { menuUpdates, hasUnseen } from './updates-ui.js';
 import { mapPreview, previewClimate } from './map-preview.js';
 import { ico, applyIcons, keepIcons, stripIcons, RES_ICONS, CAT_ICONS, NATURE_ICONS } from '../icons.js';
 import { ask, askOpen } from './ask.js';
-import { ownerNoticeItem, interruptedEntry } from './notice-ui.js';
+import { interruptedEntry } from './notice-ui.js';
 // a tab on the previous build (the server runs a new one): no rooms until it reloads
 const STALE_TEXT = 'Oyunun yeni sürümü yayında. Sayfayı yenileyip tekrar dene.';
 
@@ -316,7 +316,6 @@ export class UI {
       if (!own || !box.isConnected) return;
       const st = item('x-stats', 'İstatistikler', 'oyuncu sayıları', () => import('./stats-ui.js').then((m) => m.menuStats(this)));
       box.insertBefore(st, row);   // (a list row: four small buttons did not fit their names)
-      safe(() => ownerNoticeItem(this, item, box, row));   // "Güncelleme Duyur": tell every tab an update comes in 1 minute
     }).catch(() => {});
     // feedback: anything written to @claude in the game's chat reaches the developer (tools/read-chatlog.mjs --claude)
     this.menuEl.append(el('div', 'menu-fb panel', `<span class="mi">${ico('x-chat')}</span><span>Hata mı buldun, önerin mi var? Oyunda <kbd>Enter</kbd> ile sohbeti aç, <b class="cmention">@claude</b> yaz; doğrudan geliştiriciye gider.</span>`));

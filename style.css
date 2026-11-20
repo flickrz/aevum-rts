@@ -231,7 +231,8 @@ table.st th { color: var(--gold); font-weight: 600; }
 .agebox .n::before { margin-right: 5px; }
 .hud.age-0 .agebox .n::before { content: "🪨"; } .hud.age-1 .agebox .n::before { content: "🔱"; } .hud.age-2 .agebox .n::before { content: "🏰"; } .hud.age-3 .agebox .n::before { content: "💥"; } .hud.age-4 .agebox .n::before { content: "⚙️"; }
 .topbar.ageflash { animation: ageFlash 2.4s ease; }
-@keyframes ageFlash { 0% { filter: brightness(2.2); transform: translateX(-50%) scale(1.06); } 100% { filter: none; transform: translateX(-50%) scale(1); } }
+/* (scale, not transform: the bar is centred by translateX in one layout and by its parent in the other) */
+@keyframes ageFlash { 0% { filter: brightness(2.2); scale: 1.06; } 100% { filter: none; scale: 1; } }
 .seldesc.bfx { color: #d9dfe9; border-left: 2px solid var(--gold2); padding-left: 6px; margin-top: 3px; }
 .seldesc.bfx::before { content: "✦ "; color: var(--gold); }
 

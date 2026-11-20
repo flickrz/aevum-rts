@@ -1,5 +1,5 @@
 // Aevum - what the update notice (src/net/notice.js) looks like: the banner with the countdown / "Yeni sürüm hazır",
-// the owner's "Güncelleme Duyur" row and the main menu's "Kesilen maça devam et". All text goes in via textContent.
+// the main menu's "Kesilen maça devam et". All text goes in via textContent.
 import { ask } from './ask.js';
 import { ico } from '../icons.js';
 import { getInterrupted, markInterrupted, clearInterrupted } from '../net/notice.js';
@@ -80,36 +80,6 @@ export function hostNameOf(s) {
     const slot = st && st.slots.find((x) => x && x.kind === 'human' && x.peer === hp);
     return slot ? String(slot.name || '') : '';
   }, '');
-}
-
-// ---------- the owner's row in the main menu ----------
-export function ownerNoticeItem(ui, item, box, before) {
-  const app = ui.app, notice = app.notice;
-  if (!notice || !app.cloud) return;
-  const active = () => notice.status() === 'soon' && notice.notice && notice.notice.kind === 'update';
-  const btn = item('x-tech', 'Güncelleme Duyur', 'oyunculara 1 dk önceden haber ver', async () => {
-    try {
-      if (active()) {
-        if (!(await ask({ title: 'Duyuruyu İptal Et', text: 'Güncelleme duyurusu iptal edilsin mi?', ok: 'İptal Et', cancel: 'Vazgeç' }))) return;
-        await app.cloud.announce({ cancel: true });
-        ui.toast('Güncelleme duyurusu iptal edildi.', 'info');
-      } else {
-        if (!(await ask({ title: 'Güncelleme Duyur', text: 'Bütün oyunculara 1 dakika sonra güncelleme geleceği duyurulsun mu?', ok: 'Duyur' }))) return;
-        await app.cloud.announce({ inSec: 60 });
-        ui.toast('Duyuruldu. 60 sn bekle, sonra yayınla (push).', 'good');
-      }
-    } catch (e) { ui.toast('Duyuru yapılamadı: ' + ((e && e.message) || e), 'warn'); }
-    notice.poll();
-  });
-  box.insertBefore(btn, before);
-  const label = () => {
-    if (!btn.isConnected) { off(); return; }
-    const t = btn.querySelector('.mt'), m = btn.querySelector('.mm');
-    if (t) t.textContent = active() ? 'Duyuruyu İptal Et' : 'Güncelleme Duyur';
-    if (m) m.textContent = active() ? 'güncelleme ' + mmss(notice.remaining()) + ' sonra' : 'oyunculara 1 dk önceden haber ver';
-  };
-  const off = notice.on(label);
-  label();
 }
 
 // ---------- "Kesilen maça devam et" (main menu, 30 minutes after an update cut a multiplayer match) ----------
