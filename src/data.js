@@ -58,7 +58,7 @@ export const BUILDINGS = {
   market: B('market', 'Pazar', 1, { wood: 150 }, 30, 1100, 3, 0, ['tradecart'], ['coinage', 'caravan'], null, 0, 0, 6, '⚖️', 'Kaynak takası ve ticaret arabaları.'),
   storage: B('storage', 'Depo', 0, { wood: 80 }, 20, 700, 2, 0, [], ['handcart'], RES.slice(), 0, 0, 5, '📦', 'Kaynak teslim noktası.'),
   tower: B('tower', 'Kule', 1, { stone: 125, wood: 25 }, 35, 900, 1, 0, [], [], null, 9, 8, 9, '🗼', 'Yaklaşan düşmanlara ok atar; Barut Çağı’ndan itibaren gülle atar. Her çağda hasarı +5, Orta Çağ’dan itibaren menzili +1 artar.'),
-  wall: B('wall', 'Sur', 1, { stone: 5 }, 15, 900, 1, 0, [], [], null, 0, 0, 2, '🧱', 'Basılı tutup sürükleyerek sur hattı çiz. Köylüler parçaları sırayla örer.'),
+  wall: B('wall', 'Sur', 1, { stone: 5 }, 12.5, 900, 1, 0, [], [], null, 0, 0, 2, '🧱', 'Basılı tutup sürükleyerek sur hattı çiz. Köylüler parçaları sırayla örer.'),
   gate: B('gate', 'Kapı', 1, { stone: 30 }, 30, 1200, 1, 0, [], [], null, 0, 0, 3, '🚪', 'Sadece kendi birliklerin geçebilir.'),
   university: B('university', 'Üniversite', 2, { wood: 200, gold: 100, stone: 100 }, 40, 1300, 3, 0, [], ['masonry', 'architecture', 'arrowslits', 'guardtower', 'fortify', 'ballistics'], null, 0, 0, 6, '🎓', 'Savunma ve mühendislik araştırmaları.'),
   castle: B('castle', 'Kale', 2, { stone: 600, gold: 200 }, 120, 4000, 4, 10, [], ['garrisonart'], null, 12, 9, 11, '🏰', 'Güçlü savunma yapısı: her 2 saniyede 3 hedefe birden ok yağdırır, saldırısı her çağda artar. Kulelerden daha uzağa vurur.'),

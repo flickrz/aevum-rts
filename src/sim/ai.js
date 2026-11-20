@@ -17,25 +17,25 @@ const DIFF = {
     counter: 0.25, moves: 1, builds: 1, prodQ: 1, tcQ: 1, prod: [1, 2, 2, 3, 3], tc2Age: 9, carts: 2,
     towers: [0, 1, 1, 2, 2], castle: false, techPar: 1, rescout: 330, idleChance: 0.35, floatMul: 2.2, slack: 0, banks: 1, rails: 1,
     elastic: 0.6, tradeMul: 1.8, armyCap: [6, 16, 28, 40, 50], prodMax: [1, 2, 3, 5, 6], prodQmax: 2, towersX: 1,
-    wallFrom: 18, wallSides: 1, wallTowers: 0, wallRmax: 20, wallChunk: 12, wallKeep: 120, wallBuilders: 1, wallGates2: false,
+    tcs: [1, 1, 2, 2, 2], fwd: 0.2, wallFrom: 18, wallSides: 1, wallTowers: 0, wallRmax: 20, wallChunk: 12, wallKeep: 120, wallBuilders: 1, wallGates2: false,
   },
   normal: {
     think: 1.6, vill: [14, 28, 40, 50, 56], army: [0.2, 0.42, 0.52, 0.6, 0.65], minArmy: [2, 4, 6, 8, 10],
     ageVill: [12, 21, 28, 34], ageDelay: [50, 70, 75, 110], barracksAt: 12,
     raidFrom: 10, pushFrom: 18, raidGap: 200, raidSize: 3, firstPush: 7, pushBase: 10, pushGrow: 4, pushGap: 200,
-    counter: 0.6, moves: 2, builds: 2, prodQ: 1, tcQ: 1, prod: [1, 2, 3, 4, 5], tc2Age: 2, carts: 4,
+    counter: 0.6, moves: 2, builds: 2, prodQ: 1, tcQ: 1, prod: [1, 3, 4, 6, 7], tc2Age: 2, carts: 4,
     towers: [0, 2, 3, 4, 4], castle: true, techPar: 2, rescout: 240, idleChance: 0.08, floatMul: 1.7, slack: 2, banks: 2, rails: 1,
-    elastic: 0.8, tradeMul: 1.3, armyCap: [8, 22, 40, 60, 80], prodMax: [1, 3, 5, 7, 9], prodQmax: 3, towersX: 2,
-    wallFrom: 14, wallSides: 3, wallTowers: 2, wallRmax: 24, wallChunk: 16, wallKeep: 60, wallBuilders: 1, wallGates2: true,
+    elastic: 0.8, tradeMul: 1.3, armyCap: [8, 26, 48, 72, 96], prodMax: [1, 4, 6, 9, 12], prodQmax: 3, towersX: 2,
+    tcs: [1, 2, 3, 3, 3], fwd: 0.35, wallFrom: 14, wallSides: 3, wallTowers: 2, wallRmax: 24, wallChunk: 16, wallKeep: 60, wallBuilders: 1, wallGates2: true,
   },
   hard: {
     think: 1.0, vill: [17, 33, 46, 60, 72], army: [0.25, 0.5, 0.6, 0.7, 0.8], minArmy: [2, 5, 8, 10, 12],
     ageVill: [10, 18, 24, 30], ageDelay: [0, 0, 0, 0], barracksAt: 12,
     raidFrom: 7, pushFrom: 12, raidGap: 130, raidSize: 4, firstPush: 8, pushBase: 12, pushGrow: 5, pushGap: 120,
-    counter: 1, moves: 3, builds: 3, prodQ: 2, tcQ: 2, prod: [1, 3, 4, 6, 7], tc2Age: 1, carts: 7,
+    counter: 1, moves: 3, builds: 3, prodQ: 2, tcQ: 2, prod: [1, 4, 6, 9, 11], tc2Age: 1, carts: 7,
     towers: [0, 2, 3, 5, 6], castle: true, techPar: 3, rescout: 180, idleChance: 0, floatMul: 1.5, slack: 3, banks: 3, rails: 2,
-    elastic: 1, tradeMul: 1.1, armyCap: [10, 28, 50, 80, 110], prodMax: [1, 4, 6, 9, 12], prodQmax: 4, towersX: 3,
-    wallFrom: 12, wallSides: 4, wallTowers: 4, wallRmax: 26, wallChunk: 16, wallKeep: 40, wallBuilders: 1, wallGates2: true,
+    elastic: 1, tradeMul: 1.1, armyCap: [12, 34, 62, 100, 140], prodMax: [1, 5, 8, 12, 16], prodQmax: 4, towersX: 3,
+    tcs: [1, 2, 3, 4, 4], fwd: 0.55, wallFrom: 12, wallSides: 4, wallTowers: 4, wallRmax: 26, wallChunk: 16, wallKeep: 40, wallBuilders: 1, wallGates2: true,
   },
 };
 
@@ -52,6 +52,7 @@ const ROLE_W = [
   { inf: 0.1, gun: 0.42, cav: 0.3, siege: 0.18 },
 ];
 const MIL_B = ['barracks', 'archery', 'stable', 'siege', 'factory'];
+const SPREAD_B = MIL_B.concat(['blacksmith', 'temple', 'university', 'academy', 'bank', 'storage']);
 const ECO_TECHS = ['basket', 'axe', 'plow', 'wheelbarrow', 'pickaxe', 'crop', 'loom', 'breeding', 'caravan', 'saw', 'shaft', 'irrigation', 'handcart', 'banking', 'steam', 'guilds', 'nets', 'assembly', 'steelrails', 'coinage'];
 const MIL_TECHS = {
   forging: ['infantry', 'cavalry'], ironcast: ['infantry', 'cavalry'], steel: ['infantry', 'cavalry'],
@@ -450,7 +451,8 @@ export class AIController {
     }
     if (vn >= d.barracksAt || this._baseThreat || age >= 1) want('barracks', 1, true);
     if (age >= 1) { want('archery', 1, true); want('stable', 1, true); want('blacksmith', 1); want('market', 1, true); }
-    if (age >= d.tc2Age && vn >= 18) want('towncenter', 2);
+    // (players 2026-11-19: "the AI stays in a few squares, 5 buildings"): more town centers as it grows, each on a new field
+    if (age >= d.tc2Age && vn >= 18) want('towncenter', Math.max(2, Math.min(d.tcs[age] || 2, 1 + Math.floor((vn - 6) / 12))));
     if (age >= 2) { want('siege', 1, true); want('university', 1); }
     if (age >= 3) { want('academy', 1); want('bank', 1); }
     if (age >= 4) want('factory', 1, true);
@@ -784,19 +786,45 @@ export class AIController {
     const H = c.home, ed = c.edir;
     if (type === 'market') ok = this.tryBuild(c, type, 11, 22, H, 2, { x: -ed.x, z: -ed.z });
     else if (type === 'towncenter') {
-      // second town center beside a resource field away from the enemy
-      const idx = this._resIndex(c);
-      const site = idx.gold.concat(idx.stone).filter(e => { if (e.dead) return false; const dd = d2(e.x, e.z, H.x, H.z); return dd > 14 * 14 && dd < 30 * 30 && !this._unsafe(e.x, e.z); })[0];
+      // another town center beside a resource field no town center of ours covers yet; each one further out
+      const idx = this._resIndex(c), far = 30 + 12 * Math.max(0, c.tcs.length - 1);
+      const bad = this._badTc || (this._badTc = new Set());
+      const fits = e => { if (e.dead || bad.has(e.id)) return false; const dd = d2(e.x, e.z, H.x, H.z); return dd > 14 * 14 && dd < far * far && c.tcs.every(t => d2(e.x, e.z, t.x, t.z) > 16 * 16) && !this._unsafe(e.x, e.z); };
+      const near = (p, q) => d2(p.x, p.z, H.x, H.z) - d2(q.x, q.z, H.x, H.z) || p.id - q.id;
+      // (gold / stone fields first; a forest edge only when none is left)
+      const site = idx.gold.concat(idx.stone).filter(fits).sort(near)[0] || idx.tree.filter(fits).sort(near)[0];
       ok = this.tryBuild(c, type, 3, 10, site ? { x: site.x, z: site.z } : { x: H.x - ed.x * 16, z: H.z - ed.z * 16 }, 3);
+      if (!ok && site && c.can(def.cost)) bad.add(site.id);   // (no room there: the next field next time)
     } else if (type === 'castle') ok = this.tryBuild(c, type, 7, 16, H, 3, ed);
     else if (type === 'tower') ok = this.tryBuild(c, type, 6, 10, H, 1, ed);
     else if (type === 'lumbercamp' || type === 'minecamp') { const at = this._campSite(c, type, null); ok = !!at && this.tryBuild(c, type, 0, 5, at, 1); }
     else if (type === 'mill') ok = false;   // (legacy: old saves only)
-    else ok = this.tryBuild(c, type, 5, 30, H, (def.size || 1) >= 3 ? 2 : 1);
+    else {
+      // the base grows outward: production and tech buildings go round each town center in turn and towards the
+      // front (part of the way to the enemy: on hard past the middle of the map), not all packed round the first one
+      const at = SPREAD_B.includes(type) ? this._spreadAnchor(c, type) : H;
+      ok = this.tryBuild(c, type, 5, 30, at, (def.size || 1) >= 3 ? 2 : 1);
+      if (!ok && at !== H) ok = this.tryBuild(c, type, 5, 30, H, (def.size || 1) >= 3 ? 2 : 1);
+      // (players 2026-11-19: the hard AI stayed in the Middle Ages - a crowded base had no room for the university
+      // within 30 tiles, so the age-up waited forever with thousands banked): a building the next age needs looks further out
+      if (!ok && essential && c.reqMissing && c.reqMissing.includes(type) && c.can(def.cost)) ok = this.tryBuild(c, type, 24, 56, H, 2);
+    }
     if (ok) c.pendingB++;
     return ok;
   }
 
+  // where the next building of a type goes: our town centers, then a front point towards the enemy, in turn
+  _spreadAnchor(c, type) {
+    const H = c.home, ed = c.edir, eb = this.enemyBase(), N = this.game.map.size;
+    const ex = eb ? eb.x : N / 2, ez = eb ? eb.z : N / 2, L = Math.hypot(ex - H.x, ez - H.z);
+    const anchors = c.tcs.filter(t => t.done).map(t => ({ x: t.x, z: t.z }));
+    if (!anchors.length) anchors.push(H);
+    // (the front moves out age by age: 35 tiles in the Bronze Age ... 80 in the Industrial, at most this.d.fwd of the way)
+    const fd = Math.min(L * this.d.fwd, 20 + 15 * c.age);
+    if (c.age >= 1 && fd > 16) anchors.push(this._freeish(H.x + ed.x * fd, H.z + ed.z * fd));
+    const n = c.blds.filter(b => SPREAD_B.includes(b.type)).length;
+    return anchors[(n + this.countB(c, type)) % anchors.length];
+  }
   _farms(c) {
     const d = this.d, need = c.farmNeed;
     if (!need || c.vills.length < 6) return;
@@ -1306,7 +1334,7 @@ export class AIController {
     const small = type === 'farm' || type === 'pasture';
     if (!small && type !== 'towncenter' && c.work && c.work.build >= Math.max(3, Math.ceil(c.vills.length * 0.16))) return false;
     const ctr = at || c.home;
-    const key = type + ':' + Math.round(ctr.x / 4) + ':' + Math.round(ctr.z / 4);
+    const key = type + ':' + maxR + ':' + Math.round(ctr.x / 4) + ':' + Math.round(ctr.z / 4);
     if (this.failPlace[key] && g.time - this.failPlace[key] < 20) return false;
     const size = def.size || 1;
     const spot = this.findSpot(type, ctr.x - size / 2, ctr.z - size / 2, minR, maxR, dir);

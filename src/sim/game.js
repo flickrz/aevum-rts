@@ -3,6 +3,8 @@ import { AGES, RES, UNITS, BUILDINGS, TECHS, PLAYER_COLORS, FARM_SLOTS } from '.
 // big farm: cells (x, z) of its 3x3 grid, ring order around the granary (1, 1); food / s of a farmer while his plot is ripe
 export const FARM_CELLS = [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1]];
 const FARM_RATE = 16 / 9 * 0.85;
+const MOVE_REACH = 2, MOVE_LEASH = 5;   // a moving unit fights foes within its reach + MOVE_REACH, chases them MOVE_LEASH tiles
+const TC_GRACE = 120;   // seconds a player without a town center (but with villagers) has to start a new one
 const FARM_SPOT_S = 5;   // seconds a farmer hoes on one spot of his plot before moving on along the row
 import { AIController } from './ai.js';
 import { QuestSystem } from './quests.js';
@@ -22,6 +24,8 @@ const WALL_CLEAR = 3.4, LOB_MAX = 7, LOB_T = 0.42;   // lob over a wall: height 
 // before; defensive chases at most DEF_LEASH tiles from where it stood and walks back; hold never moves for an auto
 // fight (only what is in weapon reach). A player's own order is always obeyed.
 export const STANCES = ['aggressive', 'defensive', 'hold'];
+// group formations for a move order (players 2026-11-19: "V and square formations"): kept per soldier in u.form
+export const FORMATIONS = ['line', 'box', 'wedge'];
 const DEF_LEASH = 5;
 // body radius per class for the idle separation (two infantry stay 0.56 apart as before; siege engines need more room)
 const SEP_R = { siege: 0.75, cavalry: 0.38, other: 0.28 };
@@ -76,7 +80,7 @@ export const TREE_WOOD = 800;
 export const TOWER_AGE_RANGE = 1;
 export const towerAgeBonus = (type, age) => (type === 'tower' ? Math.max(0, (age | 0) - 1) * TOWER_AGE_RANGE : 0);
 // commands a client may send over the network (Game.execCommand); the app may wrap these on the instance
-export const CMD_METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload', 'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdAttackMove', 'cmdPatrol'];
+export const CMD_METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload', 'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol'];
 const CMD_SET = new Set(CMD_METHODS);
 const _strH = new Map();
 function strHash(s) { let h = _strH.get(s); if (h !== undefined) return h; h = 2166136261; const t = String(s); for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 16777619); h >>>= 0; _strH.set(s, h); return h; }
@@ -255,6 +259,7 @@ export class Game {
     switch (method) {
       case 'cmdMove': case 'cmdAttackMove': case 'cmdPatrol': a[0] = ids(a[0]); if (!a[0].length || !fin(a[1]) || !fin(a[2])) return false; break;
       case 'cmdStance': a[0] = ids(a[0]); if (!a[0].length || !STANCES.includes(a[1])) return false; break;
+      case 'cmdFormation': a[0] = ids(a[0]); if (!a[0].length || !FORMATIONS.includes(a[1])) return false; break;
       case 'cmdAttack': case 'cmdGather': case 'cmdBuild': case 'cmdStop': case 'cmdExplore': case 'cmdBoard': case 'cmdReturn':
         a[0] = ids(a[0]); if (!a[0].length) return false; break;
       case 'cmdUnload': if (!own(a[0]) || !fin(a[1]) || !fin(a[2])) return false; break;
@@ -728,6 +733,8 @@ export class Game {
   isEntityVisible(e) {
     if (!e) return false; if (this.reveal) return true; if (e.owner === this.me || this.isAlly(e.owner, this.me)) return true;
     if (e.revT !== undefined && this.time - e.revT < 4 && !e.dead && (e.revO === this.me || this.isAlly(e.revO, this.me))) return true;
+    // (owner 2026-11-20) a rival's building plan - a foundation nobody has started on - is shown only to its own side
+    if (e.kind === 'building' && !e.done && !(e.progress > 0)) return false;
     const N = this.map.size, tx = Math.min(N - 1, Math.max(0, e.x | 0)), tz = Math.min(N - 1, Math.max(0, e.z | 0)), f = this.fog[tz * N + tx];
     if (e.kind === 'unit') return f === 2;
     if (e.kind === 'building' && this.cfg.fog === 'explored') return f === 2 || (f >= 1 && !!((e.sv | 0) & (1 << (this.teamOf(this.me) & 31))));   // (explored map: only buildings the team has seen)
@@ -1020,8 +1027,27 @@ export class Game {
     const rx = fz, rz = -fx; // right-hand vector
     const rank = u => { const d = UNITS[u.type]; return d.cls === 'siege' ? 3 : d.cls === 'civil' || !(d.atk > 0) ? 4 : d.range > 0 ? 2 : 1; };
     const groups = [1, 2, 3, 4].map(r => us.filter(u => rank(u) === r)).filter(g => g.length);
-    const total = us.length, width = Math.max(4, Math.min(16, Math.ceil(Math.sqrt(total) * 2.2)));
+    // the formation most of the soldiers are set to (cmdFormation); line by default
+    const fc = { box: 0, wedge: 0 }; let nf = 0;
+    for (const u of us) { if (rank(u) === 4) continue; nf++; if (u.form === 'box' || u.form === 'wedge') fc[u.form]++; }
+    const form = fc.box * 2 > nf ? 'box' : fc.wedge * 2 > nf ? 'wedge' : 'line';
+    const total = us.length, width = form === 'box' ? Math.max(2, Math.ceil(Math.sqrt(total)) * 1.15) : Math.max(4, Math.min(16, Math.ceil(Math.sqrt(total) * 2.2)));
     const out = []; let back = 0, first = true;
+    if (form === 'wedge') {
+      // a V pointing the way: the first unit at the tip, then one on each side per step back (melee first)
+      const order = groups.flat(), sp = 1.25;
+      order.forEach((u, i) => {
+        const r = Math.ceil(i / 2), side = i === 0 ? 0 : i % 2 ? -1 : 1;
+        out.push({ u, x: x + rx * side * r * sp, z: z + rz * side * r * sp, b: r * sp * 0.95 });
+      });
+      // within each step the unit further left takes the left slot (paths do not cross)
+      for (let i = 1; i + 1 < out.length; i += 2) {
+        const a = out[i], b = out[i + 1], la = (a.u.x - cx) * rx + (a.u.z - cz) * rz, lb = (b.u.x - cx) * rx + (b.u.z - cz) * rz;
+        if ((la > lb) !== (a.x * rx + a.z * rz > b.x * rx + b.z * rz)) { const t = a.u; a.u = b.u; b.u = t; }
+      }
+      for (const o of out) { o.x -= fx * o.b; o.z -= fz * o.b; back = Math.max(back, o.b); delete o.b; }
+      groups.length = 0;
+    }
     for (const g of groups) {
       const sp = rank(g[0]) === 3 ? 2.0 : 1.15, cols = Math.min(g.length, Math.max(1, Math.round(width * 1.15 / sp)));
       const rows = Math.ceil(g.length / cols);
@@ -1065,6 +1091,11 @@ export class Game {
     const us = this._live(ids).filter(u => u.type === 'villager' && u.owner === b.owner); if (!us.length) return false;
     for (const u of us) this._setOrder(u, { type: 'build', targetId: buildingId, line: b.line || null }, queue);   // (a wall piece: the builder knows its line)
     return true;
+  }
+  cmdFormation(ids, form) {
+    if (!FORMATIONS.includes(form)) return false;
+    let n = 0; for (const u of this._live(ids)) { const d = UNITS[u.type]; if (d.cls === 'civil' || !(d.atk > 0) || u.naval) continue; u.form = form === 'line' ? undefined : form; n++; }
+    return n > 0;
   }
   cmdStance(ids, stance) {
     if (!STANCES.includes(stance)) return false;
@@ -1613,7 +1644,9 @@ export class Game {
           if (u.scanT <= 0) { u.scanT = 0.5; const t = this._acquire(u, u.stance === 'hold' ? (d.range > 0 ? this._wRange(u) : 1.6) : d.los, false, u.type === 'ram'); if (t && !(t.kind === 'building' && this.time < (t['nh' + u.owner] || 0))) { this._engage(u, t); if (u.order !== o) break; } }
         } else if (!u.naval && UNITS[u.type].atk > 0 && UNITS[u.type].cls !== 'civil' && u.type !== 'ram') {
           u.scanT -= dt;
-          if (u.scanT <= 0) { u.scanT = 0.5; const t = this._acquire(u, UNITS[u.type].los, true); if (t && this._canEngage(u, t)) { this._engage(u, t); break; } }
+          // (players 2026-11-19: "the scout I pull away keeps turning to attack": on the move a unit only fights what is
+          // right on its way - within its reach plus a little - and goes on once that foe is MOVE_LEASH tiles behind)
+          if (u.scanT <= 0) { u.scanT = 0.5; const t = this._acquire(u, Math.min(UNITS[u.type].los, (UNITS[u.type].range > 0 ? this._wRange(u) : 1) + MOVE_REACH), true); if (t && this._canEngage(u, t)) { this._engage(u, t); if (u.order && u.order.auto) u.order.mv = true; break; } }
         }
         if (!u.path) {
           let p = o.grp && !u.naval ? this._fieldPath(u, o) : null;
@@ -1646,7 +1679,7 @@ export class Game {
     const t = this.entities.get(o.targetId), d = UNITS[u.type];
     if (!t || t.dead || !this.isEnemy(u.owner, t.owner) || t.kind === 'resource') return this._autoEnd(u, o);
     const m = this.players[u.owner].mods;
-    const leash = o.auto && u.stance === 'defensive' ? DEF_LEASH : (o.lr || d.los) + 5;
+    const leash = o.mv ? MOVE_LEASH : o.auto && u.stance === 'defensive' ? DEF_LEASH : (o.lr || d.los) + 5;
     if (o.auto && Math.hypot(u.x - o.ox, u.z - o.oz) > leash) return this._autoEnd(u, o);
     const range = d.range > 0 ? d.range + (m.range[d.cls] || 0) : 1.0;
     if (o.auto && u.stance === 'hold' && this._edge(u, t) > range + 0.05) return this._autoEnd(u, o);   // (holds its ground)
@@ -2052,7 +2085,15 @@ export class Game {
       if (p.defeated) continue;
       const tc = this.buildings.some(b => b.owner === p.id && b.type === 'towncenter');
       const vil = this.units.some(u => u.owner === p.id && !u.dead && u.type === 'villager');
-      if (!tc && !vil) {
+      // (players 2026-11-19: "the town centers fell but the match did not end" - hidden villagers kept a player in.
+      // Without a town center (a foundation counts) a player has TC_GRACE seconds to start a new one.)
+      if (tc) p.tcLostAt = null;
+      else if (p.tcLostAt == null) {
+        p.tcLostAt = this.time;
+        if (vil && p.id === this.me) this.events.emit('notify', { text: 'Şehir merkezin yıkıldı! ' + (TC_GRACE / 60) + ' dakika içinde yenisini kurmazsan yenilirsin.', type: 'warn' });
+      }
+      const graceOver = !tc && p.tcLostAt != null && this.time - p.tcLostAt >= TC_GRACE;
+      if (!tc && (!vil || graceOver)) {
         p.defeated = true;
         if (p.id !== this.me) this.events.emit('notify', this.isAlly(p.id, this.me) ? { text: 'Bir müttefik uygarlık yıkıldı!', type: 'warn' } : { text: 'Bir rakip uygarlık yıkıldı!', type: 'good' });
         if (p.id === this.me) this.reveal = true;
