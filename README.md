@@ -19,6 +19,7 @@ Tarayıcıda çalışan, özgün bir 3B gerçek zamanlı strateji oyunu. Taş De
 | Shift + sol tık | Seçime ekle / çıkar |
 | Çift tık | Ekrandaki aynı türden tüm birimleri seç |
 | Sağ tık | Yürü, saldır, topla, inşa et / onar; bina seçiliyken toplanma noktası |
+| Köylüyle oduncu kampına / maden ocağına sağ tık | Kampa en yakın ağaçta / madende çalış |
 | Shift + sağ tık | Komutu sıraya ekle |
 | WASD / ok tuşları / ekran kenarı | Kamerayı kaydır (WASD yalnızca kamerayı oynatır) |
 | Fare tekerleği | İmlece doğru yakınlaş / uzaklaş |
