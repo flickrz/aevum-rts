@@ -48,7 +48,9 @@ if (isMain) {
   // ---- spreading
   for (const [type, camp, ns] of [['stone', 'minecamp', [6, 10]], ['gold', 'minecamp', [6, 10]], ['tree', 'lumbercamp', [6, 10]], ['berries', 'mill', [6]]]) {
     for (const n of ns) {
-      const sc = scenario(Game, { type, n, camp, seed: 42 }); if (!ok(sc, `${type} x${n}: scenario set up`)) continue;
+      // (seed 43 since 2026-11-20: 10 workers on one deposit need a second one within reach - MINE_CAP 8 - and the
+      // map seed 42 makes with the 9x9 town center has none by its start stone)
+      const sc = scenario(Game, { type, n, camp, seed: 43 }); if (!ok(sc, `${type} x${n}: scenario set up`)) continue;
       const { g, vs } = sc; let mp = 1e9, lost = 0; const worked = new Set();
       step(g, 20);
       // sample over 40 s: whoever is working at that moment stands apart from every other worker

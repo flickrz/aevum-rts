@@ -6,7 +6,7 @@
 // Difficulty changes decision quality and tempo only (think interval, villager targets, how tightly it
 // follows its plan, counter quality, how often it leaves villagers idle, attack timing / sizes).
 import { UNITS, BUILDINGS, TECHS, AGES, FARM_SLOTS } from '../data.js';
-import { QUEUE_TIME_MUL, unitLos, buildingLos, forDisc } from './game.js';
+import { QUEUE_TIME_MUL, unitLos, buildingLos, forDisc, MINE_CAP } from './game.js';
 
 const MIN = 60;
 const DIFF = {
@@ -53,7 +53,10 @@ const ROLE_W = [
 ];
 const MIL_B = ['barracks', 'archery', 'stable', 'siege', 'factory'];
 const SPREAD_B = MIL_B.concat(['blacksmith', 'temple', 'university', 'academy', 'bank', 'storage']);
-const ECO_TECHS = ['basket', 'axe', 'plow', 'wheelbarrow', 'pickaxe', 'crop', 'loom', 'breeding', 'caravan', 'saw', 'shaft', 'irrigation', 'handcart', 'banking', 'steam', 'guilds', 'nets', 'assembly', 'steelrails', 'coinage'];
+const ECO_TECHS = ['basket', 'axe', 'plow', 'wheelbarrow', 'pickaxe', 'crop', 'loom', 'breeding', 'caravan', 'saw', 'shaft', 'irrigation', 'handcart', 'banking', 'steam', 'guilds', 'nets', 'assembly', 'steelrails', 'coinage',
+  // (2026-11-20) the pasture's own line and the later-age eco steps; town-center ones go through _tcTech
+  'clover', 'winterfold', 'trawl', 'fertilizer', 'twomansaw', 'blasting', 'weighbridge', 'fodder',
+  'thresher', 'steamsaw', 'steampump', 'freightwagon', 'centralbank', 'dairy', 'copper', 'turret'];
 const MIL_TECHS = {
   forging: ['infantry', 'cavalry'], ironcast: ['infantry', 'cavalry'], steel: ['infantry', 'cavalry'],
   fletching: ['ranged'], bodkin: ['ranged'], rifling: ['ranged'], corning: ['ranged'],
@@ -61,8 +64,14 @@ const MIL_TECHS = {
   barding: ['cavalry'], bloodlines: ['cavalry'], husbandry: ['cavalry'],
   siegecraft: ['siege'], ballistics: ['siege'], explosives: ['siege'], siegeeng: ['siege'],
   conscription: ['infantry', 'ranged', 'cavalry', 'siege'],
+  // (2026-11-20) later-age steps
+  dropforge: ['infantry', 'cavalry'], cartridge: ['ranged'], minieball: ['ranged'], smokeless: ['ranged'],
+  buffcoat: ['infantry'], helmet: ['infantry'], forcedmarch: ['infantry'],
+  chainbarding: ['cavalry'], cuirass: ['cavalry'], steelcuirass: ['cavalry'], warhorses: ['cavalry'], steelshoes: ['cavalry'],
+  guncarriage: ['siege'], steelcarriage: ['siege'],
+  mobilization: ['infantry', 'ranged', 'cavalry', 'siege'],
 };
-const DEF_TECHS = ['masonry', 'arrowslits', 'guardtower', 'townwatch', 'herbs', 'garrisonart', 'architecture', 'medicine'];
+const DEF_TECHS = ['masonry', 'arrowslits', 'guardtower', 'townwatch', 'herbs', 'garrisonart', 'architecture', 'medicine', 'bastion', 'concrete', 'shrapnel', 'casemate', 'hospital'];
 const NOT_TYPE = { house: 1, wall: 1, gate: 1, towncenter: 1 };
 
 let BREACH_BUF = null;   // scratch field for _breach (fully rewritten by every sweep; never part of the AI state)
@@ -638,6 +647,7 @@ export class AIController {
     if (!t) return false;
     if (!g.cmdGather([v.id], t.id)) return false;
     work.users.set(t.id, (work.users.get(t.id) || 0) + 1);
+    if (t.type === 'stone' || t.type === 'gold') { const k = 'd' + g._depOf(t); work.users.set(k, (work.users.get(k) || 0) + 1); }
     this.assignT.set(v.id, g.time);
     return true;
   }
@@ -678,6 +688,7 @@ export class AIController {
     for (let i = 0; i < list.length && i < 80; i++) {
       const e = list[i];
       if (e.dead || !(e.amount > 0) || u(e.id) >= lim) continue;
+      if (r !== 'wood' && this.game.mineLoad(this.game._depOf(e), this.pid) + u('d' + this.game._depOf(e)) >= MINE_CAP) continue;   // (a full deposit)
       if (r === 'wood' && !this._openSide(e)) continue;   // (solid forests since 2026-11-14: a tree inside the wood cannot be reached yet)
       if (this._unsafe(e.x, e.z)) continue;
       const sc = e._dd + Math.sqrt(d2(e.x, e.z, v.x, v.z)) * 0.15 + u(e.id) * 3;
@@ -773,6 +784,8 @@ export class AIController {
     if (!has('basket') && vn >= 9 && this.unlocked('tech', 'basket')) return 'basket';
     if (!has('wheelbarrow') && vn >= 22 && this.unlocked('tech', 'wheelbarrow')) return 'wheelbarrow';
     if (!has('loom') && (this.lostVil >= 3 || c.age >= 2) && this.unlocked('tech', 'loom')) return 'loom';
+    if (!has('feltvest') && vn >= 25 && this.unlocked('tech', 'feltvest')) return 'feltvest';
+    if (!has('backpack') && vn >= 25 && this.unlocked('tech', 'backpack')) return 'backpack';
     return null;
   }
 
@@ -784,7 +797,9 @@ export class AIController {
     if (type !== 'farm' && type !== 'pasture' && c.pendingB >= d.builds + (essential ? 1 : 0)) return false;
     let ok = false;
     const H = c.home, ed = c.edir;
-    if (type === 'market') ok = this.tryBuild(c, type, 11, 22, H, 2, { x: -ed.x, z: -ed.z });
+    // (radii: tiles from the middle of the town center to the middle of the new building - wider since the footprints
+    // grew on 2026-11-20: the town center 9x9, most buildings 7x7)
+    if (type === 'market') ok = this.tryBuild(c, type, 11, 26, H, 2, { x: -ed.x, z: -ed.z });
     else if (type === 'towncenter') {
       // another town center beside a resource field no town center of ours covers yet; each one further out
       const idx = this._resIndex(c), far = 30 + 12 * Math.max(0, c.tcs.length - 1);
@@ -793,21 +808,43 @@ export class AIController {
       const near = (p, q) => d2(p.x, p.z, H.x, H.z) - d2(q.x, q.z, H.x, H.z) || p.id - q.id;
       // (gold / stone fields first; a forest edge only when none is left)
       const site = idx.gold.concat(idx.stone).filter(fits).sort(near)[0] || idx.tree.filter(fits).sort(near)[0];
-      ok = this.tryBuild(c, type, 3, 10, site ? { x: site.x, z: site.z } : { x: H.x - ed.x * 16, z: H.z - ed.z * 16 }, 3);
-      if (!ok && site && c.can(def.cost)) bad.add(site.id);   // (no room there: the next field next time)
-    } else if (type === 'castle') ok = this.tryBuild(c, type, 7, 16, H, 3, ed);
-    else if (type === 'tower') ok = this.tryBuild(c, type, 6, 10, H, 1, ed);
-    else if (type === 'lumbercamp' || type === 'minecamp') { const at = this._campSite(c, type, null); ok = !!at && this.tryBuild(c, type, 0, 5, at, 1); }
+      // (the 9x9 town center of 2026-11-20 rarely fits within 10 tiles of a tile of the field: up to 14, then a little
+      // further toward home - between the field and the base - before the field is given up)
+      const at = site ? { x: site.x, z: site.z } : { x: H.x - ed.x * 16, z: H.z - ed.z * 16 };
+      ok = this.tryBuild(c, type, 3, 14, at, 3);
+      if (!ok && site && this.noSpot) {
+        const hl = Math.hypot(H.x - site.x, H.z - site.z) || 1;
+        ok = this.tryBuild(c, type, 3, 12, { x: site.x + (H.x - site.x) / hl * 7, z: site.z + (H.z - site.z) / hl * 7 }, 3);
+      }
+      // (no room there: the whole field - every known tile of that kind round the site - is given up, not one tile of
+      // it a time: the next field next time)
+      if (!ok && site && this.noSpot && c.can(def.cost)) {
+        const fld = site.type === 'tree' ? idx.tree : site.type === 'gold' ? idx.gold : idx.stone, fr = site.type === 'tree' ? 8 : 6;
+        for (const e of fld) if (d2(e.x, e.z, site.x, site.z) <= fr * fr) bad.add(e.id);
+        bad.add(site.id);
+      }
+    } else if (type === 'castle') {
+      // (the 9x9 castle of 2026-11-20: toward the enemy first, then anywhere round home a little further out)
+      ok = this.tryBuild(c, type, 9, 24, H, 3, ed);
+      if (!ok && this.noSpot) ok = this.tryBuild(c, type, 9, 34, H, 3);
+    }
+    else if (type === 'tower') ok = this.tryBuild(c, type, 8, 13, H, 1, ed);
+    else if (type === 'lumbercamp' || type === 'minecamp') { const at = this._campSite(c, type, null); ok = !!at && this.tryBuild(c, type, 0, 6, at, 1); }
     else if (type === 'mill') ok = false;   // (legacy: old saves only)
     else {
       // the base grows outward: production and tech buildings go round each town center in turn and towards the
       // front (part of the way to the enemy: on hard past the middle of the map), not all packed round the first one
       const at = SPREAD_B.includes(type) ? this._spreadAnchor(c, type) : H;
-      ok = this.tryBuild(c, type, 5, 30, at, (def.size || 1) >= 3 ? 2 : 1);
-      if (!ok && at !== H) ok = this.tryBuild(c, type, 5, 30, H, (def.size || 1) >= 3 ? 2 : 1);
+      // (the front point: its home side first and at most 8 tiles past it - the 7x7 buildings of 2026-11-20 found no
+      // room right at it and went up to 15 tiles beyond, towards the enemy, which then pulled the defence out of the base)
+      const front = !!at.front, nb = (def.size || 1) >= 3 ? 2 : 1;
+      ok = this.tryBuild(c, type, 5, 36, at, nb, front ? { x: -ed.x, z: -ed.z, home: H, lim: Math.hypot(at.x - H.x, at.z - H.z) + 8 } : undefined);
+      if (!ok && at !== H) ok = this.tryBuild(c, type, 5, 36, H, nb);
       // (players 2026-11-19: the hard AI stayed in the Middle Ages - a crowded base had no room for the university
       // within 30 tiles, so the age-up waited forever with thousands banked): a building the next age needs looks further out
-      if (!ok && essential && c.reqMissing && c.reqMissing.includes(type) && c.can(def.cost)) ok = this.tryBuild(c, type, 24, 56, H, 2);
+      // (2026-11-20, the 7x7 / 9x9 footprints: any essential building - the siege workshop, a stable - with no room left
+      // within 36 tiles does the same instead of blocking its cost for the rest of the game)
+      if (!ok && essential && (this.noSpot || (c.reqMissing && c.reqMissing.includes(type))) && c.can(def.cost)) ok = this.tryBuild(c, type, 24, 56, H, 2);
     }
     if (ok) c.pendingB++;
     return ok;
@@ -821,7 +858,7 @@ export class AIController {
     if (!anchors.length) anchors.push(H);
     // (the front moves out age by age: 35 tiles in the Bronze Age ... 80 in the Industrial, at most this.d.fwd of the way)
     const fd = Math.min(L * this.d.fwd, 20 + 15 * c.age);
-    if (c.age >= 1 && fd > 16) anchors.push(this._freeish(H.x + ed.x * fd, H.z + ed.z * fd));
+    if (c.age >= 1 && fd > 16) anchors.push({ ...this._freeish(H.x + ed.x * fd, H.z + ed.z * fd), front: true });
     const n = c.blds.filter(b => SPREAD_B.includes(b.type)).length;
     return anchors[(n + this.countB(c, type)) % anchors.length];
   }
@@ -840,7 +877,8 @@ export class AIController {
     if (!c.can(BUILDINGS[type].cost)) { if (c.work && c.work.cnt.food < (c.want ? c.want.food : 0) - 2) c.block(BUILDINGS[type].cost, type); return; }
     // (the big farm needs room: it is searched farther out)
     const big = type === 'farm';
-    if (!this.tryBuild(c, type, 3, big ? 26 : 16, { x: anchor.x, z: anchor.z }, big ? 2 : 1)) this.tryBuild(c, type, 3, big ? 34 : 20, c.home, big ? 2 : 1);
+    // (radii wider since 2026-11-20: the 9x9 town center and pasture)
+    if (!this.tryBuild(c, type, 3, big ? 28 : 20, { x: anchor.x, z: anchor.z }, big ? 2 : 1) && !this.tryBuild(c, type, 3, big ? 36 : 26, c.home, big ? 2 : 1) && big && this.noSpot) this.tryBuild(c, type, 30, 44, c.home, 2);   // (the 12x12 farm, a base of 9x9 / 7x7 buildings: past the walls too)
   }
 
   _ecoTechs(c) {
@@ -853,8 +891,11 @@ export class AIController {
     const units = c.units;
     for (const t of ECO_TECHS) {
       if (has(t) || !TECHS[t] || !this.unlocked('tech', t)) continue;
-      if (t === 'basket' || t === 'wheelbarrow' || t === 'loom') continue; // town center, see _tcTech
-      if (t === 'breeding' && cnt('pasture') < 2) continue;
+      if (t === 'basket' || t === 'wheelbarrow' || t === 'loom' || t === 'feltvest' || t === 'backpack') continue; // town center, see _tcTech
+      if ((t === 'breeding' || t === 'clover' || t === 'winterfold' || t === 'fodder' || t === 'dairy') && cnt('pasture') < 2) continue;
+      if (t === 'trawl' && units.filter(u => u.type === 'fishboat').length < 3) continue;
+      if ((t === 'copper' || t === 'turret') && units.filter(u => u.type === 'galley' || u.type === 'galleon' || u.type === 'ironclad').length < 3) continue;
+      if (t === 'centralbank' && cnt('bank') < 1) continue;
       if (t === 'caravan' && units.filter(u => u.type === 'tradecart').length < 2) continue;
       if (t === 'guilds' && units.filter(u => u.type === 'tradecart').length < 3) continue;
       if (t === 'nets' && units.filter(u => u.type === 'fishboat').length < 2) continue;
@@ -862,8 +903,8 @@ export class AIController {
       if (t === 'banking' && cnt('bank') < 1) continue;
       if (t === 'assembly' && units.filter(u => u.type === 'artillery' || u.type === 'cannon').length < 2) continue;
       if (t === 'steelrails' && !(this.safe(() => this.game.railPairs()) || []).some(p => p.owner === this.pid)) continue;
-      if ((t === 'plow' || t === 'crop' || t === 'irrigation') && cnt('farm') < 1) continue;
-      if ((t === 'pickaxe' || t === 'shaft') && c.work && c.work.cnt.gold + c.work.cnt.stone < 3) continue;
+      if ((t === 'plow' || t === 'crop' || t === 'irrigation' || t === 'fertilizer' || t === 'thresher') && cnt('farm') < 1) continue;
+      if ((t === 'pickaxe' || t === 'shaft' || t === 'blasting' || t === 'steampump') && c.work && c.work.cnt.gold + c.work.cnt.stone < 3) continue;
       const b = c.blds.find(x => x.done && BUILDINGS[x.type].researches.includes(t) && !(x.queue || []).length);
       if (!b) { if (peek && c.blds.some(x => x.done && BUILDINGS[x.type].researches.includes(t))) return { tech: t, b: null }; continue; }
       return { tech: t, b };
@@ -882,7 +923,7 @@ export class AIController {
     for (const t in MIL_TECHS) {
       if (has(t) || !TECHS[t] || !this.unlocked('tech', t)) continue;
       let s = 0; for (const cl of MIL_TECHS[t]) s += sh[cl] || 0;
-      if (t === 'conscription') s = 0.6;
+      if (t === 'conscription' || t === 'mobilization') s = 0.6;
       if (MIL_TECHS[t][0] === 'siege' && c.mil.filter(u => UNITS[u.type].cls === 'siege').length < 2) continue;
       s -= costSum(TECHS[t].cost) / 4000;
       if (s > bs) {
@@ -950,7 +991,7 @@ export class AIController {
       const towers = this.countB(c, 'tower');
       if (towers < d.towers[age] + (c.surge ? d.towersX : 0) && c.can(BUILDINGS.tower.cost)) {
         const camp = c.blds.find(b => (b.type === 'minecamp' || b.type === 'lumbercamp') && b.done && d2(b.x, b.z, c.home.x, c.home.z) > 12 * 12 && !c.blds.some(t => t.type === 'tower' && d2(t.x, t.z, b.x, b.z) < 8 * 8));
-        if (camp ? this.tryBuild(c, 'tower', 3, 7, { x: camp.x, z: camp.z }, 1) : this.tryBuild(c, 'tower', 6, 11, c.home, 1, c.edir)) c.pendingB++;
+        if (camp ? this.tryBuild(c, 'tower', 4, 8, { x: camp.x, z: camp.z }, 1) : this.tryBuild(c, 'tower', 8, 14, c.home, 1, c.edir)) c.pendingB++;
       }
     }
     if (age >= 2 && d.castle && !this.countB(c, 'castle') && (this.countB(c, 'university', true) || age >= 3) && c.can(BUILDINGS.castle.cost)) this._buildType(c, 'castle');
@@ -1284,9 +1325,13 @@ export class AIController {
     return true;
   }
   // a new building must not stand on the planned ring (or a corner tower's spot) nor in front of / behind a gate
-  _wallClash(tx, tz, size) {
+  // (a town center or a castle whose middle stands on or outside the ring line may cover the band: the wall runs into
+  //  it from both sides, the building - solid, as a player would set it - closes the ring there itself; it still keeps
+  //  clear of the gates)
+  _wallClash(tx, tz, size, type) {
     const W = this.wall; if (!W) return false;
     for (const gt of W.gates) { const [mx, mz] = gt.t[1]; if (tx - 4 <= mx && tx + size + 3 >= mx && tz - 4 <= mz && tz + size + 3 >= mz) return true; }
+    if ((type === 'towncenter' || type === 'castle') && Math.max(Math.abs(tx + size / 2 - W.cx), Math.abs(tz + size / 2 - W.cz)) >= W.R) return false;
     for (let z = tz - 1; z <= tz + size; z++) for (let x = tx - 1; x <= tx + size; x++) {
       const r = Math.max(Math.abs(x - W.cx), Math.abs(z - W.cz));
       if (r >= W.R - 2 && r <= W.R + 1) {
@@ -1301,8 +1346,10 @@ export class AIController {
   findSpot(type, cx, cz, minR, maxR, dir) {
     const g = this.game, def = BUILDINGS[type];
     if (!def) return null;
-    // (big footprints - the 12x12 farm - on a finer grid: on a coarse one a free spot rarely lines up)
-    const N = g.map.size, size = def.size || 1, step = size >= 9 ? 3 : size <= 3 ? 2 : size + 1;   // (3x3 towers too: a 4-grid round a camp has ~5 spots)
+    // (big footprints - the 12x12 farm - on a finer grid: on a coarse one a free spot rarely lines up; an odd size from
+    // 5 up on a grid of half its size plus one - 7 -> 4, 9 -> 5 - so two of a kind still keep a tile between them; a 4x4
+    // camp searched close to its deposit on a 2-grid, as the 3x3 one was: on a 5-grid the few tiles there rarely line up)
+    const N = g.map.size, size = def.size || 1, step = size >= 12 ? 3 : size <= 3 || (size === 4 && maxR <= 8) ? 2 : size & 1 ? (size + 1) / 2 : size + 1;   // (3x3 towers too: a 4-grid round a camp has ~5 spots)
     const bx = Math.floor(cx), bz = Math.floor(cz);
     for (let r = minR; r <= maxR; r++) {
       const cands = [];
@@ -1311,6 +1358,8 @@ export class AIController {
           if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
           const tx = bx + dx, tz = bz + dz;
           if (tx < 2 || tz < 2 || tx + size > N - 2 || tz + size > N - 2) continue;
+          // (dir.home / dir.lim: no further from home than that - a front building stays on the home side of its point)
+          if (dir && dir.home && d2(tx + size / 2, tz + size / 2, dir.home.x, dir.home.z) > dir.lim * dir.lim) continue;
           if (((tx % step) + step) % step !== 0 || ((tz % step) + step) % step !== 0) continue;
           const L = Math.hypot(dx, dz) || 1;
           cands.push([tx, tz, (dir ? -(dx * dir.x + dz * dir.z) / L : 0) + this.rand() * 0.8]);
@@ -1322,7 +1371,7 @@ export class AIController {
         // (seen ground only - its centre, or for a big footprint one of its corners: a 12x12 farm's centre lies
         //  beyond the base's sight even when its near corner is right at the edge of it)
         const seen = this.explored(tx + size / 2, tz + size / 2) || (size >= 6 && [[0, 0], [size, 0], [0, size], [size, size]].some(([ox, oz]) => this.explored(tx + ox, tz + oz)));
-        if (seen && !(this.wall && this._wallClash(tx, tz, size)) && !this._lostNear(tx + size / 2, tz + size / 2, size / 2) && this.safe(() => g.canPlace(type, tx, tz, this.pid))) return { tx, tz };
+        if (seen && !(this.wall && this._wallClash(tx, tz, size, type)) && !this._lostNear(tx + size / 2, tz + size / 2, size / 2) && this.safe(() => g.canPlace(type, tx, tz, this.pid))) return { tx, tz };
       }
     }
     return null;
@@ -1330,15 +1379,17 @@ export class AIController {
 
   tryBuild(c, type, minR, maxR, at, nBuilders, dir) {
     const g = this.game, def = BUILDINGS[type];
+    this.noSpot = false;
     if (!def || !this.unlocked('building', type) || !g.canAfford(this.pid, def.cost)) return false;
     const small = type === 'farm' || type === 'pasture';
     if (!small && type !== 'towncenter' && c.work && c.work.build >= Math.max(3, Math.ceil(c.vills.length * 0.16))) return false;
     const ctr = at || c.home;
     const key = type + ':' + maxR + ':' + Math.round(ctr.x / 4) + ':' + Math.round(ctr.z / 4);
-    if (this.failPlace[key] && g.time - this.failPlace[key] < 20) return false;
+    // (noSpot: this call found no free spot - not a builder or resource shortfall - for callers that fall back further)
+    if (this.failPlace[key] && g.time - this.failPlace[key] < 20) { this.noSpot = true; return false; }
     const size = def.size || 1;
     const spot = this.findSpot(type, ctr.x - size / 2, ctr.z - size / 2, minR, maxR, dir);
-    if (!spot) { this.failPlace[key] = g.time; return false; }
+    if (!spot) { this.failPlace[key] = g.time; this.noSpot = true; return false; }
     const cx = spot.tx + size / 2, cz = spot.tz + size / 2;
     const work = c.work;
     const ids = [];
@@ -1384,7 +1435,7 @@ export class AIController {
       }
       if (n < 2) continue;
       const at = this._campSite(c, type, { x: sx / n, z: sz / n });
-      if (at && this.tryBuild(c, type, 0, 5, at, 1)) return true;
+      if (at && this.tryBuild(c, type, 0, 6, at, 1)) return true;
     }
     return false;
   }
@@ -1421,7 +1472,9 @@ export class AIController {
     for (let i = 0; i < cand.length && i < 24; i++) {
       const e = cand[i][2]; if (!this._campOk(c, type, e.x, e.z)) continue;
       const hx = c.home.x - e.x, hz = c.home.z - e.z, hl = Math.hypot(hx, hz) || 1;
-      return { x: e.x + hx / hl * 2.5, z: e.z + hz / hl * 2.5 };
+      // (the camp's middle half its size plus a tile from the deposit, toward home: 2.5 for the 3x3, 3 for the 4x4)
+      const off = (BUILDINGS[type].size || 3) / 2 + 1;
+      return { x: e.x + hx / hl * off, z: e.z + hz / hl * off };
     }
     return null;
   }

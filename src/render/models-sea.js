@@ -248,6 +248,10 @@ const SEA_BUILD = {
 };
 export { SEA_BUILD };
 
+// the pasture's sheep keep the size (and walking speed) they had in the 6x6 pen, which drew its 3x3 design 2x: a
+// bigger pen (the 9x9 of 2026-11-20 draws it 3x, k = 3) scales them back by 2 / k. Placed pastures and the
+// placement ghost both use it (entities.js)
+export const pastureSheepK = k => Math.min(1, 2 / (k || 1));
 // per-frame building hook: sheep in the pasture
 const _sv = new THREE.Vector3();
 export function seaAnimBuilding(view, v, e, dt, t, U) {
@@ -256,12 +260,13 @@ export function seaAnimBuilding(view, v, e, dt, t, U) {
   if (!e.done) return;
   const sh = live.userData.sheep; if (!sh) return;
   const n = Math.max(0, Math.min(8, ((e.pasture && e.pasture.sheep) != null ? e.pasture.sheep : 3) | 0));
+  const sp = .22 * pastureSheepK(v.k);   // (model units a second under the k-scaled root: the same world speed in any pen)
   for (let i = 0; i < sh.length; i++) {
     const s = sh[i], u = s.userData;
     s.visible = i < n; if (!s.visible) continue;
     const dx = u.tx - s.position.x, dz = u.tz - s.position.z, d = Math.sqrt(dx * dx + dz * dz);
     if (d > .03) {
-      const st = Math.min(d, dt * .22);
+      const st = Math.min(d, dt * sp);
       s.position.x += dx / d * st; s.position.z += dz / d * st;
       let dr = Math.atan2(dx, dz) - s.rotation.y; while (dr > PI) dr -= PI * 2; while (dr < -PI) dr += PI * 2;
       s.rotation.y += dr * Math.min(1, dt * 4);

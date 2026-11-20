@@ -37,6 +37,9 @@ export function onlinePanel(ui) {
   const all = h('button', 'mbtn small primary op-all', 'Herkesi Davet Et'); all.type = 'button';
   const msg = h('div', 'op-msg hidden'); msg.setAttribute('role', 'status');
   const list = h('div', 'op-list', 'Yükleniyor...');
+  // (owner 2026-11-20: the list grew with every player and pushed the menu off the screen) only the rows scroll; the
+  // wheel over them scrolls the list and nothing behind the menu
+  list.addEventListener('wheel', (ev) => ev.stopPropagation(), { passive: true });
   wrap.append(head, all, msg, list);
   const say = (t, good) => { msg.textContent = t || ''; msg.className = 'op-msg' + (t ? '' : ' hidden') + (good ? ' ok' : ''); };
 

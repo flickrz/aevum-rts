@@ -171,6 +171,18 @@ export class CloudSync {
     return this.fs.commit([{ set: this._base() + '/chatlog/' + id, data, serverTime: ['at'] }]).then(() => true, () => false);
   }
 
+  // ---------- desync log (owner 2026-11-20: see why a multiplayer match split; read with tools/read-desync.mjs) ----------
+  // one record per client and event -> users/{uid}/desync/{id}: this client's state hash and section summary at the
+  // tick that split, the other players' hashes, the game version and the browser engine family. Best effort.
+  logDesync(rec) {
+    if (!this.auth.user || !rec) return Promise.resolve(false);
+    const id = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    let data;
+    try { data = JSON.parse(JSON.stringify(rec)); } catch { return Promise.resolve(false); }
+    data.uid = this.auth.user.uid; data.at = null;
+    return this.fs.commit([{ set: this._base() + '/desync/' + id, data, serverTime: ['at'] }]).then(() => true, () => false);
+  }
+
   // ---------- state ----------
   get user() { return this.auth.user; }
   get loggedIn() { return !!this.auth.user; }
@@ -538,6 +550,11 @@ export class CloudSync {
   ticketNow() { return this.loggedIn && this._tkt && this._tkt.fb === this.auth.user.uid && this._tkt.exp > this.now() ? this._tkt.ticket : null; }
   // the game's owner (AEVUM_OWNERS on the server) sees the player statistics
   async isOwner() { try { return !!(await this.relayTicket()).owner; } catch (e) { return false; } }
+  // the owner tells every open tab that an update comes: {inSec} (10..600, default 60) or {cancel: true} -> {ver, notice}
+  async announce(body) {
+    const t = await this.relayTicket();
+    return this._relay('/mp/announce', body || {}, t.ticket);
+  }
   // -> {online: {total, menu, sp, mp, signedIn}, today, days: [{day, visitors, players, sp, mp, peak}], persisted}
   async stats() {
     const t = await this.relayTicket();

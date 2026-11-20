@@ -26,6 +26,25 @@ const PIECE = { wallseg: 1, wallpost: 1, gatehouse: 1 };
 // default: the longer one (a gatehouse); per-file overrides where the piece is about as long as it is thick
 const RUN_Z = {};
 const DIR = './assets/models/';
+// (2026-11-20: the host's free monthly bandwidth ran out, the models were most of it) on the live site the models come
+// from jsDelivr, which serves the public repository's files for free and lets browsers keep them for a year. Pinned to
+// the public snapshot that holds these exact files: test/cdn-pin-test.mjs checks they still match before a release, and
+// the pin moves to the new snapshot when a model changes. Local servers and ?cdn=0 load them from here; if the CDN fails,
+// the file is loaded from here too.
+export const CDN_SHA = '9dd91a9a362918cc2e8f5f2c51e50f62a516c617';
+const CDN_DIR = 'https://cdn.jsdelivr.net/gh/flickrz/aevum-rts@' + CDN_SHA + '/assets/models/';
+const USE_CDN = (() => {
+  try {
+    if (/[?&]cdn=0/.test(location.search)) return false;
+    if (/[?&]cdn=1/.test(location.search)) return true;   // (to try the CDN on a local server)
+    const h = location.hostname;
+    return !(h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h.endsWith('.localhost'));
+  } catch { return false; }
+})();
+function loadGlb(rel, ok, fail) {
+  if (!USE_CDN) { loader.load(DIR + rel, ok, undefined, fail); return; }
+  loader.load(CDN_DIR + rel, ok, undefined, () => loader.load(DIR + rel, ok, undefined, fail));
+}
 const ERA_STARTED = new Set(), ERA_DONE = new Set(), WANTED = new Set();   // (WANTED: eras a building asked for)
 let loader = null;
 
@@ -296,11 +315,11 @@ export function loadEra(era, pre) {
   // once an era a building asked for is in (or failed), the next one (only that one) starts loading in the background, so an age-up finds its models ready
   const settle = () => { if (--left > 0) return; ERA_DONE.add(era); version++; if (WANTED.has(era)) setTimeout(() => loadEra(era + 1, true), 1500); };
   for (const type of FILES[era]) {
-    loader.load(DIR + era + '/' + type + '.glb', (gltf) => prepLater(() => {
+    loadGlb(era + '/' + type + '.glb', (gltf) => prepLater(() => {
       const fin = (r) => { if (r) { GEO.set(era + '|' + type, r); version++; WARM_Q.push(r); } settle(); };
       try { prepare(gltf.scene, PIECE[type], era + '|' + type, fin); }
       catch (err) { console.warn('[glb] prepare failed', era, type, err); settle(); }
-    }), undefined, (err) => { console.warn('[glb] load failed', era, type, err && err.message); settle(); });
+    }), (err) => { console.warn('[glb] load failed', era, type, err && err.message); settle(); });
   }
 }
 // an era's files have all arrived (or failed): a building can be drawn in it without waiting any longer
@@ -433,10 +452,10 @@ export function loadTrees() {
   treesStarted = true;
   if (!loader) { loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder); }
   for (const kind of Object.keys(TREES)) {
-    loader.load(DIR + 'trees/' + kind + '.glb', (gltf) => {
+    loadGlb('trees/' + kind + '.glb', (gltf) => {
       try { const r = prepTree(gltf.scene, TREES[kind][0], TREES[kind][1]); if (r) { TREE_GEO[kind] = r; treeVer++; } }
       catch (err) { console.warn('[glb] tree failed', kind, err); }
-    }, undefined, (err) => console.warn('[glb] tree load failed', kind, err && err.message));
+    }, (err) => console.warn('[glb] tree load failed', kind, err && err.message));
   }
 }
 export function treeVersion() { return treeVer; }
@@ -471,8 +490,8 @@ export function loadCrop() {
   if (CROP !== null || !enabled()) return;
   CROP = false;   // (loading)
   if (!loader) { loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder); }
-  loader.load(DIR + 'trees/crop.glb', (gltf) => { try { CROP = prepCrop(gltf.scene) || false; } catch (err) { CROP = false; } },
-    undefined, (err) => console.warn('[glb] crop load failed', err && err.message));
+  loadGlb('trees/crop.glb', (gltf) => { try { CROP = prepCrop(gltf.scene) || false; } catch (err) { CROP = false; } },
+    (err) => console.warn('[glb] crop load failed', err && err.message));
 }
 // the wheat clump geometry, or null while it is not loaded
 export function cropGeo() { return CROP || null; }

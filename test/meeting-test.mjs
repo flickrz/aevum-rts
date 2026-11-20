@@ -14,7 +14,8 @@ const inside = (u, b) => (u.x | 0) >= b.tx && (u.x | 0) < b.tx + b.size && (u.z 
 
 console.log('-- 3: foundations are passable until finished');
 {
-  const g = mk(), N = g.map.size, [tx, tz] = spot(g, 'barracks', 10);
+  // (24 out: the walker keeps out of reach of the 9x9 town center's arrows and the starting spearman beside it)
+  const g = mk(), N = g.map.size, [tx, tz] = spot(g, 'barracks', 24);
   const v0 = g._blkV;
   const b = g._addBuilding('barracks', 0, tx, tz, false), s = b.size;
   let all2 = true; for (let j = 0; j < s; j++) for (let i = 0; i < s; i++) if (g.map.blocked[(tz + j) * N + tx + i] !== 2) all2 = false;
@@ -27,7 +28,8 @@ console.log('-- 3: foundations are passable until finished');
   const u = g._addUnit('villager', 1, tx - 4 + 0.5, tz + s / 2), goal = { x: tx + s + 4 + 0.5, z: tz + s / 2 };
   g.cmdMove([u.id], goal.x, goal.z); let crossed = false, best = 1e9, t = 0;
   for (let i = 0; i < 30 * 10 && best > 0.1; i++) { g.update(1 / 30); if (inside(u, b)) crossed = true; best = Math.min(best, Math.hypot(u.x - goal.x, u.z - goal.z)); t = i / 30; }
-  ok(crossed && best < 0.1 && t < 6.5, `an enemy unit walks straight across the foundation (${t.toFixed(1)} s for ${(9 + s)} tiles)`);
+  // (6.5 s for the 14 tiles round a 5x5 foundation: the same pace for a bigger one)
+  ok(crossed && best < 0.1 && t < 6.5 * (9 + s) / 14, `an enemy unit walks straight across the foundation (${t.toFixed(1)} s for ${(9 + s)} tiles)`);
   // finished: solid, the units standing on it step out, flow fields go stale
   const w = g._addUnit('spearman', 0, tx + s / 2, tz + s / 2), e = g._addUnit('archer', 1, tx + 0.6, tz + 0.6);
   const v1 = g._blkV; g._complete(b);
@@ -119,7 +121,8 @@ console.log('-- 6 / 10: farms from the Bronze Age, the mill techs on the farm, n
   ok(!!farm, 'a farm can be placed in age 1');
   ok(!g.research(fid, 'plow'), 'an unfinished farm offers no research');
   g._complete(farm);
-  ok(['plow', 'crop', 'irrigation', 'breeding'].every(t => BUILDINGS.farm.researches.includes(t)) && !BUILDINGS.mill.researches.length, 'plow / crop / irrigation / breeding moved to the farm');
+  // (2026-11-20) the pasture has its own line (Seçici Islah, Yonca Otlağı, Kış Ağılı, Yem Ambarı, Mandıra); the farm keeps the tillage techs
+  ok(['plow', 'crop', 'irrigation'].every(t => BUILDINGS.farm.researches.includes(t)) && !BUILDINGS.farm.researches.includes('breeding') && BUILDINGS.pasture.researches.includes('breeding') && !BUILDINGS.mill.researches.length, 'plow / crop / irrigation moved to the farm, breeding at the pasture');
   ok(g.research(fid, 'plow') && farm.queue.length === 1, 'a finished farm researches Saban');
   step(g, 25 * QUEUE_TIME_MUL + 1);
   ok(p.techs.has('plow') && p.mods.farm === 0.5, 'Saban done at the farm (+50 %)');

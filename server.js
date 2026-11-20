@@ -3,6 +3,8 @@
   const http = await import('node:http');
   const fs = await import('node:fs');
   const path = await import('node:path');
+  const zlib = await import('node:zlib');
+  const crypto = await import('node:crypto');
 
   const ROOT = path.dirname(path.resolve(process.argv[1]));
   const PORT = Number(process.env.PORT) || 5173;
@@ -27,8 +29,70 @@
   });
   if (!SA) console.warn('AEVUM_SA yok: istatistikler yalnizca bellekte tutulur.');
   setInterval(() => { STATS.flush().catch(() => {}); }, 3 * 60 * 1000).unref();
-  // a deploy or a restart: write the last minutes of numbers before going
-  for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, () => { const end = () => process.exit(0); STATS.flush().then(end, end); setTimeout(end, 4000).unref(); });
+  // ---- update notices (owner 2026-11-20: players are told before an update and continue where they left off) ----
+  // How a release goes:
+  //   1. The owner clicks "Güncelleme Duyur" in the main menu (owner only) -> POST /mp/announce {inSec: 60}.
+  //      Every open tab polls GET /mp/notice (every 20 s) and shows a countdown banner. ~15 s before the deadline the
+  //      host of every multiplayer match requests a shared lockstep save, single player autosaves, and the tab notes
+  //      the interrupted match (main menu: "Kesilen maça devam et" for 30 minutes). src/net/notice.js, src/ui/notice-ui.js
+  //   2. The owner waits the 60 s, then pushes. Render builds and starts the new server, then stops this one with
+  //      SIGTERM: we set a 'restart' notice, keep serving ~8 s (polling tabs see it), flush the statistics, exit.
+  //   3. Tabs see a new `ver` from /mp/notice -> "Yeni sürüm hazır · Yenile". A tab on the old files can neither host
+  //      nor join a room with new ones (the build id travels in the lobby hello, src/net/session.js).
+  // The notice lives in memory only (a restart forgets it; the new ver tells the tabs what happened).
+  const BUILD_VER = buildVersion();
+  let notice = null;   // {id, kind: 'update'|'restart', at: ms epoch, msg}
+  const drainEnv = Number(process.env.AEVUM_DRAIN_MS);
+  const DRAIN_MS = process.env.AEVUM_DRAIN_MS && drainEnv >= 0 ? Math.min(25000, drainEnv) : 8000;
+  function buildVersion() {
+    // a short hash over what the browser runs (index.html, style.css, src/**), so a server-only change does not make
+    // every tab reload; RENDER_GIT_COMMIT is only the fallback when the files cannot be read
+    let latest = '0';
+    try { const m = /\bv:\s*'([^']+)'/.exec(fs.readFileSync(path.join(ROOT, 'src', 'changelog.js'), 'utf8')); if (m) latest = m[1]; } catch { /* ignore */ }
+    try {
+      const h = crypto.createHash('sha1');
+      const files = ['index.html', 'style.css'];
+      const walk = (rel) => {
+        const list = fs.readdirSync(path.join(ROOT, rel), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+        for (const d of list) { const r = rel + '/' + d.name; if (d.isDirectory()) walk(r); else if (d.isFile()) files.push(r); }
+      };
+      walk('src');
+      for (const f of files) { h.update(f + '\0'); h.update(fs.readFileSync(path.join(ROOT, f))); h.update('\0'); }
+      return latest + '-' + h.digest('hex').slice(0, 10);
+    } catch (e) {
+      const c = String(process.env.RENDER_GIT_COMMIT || '').replace(/[^0-9a-f]/gi, '').slice(0, 10);
+      return latest + '-' + (c || 't' + Date.now().toString(36));
+    }
+  }
+  function noticeJson() {
+    const now = Date.now();
+    // an update that was announced but never came is dropped 5 minutes after its time
+    if (notice && notice.kind === 'update' && now > notice.at + 5 * 60000) notice = null;
+    return JSON.stringify({ ver: BUILD_VER, notice: notice ? { id: notice.id, kind: notice.kind, at: notice.at, in: Math.max(0, notice.at - now), msg: notice.msg } : null });
+  }
+  // POST /mp/announce is for the game's owner only: the same check as the statistics (a ticket whose account is in AEVUM_OWNERS;
+  // with AEVUM_NO_AUTH a dev ticket, e.g. fb 'devowner1' with AEVUM_OWNERS=devowner1)
+  const ownerCheck = (me) => (!me ? 401 : OWNERS.has(me.fb) ? 0 : 403);
+  // ...or a short token signed with the game's service account key (tools/announce.mjs on the publisher's machine,
+  // owner 2026-11-20: "otomatik hale getir"): checked against Google's public certificates of that account
+  const AAM = await import(pathToFileURL(path.join(ROOT, 'srv', 'announce-auth.mjs')).href);
+  const announceAuth = AAM.createAnnounceAuth({ email: SA && SA.client_email });
+  // a deploy or a restart: tell the tabs, keep serving a few seconds, write the last minutes of numbers, then go
+  let stopping = false;
+  function onStopSignal() {
+    if (stopping) { process.exit(0); return; }   // (a second Ctrl+C: right away)
+    stopping = true;
+    notice = { id: 'r' + Date.now().toString(36), kind: 'restart', at: Date.now() + DRAIN_MS, msg: (notice && notice.msg) || '' };
+    let flushed = false, drained = false;
+    const end = () => { if (flushed && drained) process.exit(0); };
+    STATS.flush().then(() => { flushed = true; end(); }, () => { flushed = true; end(); });
+    setTimeout(() => { drained = true; end(); setTimeout(() => process.exit(0), 4000).unref(); }, DRAIN_MS).unref();
+  }
+  for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, onStopSignal);
+  // (Windows gives a child process no real SIGTERM: test/notice-test.mjs sends it over the IPC channel instead)
+  if (NO_AUTH && typeof process.send === 'function') process.on('message', (m) => { if (m === 'SIGTERM') onStopSignal(); });
+  const GZ_EXT = new Set(['.js', '.mjs', '.css', '.html', '.json', '.svg', '.md', '.txt']);
+  const gzCache = new Map();   // file -> { etag, buf }: the gzipped copy of a text file, per version
   const MIME = {
     '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
     '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.md': 'text/markdown; charset=utf-8',
@@ -170,7 +234,6 @@
 
   // ---- WebSocket peers (GET /mp/ws upgrade): one socket both ways, so a turn packet costs one hop, not a POST
   // plus a long-poll round trip. Minimal RFC 6455 (text frames, ping/pong, close); no dependencies.
-  const crypto = await import('node:crypto');
   const WS_MAX = 65536;
   function wsFrame(op, payload) {
     const n = payload.length;
@@ -265,10 +328,39 @@
   function handleMp(req, res, url) {
     const room = (url.searchParams.get('room') || '').toUpperCase(), peer = url.searchParams.get('peer') || '';
     if (url.pathname === '/mp/ping') { reply(res, 200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }, 'aevum-mp'); return; }
+    // ---- update notice (see the comment at BUILD_VER): every tab asks every 20 s; tiny on purpose ----
+    if (url.pathname === '/mp/notice' && (req.method === 'GET' || req.method === 'HEAD')) { reply(res, 200, J, req.method === 'HEAD' ? undefined : noticeJson()); return; }
+    if (url.pathname === '/mp/announce' && (req.method === 'POST' || req.method === 'DELETE')) {
+      readBody(req, 4096, async (err, buf) => {
+        if (err) { reply(res, 400, J, '{"error":"bad body"}'); return; }
+        const bearer = /^Bearer\s+(\S+)$/.exec(String(req.headers.authorization || ''));
+        let body = {}, signed = null;
+        if (bearer) {
+          try { signed = await announceAuth.verify(bearer[1]); } catch { signed = null; }
+          if (!signed) { reply(res, 403, J, '{"error":"signature"}'); return; }
+          body = signed;   // (the signed values, never the unsigned request body)
+        } else {
+          const code = ownerCheck(identOf(req, url));
+          if (code) { reply(res, code, J, code === 401 ? '{"error":"ticket"}' : '{"error":"owner"}'); return; }
+          if (req.method === 'POST') { try { body = JSON.parse(buf.toString('utf8') || '{}') || {}; } catch { reply(res, 400, J, '{"error":"bad json"}'); return; } }
+        }
+        if (req.method === 'DELETE' || body.cancel === true) {
+          if (notice && notice.kind === 'update') notice = null;   // (a restart that is under way cannot be called off)
+          reply(res, 200, J, noticeJson()); return;
+        }
+        if (stopping) { reply(res, 409, J, '{"error":"Sunucu zaten yeniden başlıyor."}'); return; }
+        const n = Number(body.inSec), inSec = Number.isFinite(n) ? Math.max(10, Math.min(600, Math.round(n))) : 60;
+        const msg = typeof body.msg === 'string' ? body.msg.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 200) : '';
+        notice = { id: 'u' + Date.now().toString(36), kind: 'update', at: Date.now() + inSec * 1000, msg };
+        console.log('Guncelleme duyurusu: ' + inSec + ' sn sonra');
+        reply(res, 200, J, noticeJson());
+      });
+      return;
+    }
     if (url.pathname === '/mp/health') {
       let peers = 0; for (const r of rooms.values()) peers += r.size;
       let nb = 0; for (const m of blobs.values()) nb += m.size;
-      reply(res, 200, J, JSON.stringify({ ok: true, uptime: Math.round(process.uptime()), since: new Date(T0).toISOString(), rooms: rooms.size, peers, blobs: nb, blobBytes: blobBytes(), rssMB: Math.round(process.memoryUsage().rss / 1048576), pid: process.pid, auth: NO_AUTH ? 'off' : 'on', tpKey: KEYS.source }));
+      reply(res, 200, J, JSON.stringify({ ok: true, uptime: Math.round(process.uptime()), since: new Date(T0).toISOString(), rooms: rooms.size, peers, blobs: nb, blobBytes: blobBytes(), rssMB: Math.round(process.memoryUsage().rss / 1048576), pid: process.pid, auth: NO_AUTH ? 'off' : 'on', tpKey: KEYS.source, ver: BUILD_VER }));
       return;
     }
     // ---- statistics: a beat from every open game tab (a random browser id, what it is doing), the owner's report ----
@@ -482,11 +574,35 @@
         res.end('404 - Bulunamadi: ' + rel);
         return;
       }
-      res.writeHead(200, {
-        'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream',
-        'Content-Length': st.size,
-        'Cache-Control': 'no-store, no-cache, must-revalidate',
-      });
+      // (2026-11-20: the free plan's 5 GB a month ran out - every visit downloaded everything again under "no-store")
+      // Files carry an ETag, so a browser that has one gets an empty 304. The game's code and pages are revalidated on
+      // every load (a new version shows at once); models, sounds and icons are kept for a day before asking again.
+      // Text files go out gzipped (kept in memory per file version).
+      const ext = path.extname(file).toLowerCase();
+      const etag = 'W/"' + st.size.toString(36) + '-' + Math.floor(st.mtimeMs).toString(36) + '"';
+      const head = {
+        'Content-Type': MIME[ext] || 'application/octet-stream',
+        'Cache-Control': rel.startsWith('/assets/') ? 'public, max-age=86400' : 'no-cache',
+        ETag: etag,
+        Vary: 'Accept-Encoding',
+      };
+      const inm = String(req.headers['if-none-match'] || '');
+      if (inm && inm.split(',').some((t) => t.trim() === etag || t.trim() === '*')) { res.writeHead(304, head); res.end(); return; }
+      if (GZ_EXT.has(ext) && st.size > 1024 && st.size < 8 * 1024 * 1024 && /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
+        const hit = gzCache.get(file);
+        const send = (buf) => { res.writeHead(200, Object.assign(head, { 'Content-Encoding': 'gzip', 'Content-Length': buf.length })); res.end(req.method === 'HEAD' ? undefined : buf); };
+        if (hit && hit.etag === etag) { send(hit.buf); return; }
+        fs.readFile(file, (e2, raw) => {
+          if (e2) { res.writeHead(500); res.end(); return; }
+          zlib.gzip(raw, { level: 9 }, (e3, buf) => {
+            if (e3) { res.writeHead(200, Object.assign(head, { 'Content-Length': raw.length })); res.end(req.method === 'HEAD' ? undefined : raw); return; }
+            gzCache.set(file, { etag, buf }); send(buf);
+          });
+        });
+        return;
+      }
+      head['Content-Length'] = st.size;
+      res.writeHead(200, head);
       if (req.method === 'HEAD') { res.end(); return; }
       fs.createReadStream(file).on('error', () => res.destroy()).pipe(res);
     });

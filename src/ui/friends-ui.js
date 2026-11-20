@@ -3,6 +3,7 @@
 // sends the code to a friend, who joins with one click. All names go in via textContent.
 import { avatarEl, tpText } from './cloud-ui.js';
 import { levelOf } from '../rank.js';
+import { ask } from './ask.js';
 
 const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
 const safe = (fn, fb) => { try { return fn(); } catch (e) { console.warn(e); return fb; } };
@@ -58,7 +59,7 @@ export function menuFriends(ui, note) {
       inv.disabled = !onl.has(f.fb);
       inv.title = onl.has(f.fb) ? 'Bir oda kurar ve ' + f.name + ' oyuncusunu davet eder' : 'Şu an çevrimdışı';
       const rm = btn('lb-x', '✕', async () => {
-        if (!confirm(f.name + ' arkadaş listenden çıkarılsın mı?')) return;
+        if (!(await ask({ title: 'Arkadaşı Çıkar', text: f.name + ' arkadaş listenden çıkarılsın mı?', ok: 'Çıkar', danger: true }))) return;
         const r = await cloud.removeFriend(f.fb);
         if (!r.ok) { say(r.error, false); return; }
         friends = friends.filter((x) => x.fb !== f.fb); friendSet.delete(f.fb); drawMine(); drawAll();
@@ -201,8 +202,8 @@ export function showInvite(ui, m) {
   const yes = btn('mbtn small primary', 'Katıl', async () => {
     safe(() => ui._click());
     const app = ui.app;
-    if (app.net) { if (!confirm('Şu an çok oyunculu bir maçtasın. Ondan çıkıp davete katılmak istiyor musun?')) return; safe(() => app.leaveMultiplayer()); }
-    else if (app.game && !app.demo && !app.game.over && ui.mode === 'hud') { if (!confirm('Oyunun kapanacak (otomatik kayıt alınır). Davete katılınsın mı?')) return; await Promise.resolve(safe(() => app.saveGame('auto'))).catch(() => {}); safe(() => app.toMenu()); }
+    if (app.net) { if (!(await ask({ title: 'Davete Katıl', text: 'Şu an çok oyunculu bir maçtasın. Ondan çıkıp davete katılmak istiyor musun?', ok: 'Katıl' }))) return; safe(() => app.leaveMultiplayer()); }
+    else if (app.game && !app.demo && !app.game.over && ui.mode === 'hud') { if (!(await ask({ title: 'Davete Katıl', text: 'Oyunun kapanacak (otomatik kayıt alınır). Davete katılınsın mı?', ok: 'Katıl' }))) return; await Promise.resolve(safe(() => app.saveGame('auto'))).catch(() => {}); safe(() => app.toMenu()); }
     if (ui.lobbySession) { safe(() => ui.lobbySession.close()); ui.lobbySession = null; }
     yes.disabled = true; yes.textContent = 'Katılınıyor...';
     try {

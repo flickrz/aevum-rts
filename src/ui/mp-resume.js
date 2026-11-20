@@ -3,6 +3,7 @@
 import { PLAYER_COLORS } from '../data.js';
 import { withMention } from './mention.js';
 import { saveBadge, saveBadgeTitle, confirmDeleteSave } from './cloud-ui.js';
+import { ask } from './ask.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
@@ -31,9 +32,9 @@ export function menuResume(ui, errText) {
       const d = el('div', 'saveitem', `<span>${esc(saveBadge(s) + (s.name || s.key))}<br><small>${ppl}</small></span><small>${s.time ? new Date(s.time).toLocaleString('tr-TR') : ''}</small>`);
       if (s.cloud) d.title = saveBadgeTitle(s);
       const del = el('button', 'lb-x', '✕'); del.title = 'Kaydı sil';
-      del.onclick = (ev) => {
+      del.onclick = async (ev) => {
         ev.stopPropagation();
-        const c = confirmDeleteSave(s); if (!c) return;
+        const c = await confirmDeleteSave(s); if (!c) return;
         Promise.resolve(safe(() => app.deleteSave(s.key, c))).then((r) => menuResume(ui, r && r.ok === false ? r.error : ''));
       };
       d.append(del);
@@ -143,10 +144,10 @@ export function showResumeLobby(ui, session) {
       const c = safe(() => session.canStart(), { ok: false, reason: '' });
       const sb = el('button', 'mbtn small primary', 'Devam Et'); sb.disabled = !c.ok || !!loading;
       sb.title = c.ok ? 'Kayıt diğer oyunculara gönderilir ve maç kaldığı yerden sürer' : (c.reason || '');
-      sb.onclick = () => {
+      sb.onclick = async () => {
         // starting while a player of the save is still missing is usually a mistake: ask first
         const missing = slots.filter((s) => s.kind === 'human' && !s.peer && s.mode !== 'ai').map((s) => s.name);
-        if (missing.length && !confirm(missing.join(', ') + ' henüz gelmedi. Onsuz devam edilsin mi? (Yeri boş kalır; sonra katılamaz.)')) return;
+        if (missing.length && !(await ask({ title: 'Eksik Oyuncu', text: missing.join(', ') + ' henüz gelmedi. Onsuz devam edilsin mi?\nYeri boş kalır; sonra katılamaz.', ok: 'Devam Et' }))) return;
         errText = ''; call('start');
       };
       foot.append(sb);

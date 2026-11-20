@@ -7,6 +7,7 @@ import * as P from '../profile.js';
 import { loginScreen, statusPill, avatarEl, avatarPicker, tpText, TP_RULE_TEXT } from './cloud-ui.js';
 import { avatarOf } from '../avatars.js';
 import { levelOf } from '../rank.js';
+import { ask } from './ask.js';
 import { RES_ICONS, keepIcons } from '../icons.js';
 
 const MAP_TR = { random: 'Rastgele', river: 'Nehir Vadisi', continent: 'Kıta', highlands: 'Yaylalar', plains: 'Ovalar', inlandsea: 'İç Deniz', islands: 'Adalar' };
@@ -113,11 +114,11 @@ export function menuProfile(ui, note, bad) {
   }
   // (sync runs by itself: after every match / save, on start, every few minutes and when the connection comes back)
   const out = h('button', 'mbtn small', 'Çıkış Yap');
-  out.onclick = () => {
+  out.onclick = async () => {
     safe(() => ui._click());
     const pend = cloud.status === 'pending' || cloud.status === 'offline';
-    if (!confirm('Çıkış yapılsın mı?\n\nProfilin, maç geçmişin ve kayıtların hesabında kalır; tekrar giriş yapınca geri gelir.' +
-      (pend ? '\n\nUyarı: henüz gönderilemeyen veriler var; tekrar giriş yaptığında gönderilir.' : ''))) return;
+    if (!(await ask({ title: 'Çıkış', text: 'Çıkış yapılsın mı?\nProfilin, maç geçmişin ve kayıtların hesabında kalır; tekrar giriş yapınca geri gelir.' +
+      (pend ? '\n\nUyarı: henüz gönderilemeyen veriler var; tekrar giriş yaptığında gönderilir.' : ''), ok: 'Çıkış Yap' }))) return;
     if (app.game && !app.demo) safe(() => app.toMenu());
     cloud.logout();
     ui._menuMain('Çıkış yapıldı.');
@@ -164,8 +165,8 @@ export function menuProfile(ui, note, bad) {
     let replaced = false;
     // the identity belongs to the account; an import only adds history
     if (mine && v.profile.uid !== mine.uid && !online) {
-      replaced = confirm('Dosyadaki profil ("' + v.profile.name + '") senin profilinden farklı.\n\n' +
-        'Tamam: profilimi değiştir (dosyadaki kimlik ve ad kullanılır)\nİptal: profilim kalsın, yalnızca maç geçmişi birleştirilsin');
+      // (cancel / Esc = the old confirm's Cancel: keep my profile, merge only the history)
+      replaced = await ask({ title: 'Farklı Profil', text: 'Dosyadaki profil ("' + v.profile.name + '") senin profilinden farklı.\nDeğiştirirsen dosyadaki kimlik ve ad kullanılır; değiştirmezsen yalnızca maç geçmişi birleştirilir.', ok: 'Profilimi değiştir', cancel: 'Profilim kalsın' });
       if (replaced) app.replaceProfile(v.profile);
     }
     // only the records of the profile I keep: another player's view of the same match would count it twice

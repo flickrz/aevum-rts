@@ -402,6 +402,15 @@ table.st th { color: var(--gold); font-weight: 600; }
 .chatdock.open .chatin { display: flex; }
 .netbanner { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); padding: 12px 22px; font-size: 16px; z-index: 60; pointer-events: none; border-color: var(--gold); }
 .netbanner.desync { border-color: var(--red); color: var(--red); }
+/* update notice (src/ui/notice-ui.js): countdown / loading / "Yeni sürüm hazır"; above menus and the HUD, never under the dialogs */
+.updbanner { position: fixed; left: 50%; top: 58px; transform: translateX(-50%); z-index: 900; display: flex; align-items: center; gap: 14px; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 9px 16px; border-color: var(--gold); pointer-events: none; animation: toastIn .25s ease; }
+.updbanner .ub-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.updbanner .ub-t { font-size: 15px; color: var(--gold); font-variant-numeric: tabular-nums; }
+.updbanner .ub-s { font-size: 12.5px; color: var(--dim); }
+.updbanner .ub-btn { pointer-events: auto; flex: none; }
+.updbanner.ready { border-color: var(--green); }
+.updbanner.ready .ub-t { color: var(--green); }
+.mbtn.int-resume { box-shadow: 0 0 0 1px var(--gold), 0 0 18px rgba(232,190,100,.35); }
 
 /* command card is hidden when the selection has no commands */
 .card.empty { opacity: 0; pointer-events: none; visibility: hidden; }
@@ -831,3 +840,145 @@ button.gbtn, button.gbtn .gbtn-t { color: #1f1f1f !important; text-shadow: none 
 .up-top h2 { grid-column: 2; margin: 0 !important; }
 .up-top .up-back { grid-column: 1; justify-self: start; width: auto; margin: 0; padding: 8px 16px; font-size: 14px; border-color: var(--gold); color: var(--gold) !important; }
 .menu-box.updates > .mpnote { margin-top: 12px; }
+/* a rival's building in the fog: its health is not known (owner 2026-11-20) */
+.hpbar.fog i { background: rgba(255,255,255,.18) !important; }
+
+/* ---------- in-game confirmation (src/ui/ask.js) ---------- */
+.overlay.askov { position: fixed; z-index: 3000; background: rgba(4,6,10,.7); }
+.modal.askbox { width: min(440px, calc(100vw - 32px)); padding: 22px 24px 16px; }
+.modal.askbox h2 { font-size: 18px; margin-bottom: 10px; }
+.asktext { color: var(--ink); font-size: 14.5px; line-height: 1.5; margin: 0 0 14px; }
+.askbtns { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.askbtns .mbtn.small { min-width: 120px; margin: 6px 0; }
+.mbtn.askdanger { border-color: rgba(255,93,93,.7); color: #ffd6d6; background: rgba(255,93,93,.12); }
+.askbtns .mbtn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+/* top of the HUD = ONE block (owner 2026-11-20: tidy it like the main menu). Same panel, two rows:
+   row 1 resources / population / age / clock / buttons, row 2 the next age progress across the full width.
+   The developer age buttons hang under the right edge as an attached tab. */
+.hudtop { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: stretch; gap: 0; pointer-events: none; z-index: 6; }
+.hudtop > * { pointer-events: auto; }
+.hudtop .topbar { position: relative; top: auto; left: auto; transform: none; display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 6px 10px; }
+.hudtop .topbar::before, .hudtop .topbar::after { top: 24px; }
+.topbar .tbrow { display: flex; align-items: center; gap: 4px; }
+.hudtop .objective { position: static; top: auto; left: auto; transform: none; width: auto; max-width: none; box-sizing: border-box; margin: 6px 0 0; padding: 6px 0 1px 11px; border-top: 1px solid var(--line); background: none; box-shadow: none; border-radius: 0; opacity: 1; display: flex; flex-direction: column; align-items: stretch; gap: 5px; pointer-events: none; white-space: normal; }
+.hudtop .objective.hidden { display: none; }
+.hudtop .objective .osteps { justify-content: center; }
+.hudtop .objective .oage { display: grid; grid-template-columns: auto minmax(80px, 1fr) auto; align-items: center; gap: 0 14px; width: 100%; white-space: normal; }
+.hudtop .objective .ot { white-space: nowrap; }
+.hudtop .objective .obar { width: auto; }
+.hudtop .objective .om { text-align: right; max-width: 46vw; }
+.hudtop .devpanel { position: relative; top: auto; right: auto; align-self: flex-end; margin: -1px 14px 0 0; border-top: 0; border-radius: 0 0 8px 8px; padding: 4px 8px 5px; }
+.hudtop .devpanel.hidden { display: none; }
+/* the quests / scoreboard and the toasts start below the block where it reaches over them (ui._clearTop) */
+.hud .quests, .hud .scoreboard { top: var(--quests-top, 56px); }
+.hud .quests { max-height: calc(100vh - var(--quests-top, 56px) - 262px); }
+.hud .toasts { top: var(--toasts-top, 60px); max-height: calc(100vh - var(--toasts-top, 60px) - 20px); }
+.topbar .res { width: 128px; min-width: 0; box-sizing: border-box; }
+.topbar .res .rate { margin-left: auto; text-align: right; }
+@media (max-width: 1280px) { .topbar .res { width: 112px; } }
+@media (max-width: 1080px) { .hudtop .devpanel { zoom: .86; } }
+@media (max-width: 920px) { .hudtop .devpanel { zoom: .72; } }
+/* ---- online players panel (owner 2026-11-20: "oyuncu geldikçe liste uzuyor"): a box as tall as the menu next to it,
+   header and "Herkesi Davet Et" pinned, only the rows scroll ---- */
+.mp-wrap > .online-panel { contain: size; min-height: 340px; max-height: 92vh; overflow: hidden; }   /* (its rows never make it taller than the menu box) */
+.online-panel > .op-head, .online-panel > .op-all, .online-panel > .op-msg { flex: none; }
+.op-list, .fr-scroll { overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(232,194,106,.45) transparent; }
+.op-list::-webkit-scrollbar, .fr-scroll::-webkit-scrollbar { width: 6px; }
+.op-list::-webkit-scrollbar-track, .fr-scroll::-webkit-scrollbar-track { background: transparent; }
+.op-list::-webkit-scrollbar-thumb, .fr-scroll::-webkit-scrollbar-thumb { background: rgba(232,194,106,.35); border-radius: 3px; }
+.op-list::-webkit-scrollbar-thumb:hover, .fr-scroll::-webkit-scrollbar-thumb:hover { background: rgba(232,194,106,.6); }
+@media (max-width: 1100px) {
+  .mp-wrap > .online-panel { contain: none; min-height: 0; max-height: min(320px, 60vh); }
+}
+@media (max-width: 760px) {
+  /* phone width: the menu and the online players stack and fit the screen, nothing cut off on the right */
+  .mp-wrap { width: calc(100vw - 24px); max-width: none; margin: 0 auto; }
+  .mp-wrap > .menu-box, .mp-wrap > .online-panel { width: 100%; max-width: none; min-width: 0; box-sizing: border-box; }
+}
+/* ---- the lobby's map: the chosen map's picture and description, the host picks from the cards (owner 2026-11-20) ---- */
+.lb-map { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; padding: 12px; border: 1px solid rgba(255,255,255,.07); border-radius: 8px; background: rgba(0,0,0,.18); text-align: left; }
+.lb-mapbig { display: flex; gap: 14px; align-items: center; }
+.lb-map .lb-bigpic { width: 150px; height: 150px; }
+.lb-map .su-bigpic .su-rand { font-size: 64px; }
+.lb-map .su-name { font-size: 17px; }
+.lb-map .su-desc { font-size: 13px; }
+.lb-types { gap: 5px; }
+.lb-types .su-card { padding: 4px 3px 5px; }
+.lb-types .su-cname { font-size: 10.5px; }
+@media (max-width: 760px) { .lb-mapbig { flex-direction: column; align-items: stretch; } .lb-map .lb-bigpic { width: 100%; height: auto; aspect-ratio: 1; } .lb-types { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.lb-maph { color: var(--dim); font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; }
+.lb-map.ro .su-card { cursor: default; }
+.lb-map.ro .su-card:not(.on) { opacity: .55; }
+.lb-map.ro .su-card:not(.on):hover { border-color: rgba(255,255,255,.08); background: rgba(255,255,255,.03); }
+/* ---- main menu (owner 2026-11-20): account unit top right (plate + status/Profil/Çıkış under it), menu alone on the left ---- */
+.menu.m-left .menu-hud { flex-direction: row; justify-content: flex-end; padding: clamp(16px, 3vh, 28px) clamp(28px, 6vw, 120px) 0; }
+.mh-acct { display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-width: 300px; max-width: min(420px, 60vw); }
+.mh-acct > .mh-plate { max-width: none; width: 100%; box-sizing: border-box; }
+.mh-acct > .mh-plate .mh-txt { flex: 1 1 auto; }
+.mh-acct > .mh-plate .mh-bar { width: 100%; }
+.mh-acct > .mh-right { justify-content: flex-end; flex-wrap: nowrap; }
+.mh-acct > .mh-right .acc-status { margin-right: auto; }
+@media (max-width: 760px) {
+  .menu.m-left .menu-hud { padding: 12px 0 0; }
+  .mh-acct { min-width: 0; max-width: none; width: 100%; }
+  .mh-acct > .mh-right { flex-wrap: wrap; justify-content: center; }
+  .mh-acct > .mh-right .acc-status { margin-right: 0; }
+}
+.menu.m-left .menu-fb { width: min(400px, 92vw); max-width: none; box-sizing: border-box; }
+@media (max-height: 820px) and (min-width: 761px) {
+  /* a low screen: a smaller title and tighter rows keep clear air between the menu and the note under it */
+  .menu.m-left .menu-box.main { padding: 18px 22px 16px; margin-bottom: 40px; }
+  .menu-box.main .logo { font-size: 44px; letter-spacing: 10px; }
+  .menu-box.main .tagline { margin-bottom: 10px; }
+  .menu-box.main .mitem { margin: 4px 0; padding-top: 6px; padding-bottom: 6px; }
+  .menu-box.main .mitem.primary { padding-top: 9px; padding-bottom: 9px; margin-bottom: 8px; }
+  .menu-box.main .mrow { margin-top: 8px; }
+  .menu-box.main .msq { padding: 8px 4px 7px; }
+  .menu.m-left .menu-fb { padding: 6px 12px 6px 7px; font-size: 12px; }
+}
+@media (max-width: 760px) { .menu.m-left .menu-fb { width: auto; max-width: min(560px, 92vw); } }
+/* (owner 2026-11-20, second drawing) the account unit top left over the menu's column, the note right under the menu */
+.menu.m-left .menu-hud { justify-content: flex-start; }
+.menu.m-left .mh-acct { width: min(400px, 92vw); min-width: 0; max-width: none; }
+.menu.m-left.with-hud { padding: calc(clamp(16px, 3vh, 28px) + 150px) 0 16px; box-sizing: border-box; }
+.menu.m-left .m-stack { display: flex; flex-direction: column; gap: 10px; width: min(400px, 92vw); max-height: 100%; margin: 0 0 0 clamp(28px, 6vw, 120px); }
+.menu.m-left .m-stack > .menu-box.main { width: 100%; margin: 0; box-sizing: border-box; flex: 0 1 auto; min-height: 0; }
+.menu.m-left .m-stack > .menu-fb { position: static; width: 100%; flex: none; }
+@media (max-height: 820px) and (min-width: 761px) {
+  .menu.m-left.with-hud { padding-top: calc(clamp(16px, 3vh, 28px) + 118px); }
+  .menu.m-left .mh-acct > .mh-plate { padding: 6px 14px 6px 6px; gap: 10px; }
+  .menu.m-left .mh-acct > .mh-plate .av.av-hud { width: 44px; height: 44px; }
+  .menu.m-left .mh-acct > .mh-plate .mh-nums { display: none; }
+  .menu.m-left .m-stack > .menu-box.main { margin-bottom: 0; }
+}
+@media (max-width: 760px) {
+  .menu.m-left.with-hud { padding: 0; }
+  .menu.m-left .m-stack { width: min(560px, 92vw); max-height: none; margin: 12px auto 16px; }
+}
+/* (owner 2026-11-20, third drawing) the status pill, Profil and Çıkış inside the account card, at its top right */
+.menu.m-left .mh-acct { flex-direction: row; align-items: center; gap: 10px; padding: 10px 12px 10px 10px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(135deg, rgba(30,24,12,.88), rgba(10,13,20,.88)); box-shadow: 0 8px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,230,170,.08); transition: border-color .15s; }
+.menu.m-left .mh-acct:hover { border-color: rgba(232,194,106,.55); }
+.menu.m-left .mh-acct > .mh-plate { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: none; box-shadow: none; transform: none; }
+.menu.m-left .mh-acct > .mh-plate:hover { transform: none; }
+.menu.m-left .mh-acct > .mh-plate:hover .mh-name { color: var(--gold); }
+.menu.m-left .mh-acct > .mh-right { flex: none; display: grid; grid-template-columns: auto auto; gap: 6px; align-self: flex-start; justify-items: end; }
+.menu.m-left .mh-acct > .mh-right .acc-status { grid-column: 1 / -1; grid-row: 2; margin: 0; font-size: 11px; padding: 3px 9px; }
+.menu.m-left .mh-acct > .mh-right .mh-chip { padding: 5px 12px; font-size: 12.5px; }
+@media (max-width: 760px) { .menu.m-left .mh-acct { flex-direction: row; } .menu.m-left .mh-acct > .mh-right { justify-content: end; } }
+/* (owner 2026-11-20: "kafana göre toparla") the account card: Profil / Çıkış at the top right beside the name, the level
+   and a full-width TP bar under it, and a last line with the TP numbers on the left and the sync status on the right */
+.menu.m-left .mh-acct { position: relative; display: block; padding: 12px 14px 11px 12px; }
+.menu.m-left .mh-acct > .mh-plate { width: 100%; align-items: center; gap: 14px; }
+.menu.m-left .mh-acct > .mh-plate .mh-txt { flex: 1 1 auto; min-width: 0; gap: 4px; }
+.menu.m-left .mh-acct > .mh-plate .mh-name, .menu.m-left .mh-acct > .mh-plate .mh-rank { padding-right: 138px; }
+.menu.m-left .mh-acct > .mh-plate .mh-bar { width: 100%; margin-top: 4px; }
+.mh-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.mh-meta .acc-status { flex: none; margin: 0 0 0 auto; padding: 0; border: 0; background: none !important; font-size: 11px; color: var(--dim); }
+.menu.m-left .mh-acct > .mh-right { position: absolute; top: 12px; right: 14px; display: flex; gap: 6px; align-self: auto; }
+.menu.m-left .mh-acct > .mh-right .mh-chip { padding: 4px 12px; font-size: 12.5px; }
+@media (max-height: 820px) and (min-width: 761px) { .menu.m-left .mh-acct { padding: 8px 12px 8px 8px; } .menu.m-left .mh-acct > .mh-right { top: 8px; right: 12px; } }
+/* (owner 2026-11-20: "daha az görünür, kartla tümleşik") Profil / Çıkış as quiet text links of the card, gold on hover */
+.menu.m-left .mh-acct > .mh-right { gap: 0; align-items: center; }
+.menu.m-left .mh-acct > .mh-right .mh-chip { padding: 2px 7px; border: 0; border-radius: 5px; background: none; color: var(--dim) !important; font-size: 12px; letter-spacing: .4px; }
+.menu.m-left .mh-acct > .mh-right .mh-chip:hover { color: var(--gold) !important; background: rgba(232,194,106,.08); }
+.menu.m-left .mh-acct > .mh-right .mh-chip + .mh-chip::before { content: "·"; margin: 0 8px 0 -3px; color: rgba(255,255,255,.25); }

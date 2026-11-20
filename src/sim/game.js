@@ -4,11 +4,16 @@ import { AGES, RES, UNITS, BUILDINGS, TECHS, PLAYER_COLORS, FARM_SLOTS } from '.
 export const FARM_CELLS = [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1]];
 const FARM_RATE = 16 / 9 * 0.85;
 const MOVE_REACH = 2, MOVE_LEASH = 5;   // a moving unit fights foes within its reach + MOVE_REACH, chases them MOVE_LEASH tiles
-const TC_GRACE = 120;   // seconds a player without a town center (but with villagers) has to start a new one
+// (owner 2026-11-20) at most this many villagers of one player work one stone / gold deposit (a cluster of mine tiles)
+// at a time, so a growing economy has to go out and take other deposits. Per player: a rival cannot lock you out of
+// your own gold by parking villagers on it.
+export const MINE_CAP = 8;
 const FARM_SPOT_S = 5;   // seconds a farmer hoes on one spot of his plot before moving on along the row
 import { AIController } from './ai.js';
 import { QuestSystem } from './quests.js';
 
+// the buildings that train units: as long as a player has one, the player is in the game (see _checkWin)
+const PROD_B = new Set(Object.keys(BUILDINGS).filter((k) => (BUILDINGS[k].trains || []).length && !BUILDINGS[k].legacy));
 const RES_OF = { tree: 'wood', stone: 'stone', gold: 'gold', berries: 'food', deer: 'food', fish: 'food' };
 const RATE = { tree: 0.42, stone: 0.36, gold: 0.36, berries: 0.4, deer: 0.5 };
 // stand spots per resource tile (deer move: none) and their offsets from the tile centre (sides, then corners)
@@ -182,8 +187,9 @@ export class Game {
     this.ais = [];
     for (const p of this.players) if (p.isAI) { try { this.ais.push(new AIController(this, p.id, p.difficulty || this.cfg.difficulty)); } catch (err) { console.error('AI init', err); } }
     const noQuests = { list: [], update() {}, serialize() { return null; }, load() {} };
-    if (this.mp) this.quests = noQuests;
-    else try { this.quests = new QuestSystem(this); } catch (err) { console.error('Quest init', err); this.quests = noQuests; }
+    // (owner 2026-11-20: the quests are gone - the story tutorial teaches the game now; no hidden rewards either)
+    this.quests = noQuests;
+    void QuestSystem;
     if (saved) {
       try { if (saved.quests) this.quests.load(saved.quests); } catch (err) { console.error(err); }
       (saved.ais || []).forEach((o, i) => { try { if (o && this.ais[i]) this.ais[i].load(o); } catch (err) { console.error(err); } });
@@ -452,16 +458,19 @@ export class Game {
       // (solid groves; no lone trees on open grass anywhere since 2026-11-14 - r is still drawn, one per tile as before)
       if (t === 6 && r >= 0) this._addRes('tree', tx, tz, 80);
     }
-    // (start resources keep clear of the 6x6 town centre and leave room to build camps next to them)
+    // (start resources keep clear of the town centre and leave room to build camps next to them: none within TCR of
+    // its middle - 3.5 tiles past its half, the clearance the 6x6 one had - so nothing lands in or hugs the 9x9 one)
+    const TCH = BUILDINGS.towncenter.size / 2, TCR = TCH + 3.5, tcAt = s => [Math.round(s[0] - TCH) + TCH, Math.round(s[1] - TCH) + TCH];   // (the town centre's middle, see 'starting bases')
+    const tcs = starts.map(tcAt), tDist = (x, z) => { let m = 1e9; for (const s of tcs) { const d = Math.hypot(x - s[0], z - s[1]); if (d < m) m = d; } return m; };
     const cluster = (type, cx, cz, n, rad, amount) => {
       if (type !== 'deer') return clump(type, cx, cz, n, rad, amount);
-      let placed = 0; for (let k = 0; k < n * 8 && placed < n; k++) { const tx = Math.round(cx + (this.rand() * 2 - 1) * rad), tz = Math.round(cz + (this.rand() * 2 - 1) * rad); if (land(tx, tz) && sDist(tx + 0.5, tz + 0.5) > 6.5) { this._addRes(type, tx, tz, amount); placed++; } } return placed;
+      let placed = 0; for (let k = 0; k < n * 8 && placed < n; k++) { const tx = Math.round(cx + (this.rand() * 2 - 1) * rad), tz = Math.round(cz + (this.rand() * 2 - 1) * rad); if (land(tx, tz) && tDist(tx + 0.5, tz + 0.5) > TCR) { this._addRes(type, tx, tz, amount); placed++; } } return placed;
     };
     // One compact clump (owner 2026-11-14: mines looked like scattered pebbles): it starts on the free tile nearest
     // (cx, cz) within rad and grows one tile at a time onto the free side neighbour that touches the most tiles of
     // the clump (seeded rand breaks ties), so the tiles touch each other with no gaps and read as one deposit / grove.
     const clump = (type, cx, cz, n, rad, amount) => {
-      const ok = (x, z) => land(x, z) && sDist(x + 0.5, z + 0.5) > 6.5;
+      const ok = (x, z) => land(x, z) && tDist(x + 0.5, z + 0.5) > TCR;
       let sx = -1, sz = -1, sd = 1e9;
       for (let z = Math.floor(cz - rad - 1); z <= Math.ceil(cz + rad + 1); z++) for (let x = Math.floor(cx - rad - 1); x <= Math.ceil(cx + rad + 1); x++) { const d = Math.hypot(x + 0.5 - cx, z + 0.5 - cz); if (d <= rad + 1 && d < sd && ok(x, z)) { sd = d; sx = x; sz = z; } }
       if (sx < 0) return 0;
@@ -482,11 +491,13 @@ export class Game {
       }
       return pts.length / 2;
     };
+    // (measured from the town centre's middle; 1.5 tiles further out than with the 6x6 one, whose half was 1.5 smaller)
+    const RD = TCH - 3;
     for (let i = 0; i < starts.length; i++) {
-      const s = starts[i], a0 = this.rand() * 6.283;
+      const s = tcs[i], a0 = this.rand() * 6.283;
       const at = (a, d) => [s[0] + Math.cos(a0 + a) * d, s[1] + Math.sin(a0 + a) * d];
       // other types: a cluster that mostly fell into water / rock is topped up at turned angles, a bit closer in
-      const put = (type, a, d, n, rad, amount) => { let q = at(a, d), got = cluster(type, q[0], q[1], n, rad, amount); for (let k = 1; k < 8 && got < (n + 1 >> 1); k++) { q = at(a + k * 0.8, Math.max(8.5, d - k * 0.6)); got += cluster(type, q[0], q[1], n - got, rad, amount); } };
+      const put = (type, a, d, n, rad, amount) => { d += RD; let q = at(a, d), got = cluster(type, q[0], q[1], n, rad, amount); for (let k = 1; k < 8 && got < (n + 1 >> 1); k++) { q = at(a + k * 0.8, Math.max(8.5 + RD, d - k * 0.6)); got += cluster(type, q[0], q[1], n - got, rad, amount); } };
       put('stone', 0, 11, 4, 1.6, 350);
       put('gold', 1.6, 12, 4, 1.6, 350);
       put('berries', 3.1, 9, 3, 1.5, 800);   // (owner 2026-11-15: 800 food a bush, three bushes)
@@ -519,6 +530,10 @@ export class Game {
     for (const p of this.players) {
       const ts = BUILDINGS.towncenter.size, h = ts / 2;   // (centred on the start)
       const b = this._addBuilding('towncenter', p.id, Math.round(p.startX - h), Math.round(p.startZ - h), true);
+      // (owner 2026-11-20, like the capitol in Empire Earth: every side knows from the first second where each
+      // starting town center stands. What goes on there stays in the fog until someone goes to look: units are
+      // never shown in the fog and the view keeps the look it had when last in sight - src/render/entities.js)
+      b.known = 1;
       for (let k = 0; k < START_VILLAGERS; k++) { const col = k % 5, row = (k / 5) | 0; const f = this._freeNear(b.x + (col - 2) * 1.3, b.z + h + 1.5 + row * 1.2, p.id); this._addUnit('villager', p.id, f.x, f.z); }   // (rows of 5 in front of the town centre)
       const f = this._freeNear(b.x + h + 1.5, b.z, p.id); this._addUnit('spearman', p.id, f.x, f.z);
       this._popCap(p);
@@ -735,6 +750,7 @@ export class Game {
     if (e.revT !== undefined && this.time - e.revT < 4 && !e.dead && (e.revO === this.me || this.isAlly(e.revO, this.me))) return true;
     // (owner 2026-11-20) a rival's building plan - a foundation nobody has started on - is shown only to its own side
     if (e.kind === 'building' && !e.done && !(e.progress > 0)) return false;
+    if (e.known && e.kind === 'building') return true;   // a starting town center: its place is known to all
     const N = this.map.size, tx = Math.min(N - 1, Math.max(0, e.x | 0)), tz = Math.min(N - 1, Math.max(0, e.z | 0)), f = this.fog[tz * N + tx];
     if (e.kind === 'unit') return f === 2;
     if (e.kind === 'building' && this.cfg.fog === 'explored') return f === 2 || (f >= 1 && !!((e.sv | 0) & (1 << (this.teamOf(this.me) & 31))));   // (explored map: only buildings the team has seen)
@@ -1153,8 +1169,11 @@ export class Game {
     this._pay(b.owner, a.cost); b.queue.unshift({ kind: 'age', id: a.id, t: 0, total: a.time }); p.ageProgress = 0;
     this.events.emit('ageUpStart', { owner: b.owner }); return true;
   }
-  cancelQueue(buildingId, index) {
+  // id (optional): the entry the player clicked; if the queue moved before the command ran (multiplayer delay: the
+  // front one finished, an age-up went in front), the last entry with that id is cancelled instead
+  cancelQueue(buildingId, index, id) {
     const b = this.entities.get(buildingId); if (!b || b.kind !== 'building') return false;
+    if ((typeof id === 'string' || typeof id === 'number') && (!b.queue[index] || b.queue[index].id !== id)) { index = -1; for (let j = b.queue.length - 1; j >= 0; j--) if (b.queue[j].id === id) { index = j; break; } }
     const q = b.queue[index]; if (!q) return false;
     b.queue.splice(index, 1); this._refundQ(b.owner, q); return true;
   }
@@ -1421,7 +1440,7 @@ export class Game {
     }
     return false;
   }
-  _next(u) { if (u.order && u.order.type === 'gather') this._unhunt(u.order); u.order = u.queue.shift() || null; u.path = null; u.pk = null; u.rpT = 0; u.targetId = u.order ? (u.order.targetId || null) : null; if (!u.order) { u.state = 'idle'; u.anim = 'idle'; u.scanT = 0; } }   // (scanT 0: a soldier whose foe just fell looks for the next one at once - 2026-11-17 playtest)
+  _next(u) { if (u.order && u.order.type === 'gather') this._unhunt(u.order); u.order = u.queue.shift() || null; if (u.order) { if (u.order.dadm) u.order.dadm = 0; if (u.order.resume && u.order.resume.dadm) u.order.resume.dadm = 0; } /* (a mine order back from the queue asks for its place again) */ u.path = null; u.pk = null; u.rpT = 0; u.targetId = u.order ? (u.order.targetId || null) : null; if (!u.order) { u.state = 'idle'; u.anim = 'idle'; u.scanT = 0; } }   // (scanT 0: a soldier whose foe just fell looks for the next one at once - 2026-11-17 playtest)
 
   // ---------- combat ----------
   _dmg(atk, bonus, isSiege, target) {
@@ -1466,12 +1485,12 @@ export class Game {
       let guard = false;
       this._near(target.x, target.z, 7, e => { if (!guard && !e.dead && e.owner === target.owner && !e.naval && UNITS[e.type].cls !== 'civil' && UNITS[e.type].atk > 0) guard = true; });
       const tc = guard ? null : this._nearestB(target, b => b.type === 'towncenter');
-      if (tc && Math.hypot(tc.x - target.x, tc.z - target.z) > 5) { const old = target.order; this.cmdMove([target.id], tc.x, tc.z + tc.size / 2 + 1); if (target.order && target.order.type === 'move') { old.fail = 0; target.queue.push(old); } }
+      if (tc && Math.hypot(tc.x - target.x, tc.z - target.z) > tc.size / 2 + 2) { const old = target.order; this.cmdMove([target.id], tc.x, tc.z + tc.size / 2 + 1); if (target.order && target.order.type === 'move') { old.fail = 0; target.queue.push(old); } }
       return;
     }
     if (target.kind === 'unit' && killer && !killer.dead && (!target.order || target.order.auto)) {
       const d = UNITS[target.type];
-      if (d.cls === 'civil') { if (!target.order && !target.naval) { const tc = this._nearestB(target, b => b.type === 'towncenter'); if (tc && Math.hypot(tc.x - target.x, tc.z - target.z) > 4) this.cmdMove([target.id], tc.x, tc.z + tc.size / 2 + 1); } }
+      if (d.cls === 'civil') { if (!target.order && !target.naval) { const tc = this._nearestB(target, b => b.type === 'towncenter'); if (tc && Math.hypot(tc.x - target.x, tc.z - target.z) > tc.size / 2 + 1) this.cmdMove([target.id], tc.x, tc.z + tc.size / 2 + 1); } }
       else if (d.atk > 0 && !(target.type === 'ram' && killer.kind !== 'building') && !(killer.naval && !(d.range > 0)) && !target.order) this._engage(target, killer);
     } else if (target.kind === 'unit' && killer && !killer.dead && killer.id && target.order && target.order.type === 'move' && this._canEngage(target, killer)) this._engage(target, killer);
   }
@@ -1698,6 +1717,7 @@ export class Game {
   _uGather(u, o, dt) {
     const p = this.players[u.owner], cap = 10 + p.mods.carry;
     let t = this.entities.get(o.targetId);
+    if ((o.rt === 'stone' || o.rt === 'gold') && t && !t.dead && t.kind === 'resource') { const dep = this._depOf(t); if (o.dadm !== dep && !this._admitMine(u, o, t, dep)) return; }
     if (o.rt === 'pasture') return this._pasGather(u, o, dt, t, p);
     if (o.rt === 'farm' && t && !t.dead && t.done && t.farm && Array.isArray(t.farm.plots)) return this._plotFarm(u, o, dt, t, p, cap);
     if (o.rt === 'farm') {
@@ -1798,6 +1818,54 @@ export class Game {
     while (c >= 0 && bf.dist[c] > 0) { out.push(c % bf.W + bf.ox + 0.5, ((c / bf.W) | 0) + bf.oz + 0.5); c = bf.par[c]; }
     const p = []; for (let i = out.length - 2; i >= 0; i -= 2) p.push(out[i], out[i + 1]); p.push(x, z); return p;
   }
+  // ---------- mine deposits (owner 2026-11-20: at most MINE_CAP workers on one) ----------
+  // a deposit is a cluster of stone or gold tiles of one kind, each within 3 tiles of another; its id is the id of
+  // its first tile (entity order: the same on every peer). Mines never run out, so this is worked out once (old
+  // saves: on first use).
+  _markDeps() {
+    const ms = [];
+    for (const e of this.entities.values()) if (e.kind === 'resource' && (e.type === 'stone' || e.type === 'gold')) { e.dep = 0; ms.push(e); }
+    for (const s of ms) {
+      if (s.dep) continue;
+      s.dep = s.id; const st = [s];
+      while (st.length) { const a = st.pop(); for (const b of ms) if (!b.dep && b.type === a.type && (b.x - a.x) ** 2 + (b.z - a.z) ** 2 <= 9) { b.dep = s.id; st.push(b); } }
+    }
+  }
+  _depOf(t) { if (!t.dep) this._markDeps(); return t.dep || t.id; }
+  // owner's villagers holding a place at deposit dep (working, walking to it, or carrying its stone / gold home)
+  mineLoad(dep, owner) {
+    let n = 0;
+    for (const u of this.units) {
+      if (u.dead || u.owner !== owner || u.type !== 'villager') continue;
+      let o = u.order; if (o && o.type === 'return') o = o.resume;
+      if (o && o.type === 'gather' && o.dadm === dep) n++;
+    }
+    return n;
+  }
+  // a villager starting on a mine takes a place at its deposit; when it is full he goes to the nearest other deposit
+  // of that kind with room (within 30 tiles), else he stops and his owner is told
+  _admitMine(u, o, t, dep) {
+    if (this.mineLoad(dep, u.owner) < MINE_CAP) { o.dadm = dep; return true; }
+    let best = null, bd = 30 * 30;
+    const full = new Map();
+    for (const e of this.entities.values()) {
+      if (e.kind !== 'resource' || e.type !== t.type || e.dead) continue;
+      const d = (e.x - u.x) ** 2 + (e.z - u.z) ** 2; if (d >= bd) continue;
+      const k = this._depOf(e); if (k === dep) continue;
+      let f = full.get(k); if (f === undefined) { f = this.mineLoad(k, u.owner) - (o.dadm === k ? 1 : 0) >= MINE_CAP; full.set(k, f); }
+      if (!f) { bd = d; best = e; }
+    }
+    const mine = u.owner === this.me && this.time - (this._mineMsgT || -99) > 6;
+    if (best) {
+      o.targetId = best.id; u.targetId = best.id; o.x = best.x; o.z = best.z; o.sp = 0; o.fail = 0; o.dadm = this._depOf(best); u.path = null; u.pk = null;
+      if (mine) { this._mineMsgT = this.time; this.events.emit('notify', { text: 'Bu maden dolu (en fazla ' + MINE_CAP + ' işçi): köylüler yakındaki başka bir madene gidiyor.', type: 'info', x: best.x, z: best.z }); }
+      return false;
+    }
+    if (mine) { this._mineMsgT = this.time; this.events.emit('notify', { text: 'Bu maden dolu: bir madende en fazla ' + MINE_CAP + ' işçi çalışabilir. Yeni bir maden bul.', type: 'warn', x: t.x, z: t.z }); }
+    if (u.carry && u.carry.amount > 0) { u.order = { type: 'return', res: o.res, resume: null }; u.path = null; u.pk = null; return false; }
+    this._next(u);
+    return false;
+  }
   _pickSpot(u, o, t) {
     const K = SPOTS[t.type], c = this._spotCands(t, u.owner), cl = this._spotClaims(u, t.x, t.z), bf = this._spotBfs(u, t);
     o.sp = 0; o.so = 0;
@@ -1813,7 +1881,9 @@ export class Game {
     const N = this.map.size, R = SPOT_R, tx = t.x | 0, tz = t.z | 0, alt = [];
     for (let z = Math.max(0, tz - R); z <= Math.min(N - 1, tz + R); z++) for (let x = Math.max(0, tx - R); x <= Math.min(N - 1, tx + R); x++) {
       const id = this.resAt[z * N + x]; if (!id || id === t.id) continue; const e = this.entities.get(id);
-      if (!e || e.dead || e.type !== t.type || !(e.amount > 0)) continue; const d = Math.hypot(e.x - t.x, e.z - t.z); if (d <= R) alt.push([d, e.id, e]);
+      if (!e || e.dead || e.type !== t.type || !(e.amount > 0)) continue; const d = Math.hypot(e.x - t.x, e.z - t.z); if (d > R) continue;
+      if ((e.type === 'stone' || e.type === 'gold') && this._depOf(e) !== this._depOf(t)) continue;   // (stay on this deposit: its places are counted)
+      alt.push([d, e.id, e]);
     }
     let be = null, bs = 1e9, bd = 1e9;
     for (const [d, id, e] of alt) {
@@ -1852,7 +1922,9 @@ export class Game {
         for (const r of this.entities.values()) {
           if (r.kind !== 'resource' || r.dead || !(r.amount > 0)) continue;
           if (b.type === 'lumbercamp' ? r.type !== 'tree' : (r.type !== 'stone' && r.type !== 'gold')) continue;
-          const d = Math.hypot(r.x - b.x, r.z - b.z); if (d < 10 && d < bd) { bd = d; best = r; }
+          const d = Math.hypot(r.x - b.x, r.z - b.z); if (!(d < 10 && d < bd)) continue;
+          if (b.type === 'minecamp' && this.mineLoad(this._depOf(r), u.owner) >= MINE_CAP) continue;   // (a full deposit)
+          bd = d; best = r;
         }
         if (best) { Game.prototype.cmdGather.call(this, [u.id], best.id); return; }
       }
@@ -1919,7 +1991,8 @@ export class Game {
       // there (about 1/10 of a fully worked big farm at 8 sheep); herders still gather much more (_pasGather)
       const ps = b.pasture || (b.pasture = { sheep: 3, g: 0 });
       if (ps.sheep < PASTURE_SHEEP) { ps.g = (ps.g || 0) + dt / PASTURE_GROW_S; if (ps.g >= 1) { ps.g = 0; ps.sheep++; this.events.emit('pastureSheep', { e: b, sheep: ps.sheep }); } }
-      ps.acc = (ps.acc || 0) + dt * PASTURE_IDLE_RATE * ps.sheep * (1 + (p.mods.pasture || 0));
+      // (2026-11-20) the idle flock takes half of the pasture techs (Seçici Islah alone: +25 %, as before), herders all of them
+      ps.acc = (ps.acc || 0) + dt * PASTURE_IDLE_RATE * ps.sheep * (1 + (p.mods.pasture || 0) * 0.5);
       if (ps.acc >= 1) { const n = ps.acc | 0; ps.acc -= n; this._credit(p, 'food', n); }
     }
     if (b.type === 'temple') {
@@ -2037,11 +2110,18 @@ export class Game {
   }
   // per-team vision grids (0 unexplored, 1 explored, 2 visible) live in the sim (this._tv, fixed cadence);
   // this.fog is only a COPY of the local player's team grid for the view (shared vision with allies)
+  // dark map: the ground under each starting town center (its footprint only) starts explored for every team, so
+  // the known town center (see _generate: b.known) does not stand on black
+  _knownStarts(g) {
+    // (round the town centre's middle: an odd-sized one, 9x9 since 2026-11-20, stands half a tile off the start point)
+    const N = this.map.size, h = BUILDINGS.towncenter.size / 2, r = h - 0.25, mid = v => Math.round(v - h) + h;
+    for (const q of this.players) if (q.startX != null) forDisc(N, mid(q.startX), mid(q.startZ), r, (a, b) => { for (let i = a; i < b; i++) if (!g[i]) g[i] = 1; });
+  }
   _updateFog() {
     const N = this.map.size, fog = this.fog;
     if (!this._tv) this._tv = new Map();
     const tv = this._tv;
-    for (const p of this.players) if (!tv.has(p.team)) { const g = new Uint8Array(N * N); if (this.cfg.fog === 'explored') g.fill(1); if (this._fogSeed && p.team === this.teamOf(this.me)) g.set(this._fogSeed); tv.set(p.team, g); }
+    for (const p of this.players) if (!tv.has(p.team)) { const g = new Uint8Array(N * N); if (this.cfg.fog === 'explored') g.fill(1); else this._knownStarts(g); if (this._fogSeed && p.team === this.teamOf(this.me)) g.set(this._fogSeed); tv.set(p.team, g); }
     this._fogSeed = null;
     for (const g of tv.values()) for (let i = 0; i < g.length; i++) if (g[i] === 2) g[i] = 1;
     let gr = null;
@@ -2061,29 +2141,31 @@ export class Game {
     else if (mine) fog.set(mine);
     this.fogVersion++;
   }
+  // how many of a player's buildings that train units still stand (started foundations count)
+  prodLeft(pid) {
+    let n = 0;
+    for (const b of this.buildings) if (b.owner === pid && !b.dead && PROD_B.has(b.type) && (b.done || b.progress > 0)) n++;
+    return n;
+  }
   _checkWin() {
     if (this.cfg.sandbox || this.players.length < 2) return;
     const myTeam = this.teamOf(this.me);
     for (const p of this.players) {
       if (p.defeated) continue;
-      const tc = this.buildings.some(b => b.owner === p.id && b.type === 'towncenter');
-      const vil = this.units.some(u => u.owner === p.id && !u.dead && u.type === 'villager');
-      // (players 2026-11-19: "the town centers fell but the match did not end" - hidden villagers kept a player in.
-      // Without a town center (a foundation counts) a player has TC_GRACE seconds to start a new one.)
-      if (tc) p.tcLostAt = null;
-      else if (p.tcLostAt == null) {
-        p.tcLostAt = this.time;
-        if (vil && p.id === this.me) this.events.emit('notify', { text: 'Şehir merkezin yıkıldı! ' + (TC_GRACE / 60) + ' dakika içinde yenisini kurmazsan yenilirsin.', type: 'warn' });
-      }
-      const graceOver = !tc && p.tcLostAt != null && this.time - p.tcLostAt >= TC_GRACE;
-      if (!tc && (!vil || graceOver)) {
+      // (owner 2026-11-20) a player is out when every building that trains units is gone - town centers, barracks,
+      // archery ranges, stables, siege workshops, factories, docks; a foundation counts once work on it has started.
+      // Units left over do not keep a player in: a villager or a scout hidden somewhere no longer stops the match.
+      const prod = this.prodLeft(p.id);
+      if (p.id === this.me && prod === 1 && (p.prodLeft | 0) > 1) this.events.emit('notify', { text: 'Birim üreten son binan kaldı! O da yıkılırsa yenilirsin.', type: 'warn' });
+      p.prodLeft = prod;
+      if (!prod) {
         p.defeated = true;
         if (p.id !== this.me) this.events.emit('notify', this.isAlly(p.id, this.me) ? { text: 'Bir müttefik uygarlık yıkıldı!', type: 'warn' } : { text: 'Bir rakip uygarlık yıkıldı!', type: 'good' });
         if (p.id === this.me) this.reveal = true;
         this.events.emit('playerDefeated', { id: p.id, team: p.team });
       }
     }
-    // a team is out when none of its players has a town center or villagers; the match ends when one team remains
+    // a team is out when none of its players has a building that trains units; the match ends when one team remains
     const alive = new Set(); for (const p of this.players) if (!p.defeated) alive.add(p.team);
     if (alive.size <= 1) { const winnerTeam = alive.size ? [...alive][0] : -1; this.over = { won: winnerTeam === myTeam, winnerTeam }; }
     else if (!this.mp && this.players.every(p => p.isAI || p.defeated)) this.over = { won: false, winnerTeam: -1 }; // single player: the human lost
@@ -2164,7 +2246,8 @@ export class Game {
     if (!this._approach(u, t, dt, 1.0)) return;
     t.nw++; if (t.nw > 6) return this._next(u);
     const si = t.nw - 1, FO = [-0.9, -0.9, 0.9, 0.9, 0.9, -0.9, -0.9, 0.9, 0, -0.9, 0, 0.9];
-    const sx = t.x + FO[si * 2] + Math.sin(this.time * 0.12 + si * 2.1) * 0.3, sz = t.z + FO[si * 2 + 1] + Math.cos(this.time * 0.1 + si * 1.7) * 0.3;
+    const k = Math.max(1, (t.size - 3) / 3);   // (the herders spread with the pen: as before in a 6x6 one, 2x in the 9x9 of 2026-11-20)
+    const sx = t.x + FO[si * 2] * k + Math.sin(this.time * 0.12 + si * 2.1) * 0.3, sz = t.z + FO[si * 2 + 1] * k + Math.cos(this.time * 0.1 + si * 1.7) * 0.3;
     const fdx = sx - u.x, fdz = sz - u.z, fd = Math.hypot(fdx, fdz);
     u.state = 'gather';
     if (fd > 0.25) { const st = Math.min(fd, 1.6 * dt); u.x += fdx / fd * st; u.z += fdz / fd * st; u.rot = Math.atan2(fdx, fdz); u.anim = 'walk'; return; }
@@ -2172,8 +2255,10 @@ export class Game {
     u.anim = 'farm'; u.rot = si * 1.3 + Math.sin(this.time * 0.2 + si) * 0.6;
     const ps = t.pasture;
     const c = [1, 0.7, 0.5, 0.4, 0.3, 0.25][si];
-    // base 0.5 food/s at 5 sheep: 2 herders ~= a 2-farmer farm on average, but steady
-    o.acc += dt * c * 0.5 * (ps.sheep / 5) * (1 + (p.mods.farm || 0) * 0.6 + (p.mods.pasture || 0));
+    // base 0.5 food/s at 5 sheep: 2 herders ~= a 2-farmer farm on average, but steady. (2026-11-20, owner: the pasture
+    // has its own tech line; the farm's techs no longer count here.) All pasture techs of an age >= the old pasture with
+    // Seçici Islah + every farm tech of that age: age 1 1.85 (was 1.85), 2 2.10 (2.00), 3 2.35 (2.00), 4 2.60 (2.00).
+    o.acc += dt * c * 0.5 * (ps.sheep / 5) * (1 + (p.mods.pasture || 0));
     if (o.acc >= 1) { const n = o.acc | 0; o.acc -= n; this._credit(p, 'food', n); o.dep = (o.dep || 0) + n; if (o.dep >= 5) { this.events.emit('deposit', { unit: u, owner: u.owner, res: 'food', amount: o.dep }); o.dep = 0; } }
     o.tick += dt; if (o.tick >= 1) { o.tick = 0; this.events.emit('gatherTick', { unit: u, res: 'food' }); }
   }

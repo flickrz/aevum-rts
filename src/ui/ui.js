@@ -1,6 +1,6 @@
 // Aevum UI: main menu, HUD, minimap, tooltips, overlays. DOM only, no three.js.
 import { AGES, UNITS, BUILDINGS, TECHS, PLAYER_COLORS } from '../data.js';
-import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS } from '../sim/game.js';
+import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS, MINE_CAP } from '../sim/game.js';
 import { firstLaunch, menuProfile } from './profile-ui.js';
 import { levelOf } from '../rank.js';
 import { menuHud, saveBadge, saveBadgeTitle, confirmDeleteSave, loginScreen, avatarEl, tpText } from './cloud-ui.js';
@@ -9,6 +9,10 @@ import { withMention } from './mention.js';
 import { menuUpdates, hasUnseen } from './updates-ui.js';
 import { mapPreview, previewClimate } from './map-preview.js';
 import { ico, applyIcons, keepIcons, stripIcons, RES_ICONS, CAT_ICONS, NATURE_ICONS } from '../icons.js';
+import { ask, askOpen } from './ask.js';
+import { ownerNoticeItem, interruptedEntry } from './notice-ui.js';
+// a tab on the previous build (the server runs a new one): no rooms until it reloads
+const STALE_TEXT = 'Oyunun yeni sürümü yayında. Sayfayı yenileyip tekrar dene.';
 
 // developer mode (a sandbox game: no TP, no match history): offered on a local dev server, or with ?dev=1 in the URL
 function devModeOffered() {
@@ -110,6 +114,13 @@ export class UI {
 
   get game() { return this.app.game; }
   _me() { return this.app.game?.me ?? 0; }
+  // a rival's entity in the fog: known to stand there, but what goes on there is not shown (owner 2026-11-20)
+  _fogged(e) {
+    const g = this.app.game, me = this._me();
+    if (!g?.map || !g.fog || g.reveal || !(e.owner >= 0) || e.owner === me || this._ally(me, e.owner)) return false;
+    const N = g.map.size, tx = Math.min(N - 1, Math.max(0, e.x | 0)), tz = Math.min(N - 1, Math.max(0, e.z | 0));
+    return g.fog[tz * N + tx] !== 2;
+  }
   _ally(a, b) { const g = this.app.game; if (a == null || b == null || a < 0 || b < 0) return false; const r = safe(() => g?.isAlly?.(a, b), undefined); return r === undefined ? a === b : !!r; }
   _pname(pid) { const g = this.app.game, p = g?.players?.[pid]; if (!p) return 'Oyuncu ' + pid; if (p.name) return p.name; if (pid === this._me()) return 'Sen'; return (p.kind === 'human' ? 'Oyuncu ' : 'Yapay Zekâ ') + (pid + 1); }
   _teamOf(pid) { const g = this.app.game; return safe(() => g?.teamOf?.(pid), undefined) ?? g?.players?.[pid]?.team ?? (pid === 0 ? 1 : 2); }
@@ -122,7 +133,11 @@ export class UI {
     this.root.append(this.hudEl, this.menuEl);
 
     // top bar
-    const top = el('div', 'topbar panel');
+    // (owner 2026-11-20: tidy the top like the main menu) ONE block: row 1 = resources / age / clock / buttons,
+    // row 2 inside the same panel = next age progress; the developer age buttons hang under it as a tab
+    this.topPanel = el('div', 'topbar panel');
+    const top = el('div', 'tbrow');
+    this.topPanel.append(top);
     this.resEls = {};
     for (const r of RES_LIST) {
       const d = el('div', 'res', `<span class="i">${RES_ICON[r]}</span><b>0</b><small class="rate"></small>`);
@@ -132,8 +147,8 @@ export class UI {
     this.popEl = el('div', 'res', `<span class="i">${ico('x-pop')}</span><b>0/0</b>`);
     this._tip(this.popEl, () => ({ name: 'Nüfus', desc: 'Mevcut / azami nüfus. Sınır sabit: 1000.' }));
     this.idleEl = el('button', 'tbtn idlebtn', ico('u-villager') + '<b>0</b>');
-    this.idleEl.onclick = () => { this._click(); safe(() => this.app.input?.nextIdleVillager()); };
-    this._tip(this.idleEl, () => ({ name: 'Boşta köylüler', desc: 'Sıradaki boşta köylüyü seç ve ona git. Kısayol: nokta (.)' }));
+    this.idleEl.onclick = (ev) => { this._click(); safe(() => this.app.input?.nextIdleVillager(!!ev?.shiftKey)); };
+    this._tip(this.idleEl, () => ({ name: 'Boşta köylüler', desc: 'Sıradaki boşta köylüyü seç ve ona git. Kısayol: Tab veya nokta (.). Shift ile: tüm boştaki köylüleri seç.' }));
     top.append(el('div', 'sep'), this.popEl, this.idleEl, el('div', 'sep'));
     this.ageEl = el('div', 'agebox', '<span class="n"></span><div class="agebar"><i></i></div>');
     this.clockEl = el('div', 'clock', '00:00');
@@ -144,7 +159,6 @@ export class UI {
       this._tip(b, () => ({ name, desc }));
       top.append(b); return b;
     };
-    tb(ico('x-quests'), 'Görevler', 'Görev listesini göster / gizle.', () => this.questsEl.classList.toggle('hidden'));
     tb(ico('x-tech'), 'Teknoloji', 'Teknoloji ağacı: tüm çağların araştırmaları. Uygun olanı tıklayıp araştır.', () => this.showTech());
     tb(ico('x-stats'), 'İstatistik', 'Oyun istatistikleri ve skor.', () => this.showStats());
     this.flareBtn = tb(ico('x-flare'), 'İşaret Ver', 'Haritaya işaret bırak: takım arkadaşın mini haritada ve oyunda görür. Butona bas, sonra haritaya ya da mini haritaya tıkla. Kısayol: Alt + tık', () => this.app.input?.armFlare());
@@ -154,9 +168,9 @@ export class UI {
     this.saveBtn = tb(ico('x-save'), 'Kaydet', 'Oyunu kaydet.', () => this._save());
     this.pauseBtn = tb(ico('x-pause'), 'Menü / Duraklat', 'Oyun menüsünü aç (Esc). Tek oyunculuda oyun durur; çok oyunculuda menüden herkes için duraklatabilirsin (P).', () => this.toggleGameMenu(true));
     this._buildFullscreenBtn(top);
-    this.hudEl.append(top);
-    this.objEl = el('div', 'objective panel hidden', '<div class="osteps"></div><div class="oage"><span class="ot"></span><div class="obar"><i></i></div><span class="om"></span></div>');
-    this.hudEl.append(this.objEl);
+    this.hudTop = el('div', 'hudtop'); this.hudTop.append(this.topPanel); this.hudEl.append(this.hudTop);
+    this.objEl = el('div', 'objective hidden', '<div class="osteps"></div><div class="oage"><span class="ot"></span><div class="obar"><i></i></div><span class="om"></span></div>');
+    this.topPanel.append(this.objEl);
     this.hintAt = {}; this.rateSamples = []; this.rateT = -99; this.slowT = -99; this.orphanSince = new Map(); this.objSig = null;
 
     this.fpsEl = el('div', 'fps', '');
@@ -184,7 +198,7 @@ export class UI {
 
     this.placeEl = el('div', 'placehint panel hidden');
     this.toastsEl = el('div', 'toasts');
-    this.questsEl = el('div', 'quests panel');
+    this.questsEl = el('div', 'quests panel hidden');   // (no quests since 2026-11-20; kept empty so the layout code stays simple)
     this.tipEl = el('div', 'tooltip panel hidden');
     this.pauseEl = el('div', 'overlay hidden');
     this.modalEl = el('div', 'overlay hidden');
@@ -195,6 +209,9 @@ export class UI {
     this._renderCard();
   }
 
+  // the game's own confirmation dialog (instead of window.confirm): ask({title, text, ok, cancel, danger}) -> Promise<boolean>
+  ask(opts) { return ask(opts); }
+  askOpen() { return askOpen(); }
   _click() { safe(() => this.app.audio?.ui('click')); }
   _error() { safe(() => this.app.audio?.ui('error')); }
 
@@ -275,7 +292,9 @@ export class UI {
     };
     item('b-towncenter', 'Yeni Oyun', 'harita ve ayarlar', () => this._menuSetup(), 'primary');
     if (this.game && !this.game.over && !this.app.demo && !this.app.net) item('x-speed', 'Oyuna Dön', 'kaldığın yer', () => { this.showHUD(); this.app.setPaused?.(false); });
-    item('x-ally', 'Çok Oyunculu', 'davet et, birlikte oyna', () => this._menuMulti());
+    const multi = item('x-ally', 'Çok Oyunculu', 'davet et, birlikte oyna', () => this._menuMulti());
+    // a multiplayer match an update cut (within 30 minutes): "Kesilen maça devam et" right under it (src/ui/notice-ui.js)
+    safe(() => interruptedEntry(this, box, multi));
     item('u-villager', 'Arkadaşlar', null, () => import('./friends-ui.js').then((m) => m.menuFriends(this)));
     item('x-build', 'Sandbox', 'serbest kur', () => this.app.newGame({ mapSize: 256, enemies: 1, difficulty: 'normal', startRes: 'high', startAge: 0, sandbox: true, seed: (Math.random() * 1e9) | 0 }));
     const cont = item('x-explore', 'Devam Et', '', () => Promise.resolve(safe(() => this.app.continueLast(), false)).then((ok) => { if (!ok && this.app.lastLoadError && this.mode === 'menu') this._menuSaves(this.app.lastLoadError); }).catch(() => {}));
@@ -297,10 +316,27 @@ export class UI {
       if (!own || !box.isConnected) return;
       const st = item('x-stats', 'İstatistikler', 'oyuncu sayıları', () => import('./stats-ui.js').then((m) => m.menuStats(this)));
       box.insertBefore(st, row);   // (a list row: four small buttons did not fit their names)
+      safe(() => ownerNoticeItem(this, item, box, row));   // "Güncelleme Duyur": tell every tab an update comes in 1 minute
     }).catch(() => {});
     // feedback: anything written to @claude in the game's chat reaches the developer (tools/read-chatlog.mjs --claude)
     this.menuEl.append(el('div', 'menu-fb panel', `<span class="mi">${ico('x-chat')}</span><span>Hata mı buldun, önerin mi var? Oyunda <kbd>Enter</kbd> ile sohbeti aç, <b class="cmention">@claude</b> yaz; doğrudan geliştiriciye gider.</span>`));
     safe(() => menuHud(this));   // the player plate (avatar, name, level, TP) and account chips around the menu
+    // (owner 2026-11-20, drawn on a screenshot) the account unit (player plate, and the status pill and Profil / Çıkış
+    // right under it) at the top left over the menu's column; the menu, and the feedback note right under it
+    safe(() => {
+      const hud = this.menuEl.querySelector('.menu-hud');
+      const plate = hud && hud.querySelector('.mh-plate'), right = hud && hud.querySelector('.mh-right');
+      if (!plate) return;
+      const acct = el('div', 'mh-acct');
+      hud.insertBefore(acct, plate);
+      acct.append(plate);
+      if (right) acct.append(right);
+      // the card's last line: the TP numbers on the left, the sync status small on the right
+      const txt = plate.querySelector('.mh-txt'), nums = plate.querySelector('.mh-nums'), pill = right && right.querySelector('.acc-status');
+      if (txt) { const meta = el('span', 'mh-meta'); if (nums) meta.append(nums); if (pill) meta.append(pill); txt.append(meta); }
+      const fb = this.menuEl.querySelector('.menu-fb'), stack = el('div', 'm-stack');
+      this.menuEl.insertBefore(stack, box); stack.append(box); if (fb) stack.append(fb);
+    });
     void saves; void firstLaunch;
   }
   // a short message at the top of the current menu box (green)
@@ -394,7 +430,10 @@ export class UI {
     const devBox = dev.querySelector('input'); devBox.checked = !!this.devOn;
     devBox.onchange = () => { this._click(); this.devOn = devBox.checked; };
     right.append(dev);
-    if (devModeOffered()) dev.classList.remove('hidden'); else this.devOn = false;
+    // (owner 2026-11-20: his developer mode was gone on the live site) also offered to the game's owner, as the server
+    // says (the same check as his statistics; no address in the source)
+    if (devModeOffered()) dev.classList.remove('hidden');
+    else { this.devOn = false; Promise.resolve(safe(() => this.app.cloud.isOwner(), false)).then((own) => { if (own && dev.isConnected) dev.classList.remove('hidden'); }).catch(() => {}); }
     const acts = el('div', 'su-acts'); right.append(acts);
     this._mbtn(acts, 'Geri', () => this._menuMain());
     this._mbtn(acts, 'Başla', () => {
@@ -402,6 +441,38 @@ export class UI {
       this.app.newGame({ ...this.setup, sandbox: d, dev: d, seed: (Math.random() * 1e9) | 0 });
     }, 'primary');
     redraw();
+  }
+  // (owner 2026-11-20: "oda kur kısmında da harita görselleri olsun") the seven map cards of the Yeni Oyun screen, no big
+  // picture (the cards show it); the host picks, the others see the chosen one marked
+  _lobbyMap(sets, players, onPick) {
+    const cur = sets.mapType || 'random', climate = previewClimate(sets.climate), enemies = Math.max(1, Math.min(7, (players | 0) - 1));
+    const pic = (type, holder, px) => {
+      holder.innerHTML = ''; holder.dataset.t = type;
+      if (type === 'random') { holder.append(el('div', 'su-rand', '?')); return; }
+      const put = (c) => {
+        if (!c || holder.dataset.t !== type) return;
+        holder.innerHTML = '';
+        const k = document.createElement('canvas'); k.width = px; k.height = px;
+        const x = k.getContext('2d'); x.imageSmoothingEnabled = true; x.drawImage(c, 0, 0, px, px);
+        holder.append(k);
+      };
+      const c = mapPreview(type, enemies, climate, put);
+      if (c) put(c); else holder.append(el('div', 'su-wait', ''));
+    };
+    const box = el('div', 'lb-map' + (onPick ? '' : ' ro'));
+    box.append(el('div', 'lb-maph', 'Harita Türü'));
+    const cards = el('div', 'su-types lb-types');
+    for (const [t, name] of MAP_TYPES) {
+      const b = el('button', 'su-card' + (cur === t ? ' on' : ''));
+      b.type = 'button'; b.title = (MAP_TYPE_TR[t] || name) + ': ' + (MAP_DESC[t] || '') + (MAP_FACTS[t] ? ' · ' + MAP_FACTS[t] : '');
+      const ph = el('div', 'su-thumb'); b.append(ph); pic(t, ph, 72);
+      const n = el('span', 'su-cname'); n.textContent = name; b.append(n);
+      if (onPick) b.onclick = () => { this._click(); cards.querySelectorAll('.su-card').forEach((x) => x.classList.toggle('on', x === b)); onPick(t); };
+      else b.tabIndex = -1;
+      cards.append(b);
+    }
+    box.append(cards);
+    return box;
   }
   _menuSaves(errText) {
     const box = this._menuBox('<h2>Kayıtlı Oyunlar</h2><div class="mperr hidden"></div><div class="savelist">Yükleniyor...</div>');
@@ -429,9 +500,9 @@ export class UI {
         if (cloudOn) {
           // (guests keep the old list without a delete button)
           const del = el('button', 'lb-x', '✕'); del.title = 'Kaydı sil';
-          del.onclick = (ev) => {
+          del.onclick = async (ev) => {
             ev.stopPropagation();
-            const c = confirmDeleteSave(s); if (!c) return;
+            const c = await confirmDeleteSave(s); if (!c || this.mode !== 'menu') return;
             Promise.resolve(safe(() => this.app.deleteSave(s.key, c), null)).then((r) => this._menuSaves(r && r.ok === false ? r.error : '')).catch(() => this._menuSaves('Kayıt silinemedi.'));
           };
           d.append(del);
@@ -450,7 +521,7 @@ export class UI {
       <b>Binalar:</b> <kbd>Shift</kbd>+tık ile aynı türden birden çok bina seç, çift tık ekrandaki tümünü seçer; üretim her binada aynı anda başlar. <kbd>Shift</kbd>+üret: 5 adet sıraya ekler. <kbd>Shift</kbd> basılıyken bina yerleştirmek araç açık kalır, birden çok temel atarsın.<br>
       <b>Ekonomi:</b> Köylülerle yiyecek, odun, taş ve altın topla; tarla ek (nüfus sınırı sabit 1000, ev gerekmez).<br>
       <b>Çağ atlama:</b> Şehir Merkezinden yeterli kaynak ve bina ile sonraki çağa geç; yeni birimler ve binalar açılır.<br>
-      <b>Zafer:</b> Tüm düşmanların binalarını yok et.<br>
+      <b>Zafer:</b> Rakiplerin birim üreten bütün binalarını yık: şehir merkezi, kışla, okçuluk alanı, ahır, kuşatma atölyesi, fabrika ve liman (inşaatına başlanmış temeller de sayılır). Geriye kalan askerler ve köylüler oyunu sürdürmez. Bir rakibin bu binalarından 1-2 tane kalınca mini haritada yanıp söner.<br>
       <b>Diğer:</b> <kbd>Esc</kbd> iptal / duraklat, mini haritaya tıklayarak kamerayı taşı, sağ tıkla birimleri gönder.
       </div>`);
     this._mbtn(box, 'Geri', () => this._menuMain());
@@ -549,8 +620,6 @@ export class UI {
     for (const b of [this.pauseBtn]) if (b) b.style.display = mp ? 'none' : '';
     if (this.saveBtn) { this.saveBtn.style.display = ''; this.saveBtn.title = mp ? 'Maçı kaydet: herkes aynı anda kaydeder (Çok Oyunculu → Kayıtlı Maça Devam Et)' : this.saveBtn.title; }
     if (this.chatBtn) this.chatBtn.style.display = mp ? '' : 'none';
-    if (mp || game.mp) { this.questsEl.classList.add('hidden'); this._mpHidQuests = true; }
-    else if (this._mpHidQuests) { this.questsEl.classList.remove('hidden'); this._mpHidQuests = false; }
     if (this.netEl) { this.netEl.remove(); this.netEl = null; }
     this.scoreSig = null;
     if (this.mode !== 'hud') this.showHUD();
@@ -808,15 +877,27 @@ export class UI {
         b.onclick = () => { this._click(); safe(() => this.game.devSetAge(i)); };
         this.devEl.append(b);
       }
-      this.hudEl.append(this.devEl);
+      (this.hudTop || this.hudEl).append(this.devEl);
     }
     this.devEl.classList.remove('hidden');
     const age = g.players[this._me()]?.age | 0;
     this.devEl.querySelectorAll('button').forEach((b) => b.classList.toggle('on', +b.dataset.age === age));
   }
+  // the quests / scoreboard (top-left) and the toasts (top-right) start below the top block wherever it reaches over them
+  _clearTop() {
+    if (!this.hudTop || !this.topPanel) return;
+    const tb = this.topPanel.getBoundingClientRect(), all = this.hudTop.getBoundingClientRect(), vw = window.innerWidth || 0;
+    if (!tb.width) return;
+    const q = tb.left < 266 ? Math.ceil(tb.bottom + 8) : 56, t = all.right > vw - 326 ? Math.ceil(all.bottom + 8) : 60;
+    const sig = q + ',' + t;
+    if (sig === this._clearSig) return;
+    this._clearSig = sig;
+    this.hudEl.style.setProperty('--quests-top', q + 'px'); this.hudEl.style.setProperty('--toasts-top', t + 'px');
+    safe(() => this._chatTick());   // the chat dock starts below the quests: follow them at once
+  }
   update(dt) {
     this.frames++; this.fpsT += dt;
-    if (this.fpsT + dt >= 0.5) this._devPanel();
+    if (this.fpsT + dt >= 0.5) { this._devPanel(); this._clearTop(); }
     if (this.fpsT >= 0.5) {
       // multiplayer: the worst peer's round trip next to the FPS (is a hitch the network or the screen?)
       const ni = this.app.net && typeof this.app.net.netInfo === 'function' ? safe(() => this.app.net.netInfo(), null) : null;
@@ -836,7 +917,6 @@ export class UI {
       safe(() => this._refreshTop());
       safe(() => this._refreshSel());
       safe(() => this._refreshCard());
-      safe(() => this._refreshQuests());
       safe(() => this._refreshGroups());
       if (this.techTiles && (this.techT = (this.techT || 0) + 1) % 2 === 0) safe(() => this._refreshTech());
       const paused = this.gameMenuVisible();
@@ -903,13 +983,13 @@ export class UI {
     if (sig !== this.selSig) { this.selSig = sig; this._buildSel(ents); }
     if (!ents.length) return;
     if (ents.length === 1) {
-      const e = ents[0], f = Math.max(0, Math.min(1, e.kind === 'resource' ? (e.amount / (e.maxAmount || 1)) : e.hp / (e.maxHp || 1)));
+      const e = ents[0], fog = e.kind === 'building' && this._fogged(e), f = fog ? 1 : Math.max(0, Math.min(1, e.kind === 'resource' ? (e.amount / (e.maxAmount || 1)) : e.hp / (e.maxHp || 1)));
       const bar = this.selEl.querySelector('.hpbar');
-      if (bar) { bar.firstChild.style.width = f * 100 + '%'; bar.className = 'hpbar' + (e.kind !== 'resource' && f < 0.3 ? ' low' : e.kind !== 'resource' && f < 0.6 ? ' mid' : ''); }
+      if (bar) { bar.firstChild.style.width = f * 100 + '%'; bar.className = 'hpbar' + (fog ? ' fog' : e.kind !== 'resource' && f < 0.3 ? ' low' : e.kind !== 'resource' && f < 0.6 ? ' mid' : ''); }
       const ht = this.selEl.querySelector('.hptxt');
       // stone and gold mines never run out (src/sim/game.js): no misleading "350 / 350"
       const endless = e.kind === 'resource' && (e.type === 'stone' || e.type === 'gold');
-      if (ht) ht.textContent = endless ? `∞ Sınırsız ${RES_NAME[NATURE[e.type]?.res] || ''}` : e.kind === 'resource' ? `${Math.ceil(e.amount)} /${Math.ceil(e.maxAmount || e.amount)} ${RES_NAME[NATURE[e.type]?.res] || ''}` : `${Math.ceil(e.hp)} / ${Math.ceil(e.maxHp)} can`;
+      if (ht) ht.textContent = fog ? 'Sisin içinde' : endless ? `∞ Sınırsız ${RES_NAME[NATURE[e.type]?.res] || ''}` : e.kind === 'resource' ? `${Math.ceil(e.amount)} /${Math.ceil(e.maxAmount || e.amount)} ${RES_NAME[NATURE[e.type]?.res] || ''}` : `${Math.ceil(e.hp)} / ${Math.ceil(e.maxHp)} can`;
       const st = this.selEl.querySelector('.stats');
       if (st) { const h = this._statsHtml(e); if (st._h !== h) { st._h = h; st.innerHTML = h; } }
       const qs = this.selEl.querySelectorAll('.qi i');
@@ -934,6 +1014,9 @@ export class UI {
       if (e.type === 'transport' || Array.isArray(e.cargo)) s.push(`<span>${ico('u-transport')} <b>${(e.cargo || []).length}/10</b></span>`);
       if (e.carry && e.carry.amount > 0) s.push(`<span>${RES_ICON[e.carry.type] || ico('x-cargo')} <b>${Math.floor(e.carry.amount)}</b></span>`);
       s.push(`<span>Durum: <b>${STATE_TR[e.state] || e.state || '-'}</b></span>`);
+    } else if (e.kind === 'building' && this._fogged(e)) {
+      if (d.popCap) s.push(`<span>${ico('x-pop')} <b>+${d.popCap}</b></span>`);
+      s.push('<span style="color:var(--dim)">Ne olup bittiğini görmek için oraya git.</span>');
     } else if (e.kind === 'building') {
       if (!e.done) s.push(`<span>İnşaat: <b>%${Math.floor((e.progress || 0) * 100)}</b></span>`);
       if (d.atk) {
@@ -947,6 +1030,10 @@ export class UI {
       else if (e.type === 'farm' && e.farm) s.push(`<span>Tarla: <b>${['Boş', 'Sürülü', 'Ekili', 'Büyüyor', 'Olgun', 'Hasat'][e.farm.stage] || '-'}</b></span>`);
       if (e.done) s.push(...safe(() => this._extraStats(e), []));
       if (e.queue?.length) s.push(`<span>Kuyruk: <b>${e.queue.length}</b></span>`);
+    } else if (e.kind === 'resource' && (e.type === 'stone' || e.type === 'gold') && this.game?.mineLoad) {
+      // (owner 2026-11-20) at most MINE_CAP villagers on one deposit
+      const n = safe(() => this.game.mineLoad(this.game._depOf(e), this._me()), 0);
+      s.push(`<span>${ico('u-villager')} <b>${n}/${MINE_CAP}</b> işçin bu maden öbeğinde</span>`);
     }
     return s.join('');
   }
@@ -982,8 +1069,20 @@ export class UI {
         e.queue.slice(0, 8).forEach((it, i) => {
           const qd = it.kind === 'unit' ? UNITS[it.id] : it.kind === 'tech' ? TECHS[it.id] : { icon: ico('x-ageup'), name: 'Çağ Atlama' };
           const b = el('div', 'qi', `${qd?.icon || ico('x-unknown')}<i></i>`);
-          this._tip(b, () => ({ name: qd?.name || it.id, desc: 'İptal etmek için tıkla (iade edilir).' }));
-          b.onclick = () => { if (safe(() => this.game.cancelQueue(e.id, i), false)) this._click(); else this._error(); this.selSig = null; this.cardSig = null; this.tipEl.classList.add('hidden'); };
+          this._tip(b, () => ({ name: qd?.name || it.id, desc: 'İptal etmek için tıkla (iade edilir). Shift: 5 tanesini iptal et.' }));
+          b.onclick = (ev) => {
+            // Shift: up to 5 entries of the same kind, from the back of the queue (so the earlier indices stay valid);
+            // each one is its own cancelQueue call (a lockstep command in multiplayer)
+            let idx = [i];
+            if (ev.shiftKey) {
+              idx = [];
+              for (let j = e.queue.length - 1; j >= 0 && idx.length < 5; j--) { const q2 = e.queue[j]; if (q2 && q2.kind === it.kind && q2.id === it.id) idx.push(j); }
+            }
+            let ok = false;
+            for (const j of idx) if (safe(() => this.game.cancelQueue(e.id, j, it.id), false)) ok = true;
+            if (ok) this._click(); else this._error();
+            this.selSig = null; this.cardSig = null; this.tipEl.classList.add('hidden');
+          };
           q.append(b);
         });
         if (e.queue.length > 8) q.append(el('div', 'qi qmore', `+${e.queue.length - 8}`));   // (the rest of a long queue)
@@ -1360,7 +1459,15 @@ export class UI {
     }
     // units and buildings in the same (id) order the entity map gives, without walking the map's trees
     const mmE = g.units.concat(g.buildings).sort((x, y) => x.id - y.id);
+    // a rival's known town center that fell in the fog stays on the map until someone sees the spot
+    const known = this._mmKnown && this._mmKnown.g === g ? this._mmKnown : (this._mmKnown = { g, m: new Map() });
+    for (const [id, e] of known.m) {
+      if (!e.dead && g.entities.get(id) === e) continue;
+      if (!safe(() => this._fogged(e), false)) { known.m.delete(id); continue; }
+      const s = Math.max(3, (e.size || 1) * k); ctx.fillStyle = hex(PLAYER_COLORS[e.owner] ?? 0xffffff); ctx.fillRect(e.x * k - s / 2, e.z * k - s / 2, s, s);
+    }
     for (const e of mmE) {
+      if (e.known && e.owner !== this._me() && !e.dead) known.m.set(e.id, e);
       if (e.dead || e.kind === 'resource' || e.aboard != null || (e.kind === 'building' && e.type === 'rail')) continue;
       if (e.owner !== this._me() && !safe(() => g.isEntityVisible(e), true)) continue;
       ctx.fillStyle = hex(PLAYER_COLORS[e.owner] ?? 0xffffff);
@@ -1368,6 +1475,22 @@ export class UI {
       if (e.naval || UNITS[e.type]?.naval) { const r = 2.4; ctx.beginPath(); ctx.moveTo(e.x * k, e.z * k - r); ctx.lineTo(e.x * k + r, e.z * k); ctx.lineTo(e.x * k, e.z * k + r); ctx.lineTo(e.x * k - r, e.z * k); ctx.closePath(); ctx.fill(); continue; }
       if (e.kind === 'building') { const s = Math.max(3, (e.size || 1) * k); ctx.fillRect(e.x * k - s / 2, e.z * k - s / 2, s, s); if (g.mp && e.owner !== this._me() && this._ally(this._me(), e.owner)) { ctx.strokeStyle = 'rgba(140,200,255,.95)'; ctx.lineWidth = 1; ctx.strokeRect(e.x * k - s / 2 - 0.5, e.z * k - s / 2 - 0.5, s + 1, s + 1); } }
       else ctx.fillRect(e.x * k - 1.25, e.z * k - 1.25, 2.5, 2.5);
+    }
+    // (owner 2026-11-20) a rival down to its last one or two buildings that train units: they blink on the minimap, also
+    // in the fog, so the match does not drag on with a building nobody can find
+    {
+      const blink = 0.5 + 0.5 * Math.sin(performance.now() / 260);
+      for (const p of g.players || []) {
+        if (p.defeated || p.id === this._me() || this._ally(this._me(), p.id)) continue;
+        const last = g.buildings.filter((b) => b.owner === p.id && !b.dead && (BUILDINGS[b.type]?.trains || []).length && !BUILDINGS[b.type].legacy && (b.done || b.progress > 0));
+        if (!last.length || last.length > 2) continue;
+        for (const b of last) {
+          const r = Math.max(5, (b.size || 3) * k * 0.9) + blink * 3;
+          ctx.strokeStyle = 'rgba(255,90,70,' + (0.45 + 0.5 * blink).toFixed(2) + ')'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(b.x * k, b.z * k, r, 0, Math.PI * 2); ctx.stroke();
+          ctx.fillStyle = hex(PLAYER_COLORS[p.id] ?? 0xffffff); const s = Math.max(3, (b.size || 1) * k); ctx.fillRect(b.x * k - s / 2, b.z * k - s / 2, s, s);
+        }
+      }
     }
     // selection highlight
     ctx.fillStyle = '#fff';
@@ -1441,8 +1564,18 @@ export class UI {
     btn('İstatistik', () => this.showStats());
     const sbox = el('div'); sbox.style.margin = '14px 0';
     this._settingsBody(sbox); m.append(sbox);
-    if (net) btn('Maçtan Ayrıl', () => { if (confirm('Maçtan ayrılmak istediğine emin misin? (Maç diğerleri için sürer.)')) { this.menuOpen = false; safe(() => this.app.leaveMultiplayer?.()); } });
-    else btn('Ana Menü', () => { safe(() => this.app.toMenu?.()); this.showMenu(); });
+    if (net) btn('Maçtan Ayrıl', async () => {
+      if (!(await ask({ title: 'Maçtan Ayrıl', text: 'Maçtan ayrılmak istediğine emin misin?\nMaç diğerleri için sürer.', ok: 'Ayrıl', danger: true }))) return;
+      if (this.app.net !== net) return;   // (the match ended / was left while the dialog was open)
+      this.menuOpen = false; safe(() => this.app.leaveMultiplayer?.());
+    });
+    // (toMenu does not save: only the periodic autosave and Kaydet do, so unsaved progress is lost here)
+    else btn('Ana Menü', async () => {
+      const g = this.app.game;
+      if (g && !g.over && !(await ask({ title: 'Ana Menü', text: 'Ana menüye dönmek istediğine emin misin?\nKaydetmediğin ilerleme kaybolur.', ok: 'Ana Menü', danger: true }))) return;
+      if (this.app.game !== g || this.app.net) return;
+      safe(() => this.app.toMenu?.()); this.showMenu();
+    });
     this.pauseEl.append(m);
   }
   // is the in-game menu showing? (single player: paused; multiplayer: opened, or the match is paused)
@@ -1498,7 +1631,11 @@ export class UI {
   }
   _enemyKnown(p) {
     const g = this.game;
-    for (const e of g.entities.values()) if (e.owner === p.id && !e.dead && safe(() => g.isEntityVisible(e), false)) return true;
+    // (a starting town center known from the start is not "met": only something really seen counts, and once met
+    // a rival stays listed)
+    const met = this._met && this._met.g === g ? this._met : (this._met = { g, s: new Set() });
+    if (met.s.has(p.id)) return true;
+    for (const e of g.entities.values()) if (e.owner === p.id && !e.dead && !(e.known && this._fogged(e)) && safe(() => g.isEntityVisible(e), false)) { met.s.add(p.id); return true; }
     return false;
   }
   // ------------------------------------------------------------------ tribute: send resources to an ally
@@ -1616,7 +1753,7 @@ export class UI {
     this.modalEl.innerHTML = '';
     const owners = this._techBuildings();
     const m = el('div', 'modal panel techmodal', `<h2>${ico('x-tech')} Teknoloji Ağacı</h2><div class="techhead"></div>`);
-    const ids = Object.keys(TECHS);
+    const ids = Object.keys(TECHS).filter((id) => !TECHS[id].legacy);   // (legacy: old saves only, e.g. Kervan)
     const cats = []; for (const id of ids) { const c = TECHS[id].cat || 'other'; if (!cats.includes(c)) cats.push(c); }
     cats.sort((a, b) => { const o = ['eco', 'mil', 'def']; const ia = o.indexOf(a), ib = o.indexOf(b); return (ia < 0 ? 9 : ia) - (ib < 0 ? 9 : ib); });
     const grid = el('div', 'techgrid');
@@ -1729,8 +1866,14 @@ export class UI {
     if (!cloud || !cloud.loggedIn) throw new Error('Çok oyunculu için Google ile giriş gerekli.');
     let t;
     try { t = await cloud.relayTicket(); } catch (e) { throw new Error('Kimliğin oyun sunucusunda doğrulanamadı: ' + (e?.message || e)); }
+    // the build id (src/net/notice.js): a tab on old files must not play with new ones (that desyncs); the host
+    // refuses joiners with another one (src/net/session.js)
+    const notice = this.app.notice;
+    if (notice) await notice.baseVer(3000);
+    if (notice && (notice.stale() || (await notice.poll(), notice.stale()))) throw new Error(STALE_TEXT);
+    const ver = notice ? notice.base : null;
     const { NetSession } = await import('../net/session.js');
-    return NetSession.create('auto', { name: t.ident.name, uid: t.ident.uid, ident: t.ident, ticket: (fresh) => cloud.relayTicket(fresh).then((x) => x.ticket) });
+    return NetSession.create('auto', { name: t.ident.name, uid: t.ident.uid, ident: t.ident, ver, ticket: (fresh) => cloud.relayTicket(fresh).then((x) => x.ticket) });
   }
   _menuMulti(errText) {
     if (!this._signedIn()) { this._menuMain(); return; }
@@ -1846,9 +1989,9 @@ export class UI {
         const ab = el('button', 'mbtn small', '+ Ekle'); ab.disabled = slots.length >= 8;
         ab.onclick = () => call('addAI', aTeam, aDiff); add.append(ab); body.append(add);
         const sets = st.settings || {}, sg = el('div', 'lb-settings');
+        body.append(this._lobbyMap(sets, slots.length, (t) => call('setSettings', { mapType: t })));
         const srow = (lab, node) => { const r = el('div', 'frow', `<label>${lab}</label>`); r.append(node); sg.append(r); };
         srow('Harita Boyutu', sel([[256, 'Küçük'], [320, 'Orta'], [384, 'Büyük'], [448, 'Çok Büyük'], [512, 'Dev']], sets.mapSize ?? 320, (v) => call('setSettings', { mapSize: +v })));
-        srow('Harita Türü', sel(MAP_TYPES, sets.mapType ?? 'river', (v) => call('setSettings', { mapType: v })));
         srow('İklim', sel(CLIMATE_OPTS, sets.climate ?? 'random', (v) => call('setSettings', { climate: v })));
         srow('Başlangıç Kaynakları', sel([['low', 'Düşük'], ['normal', 'Normal'], ['high', 'Yüksek']], sets.startRes ?? 'normal', (v) => call('setSettings', { startRes: v })));
         srow('Başlangıç Çağı', sel(AGES.map((a, j) => [j, a.name]), sets.startAge ?? 0, (v) => call('setSettings', { startAge: +v })));
@@ -1856,6 +1999,7 @@ export class UI {
         body.append(sg);
       } else {
         const sets = st.settings || {};
+        body.append(this._lobbyMap(sets, slots.length, null));
         body.append(el('div', 'lb-hint', `Harita: ${({ 256: 'Küçük', 320: 'Orta', 384: 'Büyük', 448: 'Çok Büyük', 512: 'Dev' })[sets.mapSize] || sets.mapSize || '-'} · Tür: ${MAP_TYPE_TR[sets.mapType || 'river'] || '-'} · İklim: ${(CLIMATE_OPTS.find((c) => c[0] === (sets.climate || 'random')) || CLIMATE_OPTS[0])[1]} · Kaynak: ${({ low: 'Düşük', normal: 'Normal', high: 'Yüksek' })[sets.startRes] || '-'} · Çağ: ${AGES[sets.startAge ?? 0]?.name || '-'}`));
       }
       foot.innerHTML = '';
@@ -2016,7 +2160,8 @@ export class UI {
     if (this._chatSess !== this._chatKey()) this._chatReset();
     // start right below the multiplayer scoreboard (top-left), never under it
     const sb = this.scoreEl && !this.scoreEl.classList.contains('hidden') ? this.scoreEl.getBoundingClientRect() : null;
-    const top = Math.round((sb && sb.height ? sb.bottom : 48) + 10);
+    const qb = this.questsEl && !this.questsEl.classList.contains('hidden') ? this.questsEl.getBoundingClientRect() : null;
+    const top = Math.round(Math.max(sb && sb.height ? sb.bottom : 48, qb && qb.height ? qb.bottom : 0) + 10);
     if (top !== this._chatTop) { this._chatTop = top; d.style.setProperty('--chat-top', top + 'px'); }
     const now = performance.now(), L = this.chatLog || [];
     let shown = 0;

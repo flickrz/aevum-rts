@@ -35,7 +35,7 @@ ok(CMD_METHODS.every(m => METHODS.includes(m)), 'the lockstep sends every Game c
 
 // 4) Selective Breeding moved from the farm to the pasture
 ok(BUILDINGS.pasture.researches.includes('breeding') && !BUILDINGS.farm.researches.includes('breeding'), 'breeding is researched at the pasture');
-ok(BUILDINGS.pasture.size === 6, 'the pasture is 6x6');
+ok(BUILDINGS.pasture.size === 9, 'the pasture is 9x9');   // (6x6 since 2026-11-17, 9x9 since 2026-11-20)
 
 // 5) idle cannons do not sit inside each other
 {

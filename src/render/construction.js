@@ -310,19 +310,21 @@ export function updateConstruction(v, e, p, dt, y, vis, ctx) {
     if (p >= 1 || e.done) return false;
     rig = v.cons = buildRig(v, e, ctx.color);
   }
-  const U = v.root.userData, fx = vis ? ctx.fx : null, s = rig.s, hs = rig.hs;
+  // (rig sizes - s, bTop, rMax, the frame offsets - are model units under v.root, which is scaled by v.k; particles
+  //  and the clipping planes live in world space, so their offsets are scaled by vk)
+  const U = v.root.userData, fx = vis ? ctx.fx : null, s = rig.s, hs = rig.hs, vk = v.k || 1;
   const done = !!e.done || p >= 1;
   if (done && rig.doneT < 0) {
     rig.doneT = 0;
     for (let i = 0; i < rig.scaf.length; i++) { const pc = rig.scaf[i]; if (pc.f == null) pc.f = -i * .025; }
-    if (fx && fx.burst) { try { fx.burst('sparkle', e.x, y + rig.bTop * .7, e.z); fx.burst('build', e.x, y + .4, e.z); } catch (err) { /* fx optional */ } }
+    if (fx && fx.burst) { try { fx.burst('sparkle', e.x, y + rig.bTop * .7 * vk, e.z); fx.burst('build', e.x, y + .4 * vk, e.z); } catch (err) { /* fx optional */ } }
   }
   if (rig.doneT >= 0) {
     rig.doneT += dt;
     const k = rig.doneT;
     // settle bounce
     const b = k < .5 ? Math.sin(k / .5 * PI * 2) * .045 * (1 - k / .5) : 0;
-    const vk = v.k || 1; v.root.scale.set(vk * (1 - b * .5), vk * (1 + b), vk * (1 - b * .5));
+    v.root.scale.set(vk * (1 - b * .5), vk * (1 + b), vk * (1 - b * .5));
     if (k > 1.3) { disposeConstruction(v); return false; }
   }
   const pe = done ? 1 : p;
@@ -333,7 +335,7 @@ export function updateConstruction(v, e, p, dt, y, vis, ctx) {
     const f = (pe - .35) / .4, c = Math.min(rig.nC, Math.ceil(f * rig.nC - 1e-6));
     if (c !== rig.course) {
       const was = rig.course; rig.course = c; rig.prevCut = rig.cut; rig.landT = 0;
-      if (was >= 0 && fx && fx.courseDust) { try { fx.courseDust(e.x, y + c / rig.nC * rig.bTop, e.z, s * .9, s * .9, 8 + (s * 2 | 0)); } catch (err) { /* */ } }
+      if (was >= 0 && fx && fx.courseDust) { try { const sw = s * vk; fx.courseDust(e.x, y + c / rig.nC * rig.bTop * vk, e.z, sw * .9, sw * .9, 8 + (sw * 2 | 0)); /* (rig.s: model units; the dust: world units) */ } catch (err) { /* */ } }
     }
     cut = c / rig.nC * rig.bTop;
   } else cut = rig.bTop + 50;
@@ -341,15 +343,15 @@ export function updateConstruction(v, e, p, dt, y, vis, ctx) {
   let disp = cut;
   if (cut < 40 && rig.landT < .6) { const t = rig.landT; disp = cut - (cut - rig.prevCut) * Math.exp(-t * 11) * Math.cos(t * 17); }
   rig.cut = cut;
-  rig.planeB.constant = y + disp;
+  rig.planeB.constant = y + disp * vk;
   U.body.visible = pe >= .35; U.body.scale.y = 1;
   // details (owner colour, windows, glow) pop in during stage 4
   const nd = rig.details.length;
-  for (let i = 0; i < nd; i++) { const on = pe >= Math.min(.93, .78 + i * .035); if (rig.details[i].visible !== on) { rig.details[i].visible = on; if (on && fx && fx.burst && rig.doneT < 0) { try { fx.burst('sdust', e.x, y + rig.bTop * .5, e.z); } catch (err) { /* */ } } } }
+  for (let i = 0; i < nd; i++) { const on = pe >= Math.min(.93, .78 + i * .035); if (rig.details[i].visible !== on) { rig.details[i].visible = on; if (on && fx && fx.burst && rig.doneT < 0) { try { fx.burst('sdust', e.x, y + rig.bTop * .5 * vk, e.z); } catch (err) { /* */ } } } }
   // roof covering
   const rf = Math.max(0, Math.min(1, (pe - .82) / .13));
   U.roof.visible = pe >= .82; U.roof.scale.y = 1; U.roof.position.y = 0;
-  rig.planeR.constant = rf >= 1 ? y + 1e4 : y + rig.rMin + (rig.rMax - rig.rMin) * rf;
+  rig.planeR.constant = rf >= 1 ? y + 1e4 : y + (rig.rMin + (rig.rMax - rig.rMin) * rf) * vk;
   if (U.spin) U.spin.visible = done;
   U.scaf.visible = false;
   // ---- rig pieces ----
@@ -396,7 +398,7 @@ export function updateConstruction(v, e, p, dt, y, vis, ctx) {
       const px = F.position.x + lx * cr + lz * sr, pz = F.position.z - lx * sr + lz * cr;
       const era = rig.era;
       const kind = era <= 1 ? 'chips' : era === 2 ? (Math.random() < .5 ? 'sdust' : 'chips') : era === 3 ? 'sdust' : (Math.random() < .5 ? 'bspark' : 'sdust');
-      try { fx.burst(kind, e.x + px, y + top, e.z + pz); } catch (err) { /* fx optional */ }
+      try { fx.burst(kind, e.x + px * vk, y + top * vk, e.z + pz * vk); } catch (err) { /* fx optional */ }
     }
   }
   rig.lastP = p;

@@ -467,6 +467,8 @@ export class Input {
   onKeyDown(e) {
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    // a confirmation dialog (src/ui/ask.js) is open: it owns the keyboard (it already swallows keys in the capture phase)
+    try { if (this.app.ui && this.app.ui.askOpen && this.app.ui.askOpen()) return; } catch (err) { /* ignore */ }
     this.shift = e.shiftKey;
     const app = this.app, game = this.game;
     const k = e.key, code = e.code;
@@ -518,7 +520,7 @@ export class Input {
       if (!e.repeat && !this.rot) this.rot = { x: this.mouse.x, y: this.mouse.y, space: true, moved: 0 };
       return;
     }
-    if (k === '.' || k === 'Tab') { e.preventDefault(); this.nextIdleVillager(); return; }
+    if (k === '.' || k === 'Tab' || k === ':') { e.preventDefault(); this.nextIdleVillager(e.shiftKey); return; }   // (with Shift: all of them, owner 2026-11-20)
     if (k === 'Delete') {
       const own = app.selection.filter(id => { const x = this.ent(id); return x && x.owner === this.me(); });
       for (const id of own) game.deleteEntity(id);
@@ -591,10 +593,18 @@ export class Input {
     return true;
   }
 
-  nextIdleVillager() {
+  // the next idle villager; all: every idle villager at once (Shift), the camera on the one nearest the middle of them
+  nextIdleVillager(all = false) {
     const idle = this.game.unitsOf(this.me()).filter(u => u.type === 'villager' && u.state === 'idle' && !u.dead);
     if (!idle.length) {
       this.game.events.emit('notify', { text: 'Boşta köylü yok.', type: 'info' });
+      return;
+    }
+    if (all) {
+      let cx = 0, cz = 0; for (const v of idle) { cx += v.x; cz += v.z; } cx /= idle.length; cz /= idle.length;
+      let f = idle[0], fd = Infinity; for (const v of idle) { const d = (v.x - cx) ** 2 + (v.z - cz) ** 2; if (d < fd) { fd = d; f = v; } }
+      this.app.select(idle.map(v => v.id));
+      this.app.focus(f.x, f.z);
       return;
     }
     const u = idle[this.idleIdx++ % idle.length];

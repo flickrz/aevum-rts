@@ -12,10 +12,12 @@ for (const [bid, b] of Object.entries(BUILDINGS)) {
 }
 for (const [tid, t] of Object.entries(TECHS)) {
   if (t.id !== tid) fail('tech id mismatch ' + tid);
-  if (!where[tid]) fail('tech not researchable anywhere: ' + tid);
+  if (!where[tid] && !TECHS[tid].legacy) fail('tech not researchable anywhere: ' + tid);
   if (!t.name || !t.desc || !t.icon || !t.fx) fail('tech incomplete: ' + tid);
 }
-for (const u of Object.keys(UNITS)) if (UNITS[u].cls !== 'train' && !Object.values(BUILDINGS).some(b => b.trains.includes(u))) fail('unit not trainable: ' + u);
+// a building's command card has 14 places (the 15th is the delete button)
+for (const [k, b] of Object.entries(BUILDINGS)) if ((b.trains || []).length + (b.researches || []).length > 14) fail('too many buttons on ' + k);
+for (const u of Object.keys(UNITS)) if (UNITS[u].cls !== 'train' && !UNITS[u].legacy && !Object.values(BUILDINGS).some(b => b.trains.includes(u))) fail('unit not trainable: ' + u);
 
 // every fx key must be a known mod of the right shape
 const g = new Game({ mapSize: 256, enemies: 0, seed: 7, startAge: 4, sandbox: true });   // (256: the smallest size since 2026-11-13, room for the 12x12 farm)

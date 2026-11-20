@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BUILDINGS } from '../data.js';
 import { updateConstruction, disposeConstruction, updateRepair } from './construction.js';
-import { SEA_BUILD, SEA_UNITS, makeSeaUnit, seaAnimUnit, seaAnimBuilding, makeFish, seaAnimFish, seaMask } from './models-sea.js';
+import { SEA_BUILD, SEA_UNITS, makeSeaUnit, seaAnimUnit, seaAnimBuilding, makeFish, seaAnimFish, seaMask, pastureSheepK } from './models-sea.js';
 import { StaticBatches } from './static-batch.js';
 import { loadGlbModels, loadEra, glbVersion, hasGlb, glbPlanned, eraSettled, addGlbBuilding, addGlbPiece, loadCrop, cropGeo } from './glb-models.js';
 
@@ -1032,7 +1032,7 @@ function glbWall(c, type, era, color) {
 // a generated tower: scaled evenly to the Bronze Age tower's height (owner 2026-11-17: the Middle and Gunpowder Age
 // towers came out huge; a squat model is still stretched up to it), with a wall piece from its foot to the edge of
 // its plot toward every linked wall (owner: a tower next to a wall stood apart from it). False if a piece is missing.
-const TOWER_FIT = { 1: 1.25, 4: 1.15 };
+const TOWER_FIT = { 1: 1, 4: 1 };   // (owner 2026-11-20: a model fills its plot, no more)
 function glbTower(c, era, size, color, H) {
   // (.62: about the Bronze Age tower's girth. The Bronze and Industrial models have a wide foot and a shaft under half
   // their width, so they came out toothpick-thin (owner 2026-11-17): they fill the plot instead, squashed to the height)
@@ -1047,11 +1047,10 @@ function glbTower(c, era, size, color, H) {
   }
   return ok;
 }
-// generated building models are drawn 1.5x their footprint (owner 2026-11-17: they looked small); the farm's plots,
-// walls, gates and towers keep their size (only the farm's middle building grows)
-const GLB_BIG = 1.5;
-// per-type extra (owner 2026-11-18): the bank 1.5x smaller, the stable 1.5x bigger than the rest
-const GLB_K = { bank: 1 / 1.5, stable: 1.5 };
+// generated building models fill their footprint exactly (owner 2026-11-20: the foundation, the selection square and
+// the building must match). The models keep the size they had on 2026-11-17 (drawn 1.44x the old footprints, the
+// stable 2.16x): the footprints grew to them instead (BUILDING_SIZES, src/data.js), the bank's smaller look is its 5x5.
+const glbFit = () => 1;
 // height of the procedural 3x3 Bronze Age tower (without its banner), measured once (glb towers take this height)
 let TOWER_H1 = 0;
 function towerH1() {
@@ -1097,7 +1096,7 @@ function makeBuilding(type, size, age, color, mask, seed, noGlb) {
     // the granary with sacks and barrels by its doors
     // the farm's middle building is the mill (owner 2026-11-14: the mill's upgrades live here; its look too):
     // the same model the mill building has in this era, sails/wheel turning, with sacks and a hay bale by it
-    if (!noGlb && hasGlb('farmmill', era)) { addGlbBuilding(c.body, 'farmmill', era, P * .82 * GLB_BIG, color); U.glb = true; }   // (generated granary / mill, glb-models.js)
+    if (!noGlb && hasGlb('farmmill', era)) { addGlbBuilding(c.body, 'farmmill', era, P * .82 * 1.5, color); U.glb = true; }   // (owner 2026-11-20: the mill keeps its big 2026-11-17 look)   // (generated granary / mill, glb-models.js)
     else BUILD.mill(c);
     bx(c.body, MT.hay, .5, .28, .5, 1.35, 0, -1.35); bx(c.body, MT.canvas, .26, .2, .2, -1.4, 0, 1.3); bx(c.body, MT.canvas, .22, .18, .2, -1.15, 0, 1.45);
     const crops = new THREE.InstancedMesh(TUFT, CROP_MAT, FARM_CELLS_R.length * FROWS * FPER);
@@ -1148,7 +1147,7 @@ function makeBuilding(type, size, age, color, mask, seed, noGlb) {
       const tall = type === 'tower' ? towerH1() : 0;
       body.clear(); roof.clear(); slab.clear(); c.chim.length = 0; c.spin = null;
       if (type === 'tower') U.glb = glbTower(c, era, size, color, tall);
-      else { addGlbBuilding(body, type, era, size, color, .96 * GLB_BIG * (GLB_K[type] || 1), tall); U.glb = true; }
+      else { addGlbBuilding(body, type, era, size, color, glbFit(type), tall); U.glb = true; }
     }
     const hs = size * .46;
     if (type === 'wall') { wallScaf(c, scaf); U.wallScaf = true; }
@@ -1819,6 +1818,13 @@ export class EntityView {
   _age(owner) { const p = this.game.players[owner]; return p ? (p.age | 0) : 0; }
   // local player id (multiplayer: game.me, single-player: 0), read fresh every call
   _me() { const g = this.game; return g && g.me != null ? g.me : 0; }
+  // a rival's entity standing in the fog (known, not in sight right now): what happens there is not shown
+  _fogged(e) {
+    const g = this.game, me = this._me();
+    if (!g || g.reveal || !(e.owner >= 0) || e.owner === me || (g.isAlly && g.isAlly(e.owner, me))) return false;
+    const N = g.map.size, tx = Math.min(N - 1, Math.max(0, e.x | 0)), tz = Math.min(N - 1, Math.max(0, e.z | 0));
+    return g.fog[tz * N + tx] !== 2;
+  }
   // another player on the local player's team (not the local player itself)
   _isAlly(owner) {
     const g = this.game, me = this._me();
@@ -1854,7 +1860,9 @@ export class EntityView {
     // pasture sheep: the meshes stay in their (animated) groups but are drawn through shared instanced batches (_sheep)
     if (U.live && U.live.userData.sheep) {
       const sl = U.sheepSlots = [];
-      for (const sh of U.live.userData.sheep) sh.traverse(o => { if (o.isMesh) sl.push({ o, sh, k: o.geometry.uuid + o.material.uuid }); });
+      // (the 9x9 pasture of 2026-11-20 draws its design 3x: the sheep keep the size they had in the 6x6 one, 2x)
+      const shk = pastureSheepK(v.k);
+      for (const sh of U.live.userData.sheep) { sh.scale.setScalar(shk); sh.traverse(o => { if (o.isMesh) sl.push({ o, sh, k: o.geometry.uuid + o.material.uuid }); }); }
     }
     if (e.type === 'farm') v.h = .5;
     else { v.root.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(U.body); const b2 = new THREE.Box3().setFromObject(U.roof); v.h = Math.max(.6, b.max.y, isFinite(b2.max.y) ? b2.max.y : 0); }
@@ -1869,7 +1877,9 @@ export class EntityView {
       ring: null, proxy: null, age: 0, damaged: false, smokeT: Math.random() * 3, farmKey: -1, prog: -1,
       pop: 0, phase: (e.id * 1.618) % 6.283, seen: 0, vis: true, tool: '', carry: '', lastAmt: -1 };
     if (e.kind === 'building') {
-      v.mask = this._maskOf(e); this._buildBuildingMesh(v, e);
+      // (a rival's known town center first drawn while in the fog - a loaded save, a late join - shows the age the
+      // match started in, not the one it has reached unseen)
+      v.mask = this._maskOf(e); this._buildBuildingMesh(v, e, e.known && this._fogged(e) ? (this.game.cfg.startAge | 0) : undefined);
       // the ground under it as the sim has it (levelled by the foundation): redrawn here too, so a missed or
       // early 'terrain' event, a loaded save or a late join can never leave a building sunk into a slope
       const R = this.ctx.renderer, s = e.size || 1;
@@ -2013,7 +2023,10 @@ export class EntityView {
   }
 
   _updBuilding(v, e, dt, y, vis) {
-    const age = this._vage(v, e);
+    // (owner 2026-11-20: the rival's town center is known from the start, its growth is not - an age-up is seen
+    // only once someone goes there)
+    const fogd = this._fogged(e);
+    const age = v.age != null && fogd ? v.age : this._vage(v, e);
     if (MASKED[e.type]) { const mk = this._maskOf(e); if (mk !== v.mask) { v.mask = mk; if (age === v.age) v.quiet = true; this._buildBuildingMesh(v, e, age); } }
     // an age-up waits for the new era's generated model (owner 2026-11-17: the old look flashed in between):
     // the building keeps its old model until that era's files are in (or failed)
@@ -2040,7 +2053,7 @@ export class EntityView {
     let consOn = false;
     try { consOn = updateConstruction(v, e, p, dt, y, vis, { fx: this.fx, color: this._color(e.owner), time: this.t }); }
     catch (err) { if (!v.consErr) { v.consErr = 1; console.warn('[entities] construction rig failed:', e.type, err); } try { disposeConstruction(v); } catch (e2) { v.cons = null; } v.prog = -1; }
-    if (!consOn && e.done) { try { updateRepair(v, e, dt); } catch (err) { /* visual only */ } }
+    if (!consOn && e.done && !fogd) { try { updateRepair(v, e, dt); } catch (err) { /* visual only */ } }
     if (!consOn && p !== v.prog) {
       v.prog = p;
       const bs = Math.min(1, p / .85);
@@ -2054,9 +2067,9 @@ export class EntityView {
     }
     if (U.spin && vis && e.done) U.spin.rotation[U.spinAxis] += dt * U.spinSpeed;
     if (U.live) { try { seaAnimBuilding(this, v, e, dt, this.t, U); } catch (err) { /* visual only */ } }
-    const dmg = e.done && e.hp < e.maxHp * .5;
+    const dmg = fogd ? v.damaged : e.done && e.hp < e.maxHp * .5;   // (in the fog: the damage last seen)
     if (dmg !== v.damaged) this._tint(v, dmg);
-    if (!vis || !this.fx || !this.fx.smoke || !e.done) return;
+    if (!vis || fogd || !this.fx || !this.fx.smoke || !e.done) return;
     v.smokeT -= dt;
     if (v.smokeT <= 0) {
       const s = e.size || 1;
@@ -2334,13 +2347,21 @@ export class EntityView {
         else this._sb.sync(v, this.batching && vis && tm - (v.amtT == null ? -99 : v.amtT) > 6, tm);
       }
       if (sel && vis && !e.dead) this._ring(v, e); else if (v.ring && v.ring.visible) v.ring.visible = false;
-      const showHp = vis && !e.dead && e.maxHp > 0 && (sel ? e.kind !== 'resource' || e.type === 'deer' : (e.kind !== 'resource' && e.hp < e.maxHp));
+      const showHp = vis && !e.dead && e.maxHp > 0 && !(e.kind === 'building' && this._fogged(e)) && (sel ? e.kind !== 'resource' || e.type === 'deer' : (e.kind !== 'resource' && e.hp < e.maxHp));
       if (showHp) this._hp(v, e, true, y);
       if (v.slots && v.root.visible) this._emit(v);
     }
     this._flushBatches();
     const dead = this._dead; dead.length = 0;
-    for (const v of this.views.values()) if (v.seen !== f) dead.push(v);
+    for (const v of this.views.values()) {
+      if (v.seen === f) continue;
+      // a rival's known town center that fell in the fog stays drawn (not pickable) until someone sees the spot
+      if (v.kind === 'building' && v.e && v.e.known && this._fogged(v.e)) {
+        if (!v.ghost) { v.ghost = 1; v.vis = true; v.root.visible = true; const i = this.proxies.indexOf(v.proxy); if (i >= 0) this.proxies.splice(i, 1); }
+        continue;
+      }
+      dead.push(v);
+    }
     for (let i = 0; i < dead.length; i++) this._remove(dead[i]);
     this._sb.flush(tm);
     if (flagB) {
@@ -2421,7 +2442,12 @@ export class EntityView {
         const size = sp.size || (def && def.size) || cur[sp.type] || 2, bs = (def && def.baseSize) || size;
         const root = makeBuilding(sp.type, bs, age, this._color(meId), mask);
         if (size !== bs) root.scale.setScalar(size / bs);   // (the model at its design size, scaled to the footprint)
+        // (a pasture's sheep as big as in the placed pen: see pastureSheepK)
+        if (root.userData.live && root.userData.live.userData.sheep) { const shk = pastureSheepK(size / bs); for (const sh of root.userData.live.userData.sheep) sh.scale.setScalar(shk); }
         root.userData.size = size; root.userData.scaf.visible = false;
+        // the plot it takes: the same square a selected building shows (green / red with the ghost)
+        // (the shared cached square: disposeBaked leaves it alone; drawn at the design size, the root scales it to the plot)
+        const ol = new THREE.Mesh(sqGeo(size), GHM[0]); ol.scale.setScalar(bs / size); ol.position.y = .14; root.add(ol);
         root.traverse(o => { if (o.isMesh || o.isInstancedMesh) { o.castShadow = false; o.receiveShadow = false; o.renderOrder = 8; } });
         this.scene.add(root);
         g = pool[i] = { root, type: sp.type, age, mask, valid: null };

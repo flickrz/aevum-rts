@@ -55,7 +55,7 @@ run(g, 2);
 ok(over && over.won === true && over.winnerTeam === 1 && g.players[2].defeated, 'team victory fires: ' + JSON.stringify(over));
 // legacy cfg: player 0 human team 1, AIs team 2
 const L = new Game({ mapSize: 96, enemies: 2, seed: 9 });
-ok(L.players.length === 3 && L.me === 0 && !L.mp && L.teamOf(0) === 1 && L.teamOf(1) === 2 && L.teamOf(2) === 2 && L.ais.length === 2 && L.quests.list.length > 0, 'legacy cfg teams / AIs / quests');
+ok(L.players.length === 3 && L.me === 0 && !L.mp && L.teamOf(0) === 1 && L.teamOf(1) === 2 && L.teamOf(2) === 2 && L.ais.length === 2 && L.quests.list.length === 0, 'legacy cfg teams / AIs / quests');
 const Ls = Game.deserialize(JSON.parse(JSON.stringify(L.serialize())));
 ok(Ls.teamOf(2) === 2 && Ls.players[0].name === L.players[0].name, 'save/load keeps teams');
 const old = L.serialize(); for (const p of old.players) { delete p.team; delete p.kind; delete p.name; }

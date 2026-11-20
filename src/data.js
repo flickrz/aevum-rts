@@ -9,7 +9,7 @@ export const PLAYER_COLORS = [0x2e7bff, 0xe23b3b, 0xf2c230, 0x9b4de0, 0x2fbf71, 
 export const AGES = [
   { id: 0, name: 'Taş Devri', cost: {}, time: 0, reqBuildings: 0, unlockText: ['Köylü', 'Mızrakçı', 'Ev', 'Ağıl', 'Kışla', 'Depo', 'Oduncu Kampı', 'Maden Ocağı'] },
   { id: 1, name: 'Tunç Devri', cost: { food: 1000, wood: 500 }, time: 90, reqBuildings: 3, reqTypes: ['barracks'], minStay: 240, unlockText: ['Tarla', 'Kılıç Ustası', 'Okçu', 'Hafif Süvari', 'Okçuluk Alanı', 'Ahır', 'Demirci', 'Pazar', 'Kule', 'Sur', 'Tapınak'] },
-  { id: 2, name: 'Orta Çağ', cost: { food: 1800, wood: 800, gold: 1000, stone: 400 }, time: 140, reqBuildings: 5, reqTypes: ['blacksmith', 'market'], minStay: 300, unlockText: ['Ağır Piyade', 'Arbaletçi', 'Şövalye', 'Koçbaşı', 'Mancınık', 'Ticaret Arabası', 'Üniversite', 'Kale', 'Kuşatma Atölyesi'] },
+  { id: 2, name: 'Orta Çağ', cost: { food: 1800, wood: 800, gold: 1000, stone: 400 }, time: 140, reqBuildings: 5, reqTypes: ['blacksmith', 'market'], minStay: 300, unlockText: ['Ağır Piyade', 'Arbaletçi', 'Şövalye', 'Koçbaşı', 'Mancınık', 'Üniversite', 'Kale', 'Kuşatma Atölyesi'] },
   { id: 3, name: 'Barut Çağı', cost: { food: 2500, wood: 1200, gold: 2000, stone: 1000 }, time: 180, reqBuildings: 7, reqTypes: ['university'], minStay: 360, unlockText: ['Tüfekçi', 'Top', 'Zırhlı Süvari', 'Harp Akademisi', 'Banka'] },
   { id: 4, name: 'Sanayi Çağı', cost: { food: 3200, wood: 1600, gold: 3500, stone: 1600 }, time: 220, reqBuildings: 9, reqTypes: ['academy', 'bank'], minStay: 360, unlockText: ['Piyade Tüfekçisi', 'Sahra Topu', 'Fabrika'] },
 ];
@@ -29,10 +29,10 @@ export const UNITS = {
   ram: U('ram', 'Koçbaşı', 'siege', 2, { wood: 160, gold: 60 }, 36, 200, 4, 2, 1.3, 0, 3, 5, 2, { building: 12 }, null, '🪵', 'Sadece binalara saldırır, surları yıkar.'),
   catapult: U('catapult', 'Mancınık', 'siege', 2, { wood: 150, gold: 120, stone: 50 }, 40, 70, 30, 0, 1.3, 8, 5, 9, 3, { building: 3 }, 'stone', '☄️', 'Uzun menzilli alan hasarı.'),
   tradecart: U('tradecart', 'Ticaret Arabası', 'civil', 2, { wood: 100, gold: 50 }, 30, 60, 0, 0, 2.4, 0, 2, 5, 1, {}, null, '🛒', 'Pazar ile Şehir Merkezi arasında gidip gelerek altın kazandırır.'),
-  musketeer: U('musketeer', 'Tüfekçi', 'ranged', 3, { food: 45, gold: 65 }, 26, 60, 18, 1, 2.2, 6, 3, 8, 1, { cavalry: 1.2, infantry: 1.2 }, 'bullet', '🔫', 'Barutlu menzilli piyade.'),
+  musketeer: U('musketeer', 'Tüfekçi', 'ranged', 3, { food: 45, gold: 65 }, 26, 60, 18, 1, 2.2, 7.5, 3, 9, 1, { cavalry: 1.2, infantry: 1.2 }, 'bullet', '🔫', 'Barutlu menzilli piyade.'),
   cannon: U('cannon', 'Top', 'siege', 3, { wood: 180, gold: 180, stone: 80 }, 45, 90, 30, 0, 1.2, 9, 5.5, 10, 3, { building: 5, cavalry: 0.6 }, 'cannonball', '💣', 'Binaları ve kalabalıkları ezer.'),
   cuirassier: U('cuirassier', 'Zırhlı Süvari', 'cavalry', 3, { food: 85, gold: 110 }, 32, 170, 16, 4, 3.6, 0, 1.5, 7, 1, { ranged: 1.4, siege: 3 }, null, '🦄', 'Barut çağının seçkin süvarisi.'),
-  rifleman: U('rifleman', 'Piyade Tüfekçisi', 'ranged', 4, { food: 50, gold: 75 }, 24, 75, 24, 2, 2.3, 7.5, 2, 9, 1, { cavalry: 1.3 }, 'bullet', '🎖️', 'Hızlı ateş eden modern piyade.'),
+  rifleman: U('rifleman', 'Piyade Tüfekçisi', 'ranged', 4, { food: 50, gold: 75 }, 24, 75, 24, 2, 2.3, 9, 2, 10, 1, { cavalry: 1.3 }, 'bullet', '🎖️', 'Hızlı ateş eden modern piyade.'),
   artillery: U('artillery', 'Sahra Topu', 'siege', 4, { wood: 220, gold: 250, stone: 120 }, 50, 120, 48, 1, 1.2, 11, 6, 12, 3, { building: 5.8, cavalry: 0.6 }, 'cannonball', '🧨', 'En uzun menzilli kuşatma silahı.'),
   // --- naval (ships: naval:true, cls 'ship', live only on water tiles 3/4) ---
   fishboat: Object.assign(U('fishboat', 'Balıkçı Teknesi', 'ship', 0, { wood: 60 }, 22, 60, 0, 0, 2.6, 0, 2, 7, 1, {}, null, '🎣', 'Balık sürülerinden yiyecek toplar ve en yakın iskeleye taşır.'), { naval: true }),
@@ -48,30 +48,30 @@ function B(id, name, age, cost, time, hp, size, popCap, trains, researches, drop
   return { id, name, age, cost, time, hp, size, popCap, trains, researches, dropoff, atk, range, los, icon, desc };
 }
 export const BUILDINGS = {
-  towncenter: B('towncenter', 'Şehir Merkezi', 0, { wood: 400, stone: 200 }, 90, 2400, 4, 5, ['villager'], ['basket', 'loom', 'wheelbarrow'], RES.slice(), 6, 7, 10, '🏛️', 'Köylü üretir, kaynak teslim alınır, çağ atlanır.'),
+  towncenter: B('towncenter', 'Şehir Merkezi', 0, { wood: 400, stone: 200 }, 90, 2400, 4, 5, ['villager'], ['basket', 'loom', 'wheelbarrow', 'feltvest', 'backpack'], RES.slice(), 6, 7, 10, '🏛️', 'Köylü üretir, kaynak teslim alınır, çağ atlanır.'),
   house: B('house', 'Ev', 0, { wood: 30 }, 15, 500, 2, 5, [], [], null, 0, 0, 4, '🏠', '+5 nüfus kapasitesi.'),
-  farm: B('farm', 'Tarla', 1, { wood: 150 }, 30, 600, 3, 0, [], ['plow', 'crop', 'irrigation'], null, 0, 0, 3, '🌾', 'Ortada ambar, çevresinde 8 parsel: her parselde bir çiftçi ekip biçer, ürünü ambara taşır. Tarım geliştirmeleri ambarda araştırılır.'),
-  barracks: B('barracks', 'Kışla', 0, { wood: 125 }, 30, 1200, 3, 0, ['spearman', 'swordsman', 'heavyinf', 'musketeer', 'rifleman'], ['drill'], null, 0, 0, 6, '⚔️', 'Piyade birlikleri üretir.'),
+  farm: B('farm', 'Tarla', 1, { wood: 150 }, 30, 600, 3, 0, [], ['plow', 'crop', 'irrigation', 'fertilizer', 'thresher'], null, 0, 0, 3, '🌾', 'Ortada ambar, çevresinde 8 parsel: her parselde bir çiftçi ekip biçer, ürünü ambara taşır. Tarım geliştirmeleri ambarda araştırılır.'),
+  barracks: B('barracks', 'Kışla', 0, { wood: 125 }, 30, 1200, 3, 0, ['spearman', 'swordsman', 'heavyinf', 'musketeer', 'rifleman'], ['drill', 'forcedmarch'], null, 0, 0, 6, '⚔️', 'Piyade birlikleri üretir.'),
   archery: B('archery', 'Okçuluk Alanı', 1, { wood: 150 }, 30, 1100, 3, 0, ['archer', 'crossbow'], [], null, 0, 0, 6, '🏹', 'Menzilli birlikler üretir.'),
-  stable: B('stable', 'Ahır', 1, { wood: 150 }, 30, 1100, 3, 0, ['lightcav', 'knight', 'cuirassier'], ['husbandry', 'bloodlines'], null, 0, 0, 6, '🐴', 'Süvari birlikleri üretir.'),
-  blacksmith: B('blacksmith', 'Demirci', 1, { wood: 150 }, 30, 1100, 3, 0, [], ['forging', 'ironcast', 'steel', 'fletching', 'bodkin', 'scale', 'plate', 'barding'], null, 0, 0, 6, '⚒️', 'Silah ve zırh geliştirmeleri.'),
-  market: B('market', 'Pazar', 1, { wood: 150 }, 30, 1100, 3, 0, ['tradecart'], ['coinage', 'caravan'], null, 0, 0, 6, '⚖️', 'Kaynak takası ve ticaret arabaları.'),
-  storage: B('storage', 'Depo', 0, { wood: 80 }, 20, 700, 2, 0, [], ['handcart'], RES.slice(), 0, 0, 5, '📦', 'Kaynak teslim noktası.'),
+  stable: B('stable', 'Ahır', 1, { wood: 150 }, 30, 1100, 3, 0, ['lightcav', 'knight', 'cuirassier'], ['husbandry', 'bloodlines', 'warhorses', 'steelshoes', 'barding', 'chainbarding', 'cuirass', 'steelcuirass'], null, 0, 0, 6, '🐴', 'Süvari birlikleri üretir.'),
+  blacksmith: B('blacksmith', 'Demirci', 1, { wood: 150 }, 30, 1100, 3, 0, [], ['forging', 'ironcast', 'steel', 'dropforge', 'fletching', 'bodkin', 'cartridge', 'minieball', 'scale', 'plate', 'buffcoat', 'helmet',], null, 0, 0, 6, '⚒️', 'Silah ve zırh geliştirmeleri.'),
+  market: B('market', 'Pazar', 1, { wood: 150 }, 30, 1100, 3, 0, [], ['coinage'], null, 0, 0, 6, '⚖️', 'Kaynak takası.'),
+  storage: B('storage', 'Depo', 0, { wood: 80 }, 20, 700, 2, 0, [], ['handcart', 'weighbridge', 'freightwagon'], RES.slice(), 0, 0, 5, '📦', 'Kaynak teslim noktası.'),
   tower: B('tower', 'Kule', 1, { stone: 125, wood: 25 }, 35, 900, 1, 0, [], [], null, 9, 8, 9, '🗼', 'Yaklaşan düşmanlara ok atar; Barut Çağı’ndan itibaren gülle atar. Her çağda hasarı +5, Orta Çağ’dan itibaren menzili +1 artar.'),
   wall: B('wall', 'Sur', 1, { stone: 5 }, 12.5, 900, 1, 0, [], [], null, 0, 0, 2, '🧱', 'Basılı tutup sürükleyerek sur hattı çiz. Köylüler parçaları sırayla örer.'),
   gate: B('gate', 'Kapı', 1, { stone: 30 }, 30, 1200, 1, 0, [], [], null, 0, 0, 3, '🚪', 'Sadece kendi birliklerin geçebilir.'),
-  university: B('university', 'Üniversite', 2, { wood: 200, gold: 100, stone: 100 }, 40, 1300, 3, 0, [], ['masonry', 'architecture', 'arrowslits', 'guardtower', 'fortify', 'ballistics'], null, 0, 0, 6, '🎓', 'Savunma ve mühendislik araştırmaları.'),
-  castle: B('castle', 'Kale', 2, { stone: 600, gold: 200 }, 120, 4000, 4, 10, [], ['garrisonart'], null, 12, 9, 11, '🏰', 'Güçlü savunma yapısı: her 2 saniyede 3 hedefe birden ok yağdırır, saldırısı her çağda artar. Kulelerden daha uzağa vurur.'),
-  siege: B('siege', 'Kuşatma Atölyesi', 2, { wood: 200, stone: 100 }, 40, 1200, 3, 0, ['ram', 'catapult', 'cannon'], ['siegecraft'], null, 0, 0, 6, '🛠️', 'Kuşatma silahları üretir.'),
+  university: B('university', 'Üniversite', 2, { wood: 200, gold: 100, stone: 100 }, 40, 1300, 3, 0, [], ['masonry', 'architecture', 'concrete', 'arrowslits', 'shrapnel', 'guardtower', 'fortify', 'bastion', 'ballistics'], null, 0, 0, 6, '🎓', 'Savunma ve mühendislik araştırmaları.'),
+  castle: B('castle', 'Kale', 2, { stone: 600, gold: 200 }, 120, 4000, 4, 10, [], ['garrisonart', 'casemate'], null, 12, 9, 11, '🏰', 'Güçlü savunma yapısı: her 2 saniyede 3 hedefe birden ok yağdırır, saldırısı her çağda artar. Kulelerden daha uzağa vurur.'),
+  siege: B('siege', 'Kuşatma Atölyesi', 2, { wood: 200, stone: 100 }, 40, 1200, 3, 0, ['ram', 'catapult', 'cannon'], ['siegecraft', 'guncarriage', 'steelcarriage'], null, 0, 0, 6, '🛠️', 'Kuşatma silahları üretir.'),
   factory: B('factory', 'Fabrika', 4, { wood: 300, stone: 200, gold: 200 }, 60, 2200, 4, 0, ['artillery', 'cannon'], ['assembly', 'steam', 'rifling', 'explosives', 'steelrails'], null, 0, 0, 7, '🏭', 'Sanayi çağı silahları üretir.'),
   mill: B('mill', 'Değirmen', 0, { wood: 100 }, 25, 800, 3, 0, [], [], ['food'], 0, 0, 5, '🌬️', 'Yiyecek teslim noktası (eski kayıtlar).'),
-  lumbercamp: B('lumbercamp', 'Oduncu Kampı', 0, { wood: 70 }, 18, 600, 2, 0, [], ['axe', 'saw'], ['wood'], 0, 0, 5, '🪵', 'Odun teslim noktası. Odunculuk geliştirmeleri.'),
-  minecamp: B('minecamp', 'Maden Ocağı', 0, { wood: 70 }, 18, 600, 2, 0, [], ['pickaxe', 'shaft'], ['stone', 'gold'], 0, 0, 5, '⛏️', 'Taş ve altın teslim noktası. Madencilik geliştirmeleri.'),
-  temple: B('temple', 'Tapınak', 1, { wood: 150, stone: 75 }, 35, 1100, 3, 0, [], ['herbs', 'townwatch', 'medicine'], null, 0, 0, 7, '⛩️', '7 kare içindeki birliklerini yavaşça iyileştirir (savaş dışında 1 can/sn).'),
-  academy: B('academy', 'Harp Akademisi', 3, { wood: 250, stone: 150, gold: 200 }, 50, 1500, 3, 0, [], ['formation', 'corning', 'conscription', 'siegeeng'], null, 0, 0, 6, '🎖️', 'İleri askeri araştırmalar.'),
-  dock: B('dock', 'İskele', 0, { wood: 150 }, 35, 1200, 3, 0, ['fishboat', 'transport', 'galley', 'galleon', 'ironclad'], ['nets', 'shipwright', 'gunnery', 'careening'], null, 0, 0, 6, '⚓', 'Kıyıya kurulur (en az 2 su, 3 kara karesi). Gemi üretir, balıkçı teknelerinin teslim noktası.'),
-  bank: B('bank', 'Banka', 3, { wood: 200, stone: 200, gold: 150 }, 50, 1400, 3, 0, [], ['banking', 'guilds'], null, 0, 0, 6, '🏦', 'Her banka 3 saniyede +1 altın kazandırır (en fazla 3 banka sayılır). Finans araştırmaları.'),
-  pasture: B('pasture', 'Ağıl', 0, { wood: 130 }, 25, 500, 3, 0, [], ['breeding'], null, 0, 0, 3, '🐑', 'Koyun ağılı: koyunlar otlayıp yavaşça 8\'e çoğalır ve kimse çalışmasa da az ama düzenli yiyecek verir. En fazla 6 köylü içeride çalışıp çok daha fazlasını toplar.'),
+  lumbercamp: B('lumbercamp', 'Oduncu Kampı', 0, { wood: 70 }, 18, 600, 2, 0, [], ['axe', 'saw', 'twomansaw', 'steamsaw'], ['wood'], 0, 0, 5, '🪵', 'Odun teslim noktası. Odunculuk geliştirmeleri.'),
+  minecamp: B('minecamp', 'Maden Ocağı', 0, { wood: 70 }, 18, 600, 2, 0, [], ['pickaxe', 'shaft', 'blasting', 'steampump'], ['stone', 'gold'], 0, 0, 5, '⛏️', 'Taş ve altın teslim noktası. Madencilik geliştirmeleri.'),
+  temple: B('temple', 'Tapınak', 1, { wood: 150, stone: 75 }, 35, 1100, 3, 0, [], ['herbs', 'townwatch', 'medicine', 'hospital'], null, 0, 0, 7, '⛩️', '7 kare içindeki birliklerini yavaşça iyileştirir (savaş dışında 1 can/sn).'),
+  academy: B('academy', 'Harp Akademisi', 3, { wood: 250, stone: 150, gold: 200 }, 50, 1500, 3, 0, [], ['formation', 'corning', 'conscription', 'siegeeng', 'mobilization', 'smokeless'], null, 0, 0, 6, '🎖️', 'İleri askeri araştırmalar.'),
+  dock: B('dock', 'İskele', 0, { wood: 150 }, 35, 1200, 3, 0, ['fishboat', 'transport', 'galley', 'galleon', 'ironclad'], ['nets', 'trawl', 'shipwright', 'gunnery', 'careening', 'copper', 'turret'], null, 0, 0, 6, '⚓', 'Kıyıya kurulur (en az 2 su, 3 kara karesi). Gemi üretir, balıkçı teknelerinin teslim noktası.'),
+  bank: B('bank', 'Banka', 3, { wood: 200, stone: 200, gold: 150 }, 50, 1400, 3, 0, [], ['banking', 'guilds', 'centralbank'], null, 0, 0, 6, '🏦', 'Her banka 3 saniyede +1 altın kazandırır (en fazla 3 banka sayılır). Finans araştırmaları.'),
+  pasture: B('pasture', 'Ağıl', 0, { wood: 130 }, 25, 500, 3, 0, [], ['breeding', 'clover', 'winterfold', 'fodder', 'dairy'], null, 0, 0, 3, '🐑', 'Koyun ağılı: koyunlar otlayıp yavaşça 8\'e çoğalır ve kimse çalışmasa da az ama düzenli yiyecek verir. En fazla 6 köylü içeride çalışıp çok daha fazlasını toplar.'),
   station: B('station', 'İstasyon', 4, { wood: 250, stone: 150, gold: 100 }, 45, 1600, 3, 0, [], [], null, 0, 0, 6, '🚉', 'İki istasyonu ray hattıyla bağla: aralarında bir tren gidip gelir ve her varışta altın getirir.'),
   rail: B('rail', 'Ray', 4, { wood: 8, stone: 4 }, 4, 250, 1, 0, [], [], null, 0, 0, 1, '🛤️', 'Basılı tutup sürükleyerek ray hattı çiz. Birlikler rayın üstünden geçebilir.'),
 };
@@ -80,12 +80,19 @@ export const BUILDINGS = {
 // keep their design and are drawn scaled by size / baseSize. Towers became 3x3 on 2026-11-14 (owner: walls and towers
 // looked tiny next to the bigger buildings). Walls, gates, rails and the dock keep their size (wall lines, the dock's
 // water footprint, the station's rail layout); walls and gates are drawn taller instead. A building in an old save keeps the size it was built with.
-export const BUILDING_SIZES = { towncenter: 6, castle: 6, factory: 6, house: 3, tower: 3, storage: 3, lumbercamp: 3, minecamp: 3, farm: 12, pasture: 6,
-  barracks: 5, archery: 5, stable: 5, blacksmith: 5, market: 5, university: 5, siege: 5, mill: 5, temple: 5, academy: 5, bank: 5 };   // (station: rails and trains are laid out around its 3x3)
+// (owner 2026-11-20: the generated models stay as big as they were drawn on 2026-11-17 - 1.44x their footprint, the
+// stable 2.16x - and the footprints grow to them instead, so the foundation, the selection square, the click area and
+// the blocking all match the building: 6 -> 9, 5 -> 7, 3 -> 4, the stable 5 -> 9. The bank keeps 5 (the owner asked
+// for a smaller bank: its model now fills its 5x5), the tower 3 (wall lines), the farm 12.)
+export const BUILDING_SIZES = { towncenter: 9, castle: 9, factory: 9, house: 4, tower: 3, storage: 4, lumbercamp: 4, minecamp: 4, farm: 12, pasture: 9,
+  barracks: 7, archery: 7, stable: 9, blacksmith: 7, market: 7, university: 7, siege: 7, mill: 7, temple: 7, academy: 7, bank: 5 };   // (station: rails and trains are laid out around its 3x3)
 for (const [k, b] of Object.entries(BUILDINGS)) { b.baseSize = b.size; if (BUILDING_SIZES[k]) b.size = BUILDING_SIZES[k]; }
 // The mill (2026-11-14, owner meeting): its farm radius bonus is gone and its farming techs moved to the farm's granary.
 // Kept only so old saves load (a standing mill still takes food); it cannot be placed any more (legacy).
 BUILDINGS.mill.legacy = true;
+// (owner 2026-11-20) the trade cart is out for now: trading with your own town center had no sense to it and
+// endless carts were endless gold. Kept only so old saves load; the market trains none and its Kervan research is gone.
+UNITS.tradecart.legacy = true;
 // the farm (2026-11-13): one 12x12 piece = 3x3 cells of 4 tiles, a granary in the middle and 8 plots around it,
 // one farmer per plot. Its model is drawn at its real size (not scaled).
 export const FARM_SLOTS = 8;
@@ -121,7 +128,7 @@ export const TECHS = {
   coinage: T('coinage', 'Sikke Basımı', 'Pazar takas oranı +%15', 2, { gold: 150, stone: 50 }, 35, 'eco', '🪙', { trade: 0.15 }),
   caravan: T('caravan', 'Kervan', 'Ticaret arabası kazancı +%25', 2, { wood: 150, gold: 100 }, 40, 'eco', '🐫', { cart: 0.25 }),
   banking: T('banking', 'Bankacılık', 'Banka geliri +%50', 3, { gold: 300, stone: 150 }, 50, 'eco', '💰', { bank: 0.5 }),
-  guilds: T('guilds', 'Loncalar', 'Pazar takas oranı +%15, ticaret arabası kazancı +%25', 3, { gold: 250, stone: 200 }, 50, 'eco', '🤝', { trade: 0.15, cart: 0.25 }),
+  guilds: T('guilds', 'Loncalar', 'Pazar takas oranı +%15', 3, { gold: 250, stone: 200 }, 50, 'eco', '🤝', { trade: 0.15 }),
   steam: T('steam', 'Buhar Gücü', 'Tüm kaynak toplama +%15', 4, { gold: 400, stone: 300 }, 60, 'eco', '🚂', { gather: { food: 0.15, wood: 0.15, stone: 0.15, gold: 0.15 } }),
   assembly: T('assembly', 'Montaj Hattı', 'Fabrika üretimi %50 daha hızlı', 4, { gold: 350, stone: 250 }, 55, 'eco', '⚙️', { factory: 0.5 }),
   // --- military (new) ---
@@ -147,6 +154,61 @@ export const TECHS = {
   gunnery: T('gunnery', 'Deniz Topçuluğu', 'Gemi saldırısı +3, menzil +1', 2, { wood: 150, gold: 150 }, 45, 'mil', '💥', { atk: { ship: 3 }, range: { ship: 1 } }),
   careening: T('careening', 'Karina Bakımı', 'Gemi hızı +%15, zırhı +1', 1, { wood: 100, gold: 50 }, 30, 'mil', '⛵', { speed: { ship: 0.15 }, armor: { ship: 1 } }),
   // --- pasture / railway ---
-  breeding: T('breeding', 'Seçici Islah', 'Ağıl verimi +%25', 1, { food: 100, wood: 100 }, 35, 'eco', '🐏', { pasture: 0.25 }),
+  breeding: T('breeding', 'Seçici Islah', 'Çobanlı ağıl verimi +%50 (boş ağıl +%25)', 1, { food: 100, wood: 100 }, 35, 'eco', '🐏', { pasture: 0.5 }),
   steelrails: T('steelrails', 'Çelik Raylar', 'Tren altın kazancı +%30', 4, { gold: 300, stone: 200 }, 55, 'eco', '🛤️', { rail: 0.3 }),
 };
+// --- later-age steps (owner 2026-11-20: the general tech tree runs to the last age, no building sits idle there).
+// Each one continues an existing line with a step of the same size; costs and times grow with the age. No tech needs
+// another one (only the age gates, as before). No more market trade steps: past +30 % the barter round trip
+// (k^4 x BARTER_BONUS^2) would make resources out of nothing.
+Object.assign(TECHS, {
+  // pasture (its own line since 2026-11-20: the farm's techs no longer feed the pasture)
+  clover: T('clover', 'Yonca Otlağı', 'Çobanlı ağıl verimi +%35 (boş ağıl +%17.5)', 1, { wood: 100, gold: 50 }, 35, 'eco', '☘️', { pasture: 0.35 }),
+  winterfold: T('winterfold', 'Kış Ağılı', 'Çobanlı ağıl verimi +%25 (boş ağıl +%12.5)', 2, { wood: 150, stone: 100 }, 40, 'eco', '🏚️', { pasture: 0.25 }),
+  fodder: T('fodder', 'Yem Ambarı', 'Çobanlı ağıl verimi +%25 (boş ağıl +%12.5)', 3, { wood: 250, gold: 150 }, 50, 'eco', '🌾', { pasture: 0.25 }),
+  dairy: T('dairy', 'Mandıra', 'Çobanlı ağıl verimi +%25 (boş ağıl +%12.5)', 4, { wood: 300, gold: 300 }, 55, 'eco', '🥛', { pasture: 0.25 }),
+  // farm
+  fertilizer: T('fertilizer', 'Gübreleme', 'Tarla verimi +%25', 3, { wood: 250, gold: 150 }, 50, 'eco', '🌱', { farm: 0.25 }),
+  thresher: T('thresher', 'Harman Makinesi', 'Tarla verimi +%25', 4, { wood: 300, gold: 250 }, 55, 'eco', '🚜', { farm: 0.25 }),
+  // town center
+  feltvest: T('feltvest', 'Keçe Yelek', 'Köylü canı +%40', 3, { food: 250, gold: 150 }, 50, 'eco', '🧥', { vhp: 0.4 }),
+  backpack: T('backpack', 'Sırt Çantası', 'Taşıma kapasitesi +5', 4, { food: 300, gold: 200 }, 55, 'eco', '🎒', { carry: 5 }),
+  // storage
+  weighbridge: T('weighbridge', 'Kantar', 'Taşıma kapasitesi +5', 3, { wood: 250, gold: 150 }, 50, 'eco', '⚖️', { carry: 5 }),
+  freightwagon: T('freightwagon', 'Yük Vagonu', 'Köylü hızı +%10, taşıma +5', 4, { wood: 300, gold: 300 }, 55, 'eco', '🚃', { vspeed: 0.1, carry: 5 }),
+  // lumber camp / mine
+  twomansaw: T('twomansaw', 'Çift Kollu Testere', 'Odun toplama +%25', 3, { food: 200, gold: 150 }, 50, 'eco', '🪚', { gather: { wood: 0.25 } }),
+  steamsaw: T('steamsaw', 'Buharlı Hızar', 'Odun toplama +%25', 4, { food: 250, gold: 250 }, 55, 'eco', '🪵', { gather: { wood: 0.25 } }),
+  blasting: T('blasting', 'Barut Lağımı', 'Taş ve altın toplama +%25', 3, { wood: 250, stone: 150 }, 50, 'eco', '💥', { gather: { stone: 0.25, gold: 0.25 } }),
+  steampump: T('steampump', 'Buharlı Pompa', 'Taş ve altın toplama +%25', 4, { wood: 300, gold: 200 }, 55, 'eco', '⛽', { gather: { stone: 0.25, gold: 0.25 } }),
+  // bank
+  centralbank: T('centralbank', 'Merkez Bankası', 'Banka geliri +%50', 4, { gold: 400, stone: 250 }, 60, 'eco', '🏦', { bank: 0.5 }),
+  // dock
+  trawl: T('trawl', 'Trol Ağı', 'Balık toplama +%25', 2, { food: 100, wood: 150 }, 40, 'eco', '🕸️', { gather: { fish: 0.25 } }),
+  copper: T('copper', 'Bakır Kaplama', 'Gemi hızı +%10, zırhı +1', 3, { wood: 250, gold: 200 }, 50, 'mil', '⛵', { speed: { ship: 0.1 }, armor: { ship: 1 } }),
+  turret: T('turret', 'Döner Taret', 'Gemi saldırısı +3', 4, { wood: 300, gold: 350 }, 60, 'mil', '💥', { atk: { ship: 3 } }),
+  // blacksmith: melee attack, ranged attack, infantry armour, cavalry armour
+  dropforge: T('dropforge', 'Pres Dövme', 'Piyade ve süvari saldırısı +2', 4, { gold: 400, stone: 200 }, 60, 'mil', '🔨', { atk: { infantry: 2, cavalry: 2 } }),
+  cartridge: T('cartridge', 'Kâğıt Fişek', 'Menzilli saldırı +2', 3, { wood: 200, gold: 250 }, 50, 'mil', '📜', { atk: { ranged: 2 } }),
+  minieball: T('minieball', 'Konik Mermi', 'Menzilli saldırı +2', 4, { wood: 250, gold: 350 }, 60, 'mil', '🎯', { atk: { ranged: 2 } }),
+  buffcoat: T('buffcoat', 'Kalın Deri Ceket', 'Piyade zırhı +2', 3, { food: 200, stone: 200, gold: 150 }, 50, 'mil', '🥋', { armor: { infantry: 2 } }),
+  helmet: T('helmet', 'Çelik Miğfer', 'Piyade zırhı +2', 4, { food: 250, stone: 250, gold: 250 }, 60, 'mil', '⛑️', { armor: { infantry: 2 } }),
+  chainbarding: T('chainbarding', 'Zincirli At Zırhı', 'Süvari zırhı +1', 2, { food: 100, stone: 150, gold: 100 }, 45, 'mil', '🐎', { armor: { cavalry: 1 } }),
+  cuirass: T('cuirass', 'Göğüslük', 'Süvari zırhı +2', 3, { food: 200, stone: 200, gold: 150 }, 50, 'mil', '🛡️', { armor: { cavalry: 2 } }),
+  steelcuirass: T('steelcuirass', 'Çelik Göğüslük', 'Süvari zırhı +2', 4, { food: 250, stone: 250, gold: 250 }, 60, 'mil', '🛡️', { armor: { cavalry: 2 } }),
+  // barracks / stable / siege workshop / academy
+  forcedmarch: T('forcedmarch', 'Cebri Yürüyüş', 'Piyade hızı +%10', 4, { food: 300, gold: 300 }, 55, 'mil', '🥾', { speed: { infantry: 0.1 } }),
+  warhorses: T('warhorses', 'Harp Atları', 'Süvari canı +%15', 3, { food: 250, gold: 200 }, 50, 'mil', '🐴', { hp: { cavalry: 0.15 } }),
+  steelshoes: T('steelshoes', 'Çelik Nal', 'Süvari hızı +%10', 4, { food: 300, gold: 300 }, 55, 'mil', '🧲', { speed: { cavalry: 0.1 } }),
+  guncarriage: T('guncarriage', 'Top Arabası', 'Kuşatma silahı hızı +%15', 3, { wood: 250, gold: 200 }, 50, 'mil', '🛞', { speed: { siege: 0.15 } }),
+  steelcarriage: T('steelcarriage', 'Çelik Lafet', 'Kuşatma silahı canı +%20', 4, { wood: 300, gold: 300 }, 60, 'mil', '⚙️', { hp: { siege: 0.2 } }),
+  mobilization: T('mobilization', 'Seferberlik', 'Tüm birlik üretimi %15 daha hızlı', 4, { food: 300, gold: 350 }, 60, 'mil', '📯', { train: 0.15 }),
+  smokeless: T('smokeless', 'Dumansız Barut', 'Menzilli birlik hasarı +%15', 4, { gold: 400, stone: 150 }, 60, 'mil', '🧪', { atkMul: { ranged: 0.15 } }),
+  // university / castle / temple
+  bastion: T('bastion', 'Tabya', 'Sur ve kapı dayanıklılığı +%30', 3, { stone: 300, gold: 150 }, 50, 'def', '🏯', { wallhp: 0.3 }),
+  concrete: T('concrete', 'Betonarme', 'Bina dayanıklılığı +%20', 4, { wood: 300, stone: 300 }, 60, 'def', '🧱', { bhp: 0.2 }),
+  shrapnel: T('shrapnel', 'Şarapnel', 'Kule ve kale saldırısı +3', 4, { gold: 350, stone: 250 }, 60, 'def', '💣', { towerAtk: 3 }),
+  casemate: T('casemate', 'Kazamat', 'Kule ve kale saldırısı +3', 4, { stone: 400, gold: 350 }, 60, 'def', '🏰', { towerAtk: 3 }),
+  hospital: T('hospital', 'Sahra Hastanesi', 'Tapınak iyileştirmesi +%100', 4, { gold: 350, stone: 200 }, 55, 'def', '🏥', { heal: 1 }),
+});
+TECHS.caravan.legacy = true;   // (owner 2026-11-20: no trade carts for now, see UNITS.tradecart.legacy)

@@ -8,14 +8,22 @@ import * as storage from './storage.js';
 import * as profile from './profile.js';
 import { CloudSync, mergeSaveLists } from './cloud/sync.js';
 import { setChatSink } from './chatlog.js';
+import { engineFamily } from './net/hashparts.js';
+import { LATEST } from './changelog.js';
 import { FIREBASE } from './cloud/config.js';
 import { AUTH_KEY } from './cloud/auth.js';
 import { GoogleSignIn } from './cloud/google.js';
+import { createNotice, markInterrupted, clearInterrupted } from './net/notice.js';
+import { mountNoticeBanner, hostNameOf } from './ui/notice-ui.js';
 
 const STEP = 1 / 30;
 const AUTOSAVE_EVERY = 90;
 const MP_AUTOSAVE_TICKS = 2 * 60 * 30;
 const ABANDON_MIN_S = 30;                 // a game left before the end is recorded as 'abandoned' only after 30 game seconds
+// update notices from the server (GET /mp/notice every 20 s, src/net/notice.js): started at once, so the first build id
+// it sees (this tab's baseline) is the one these files came from
+const notice = createNotice();
+try { notice.start(); } catch (err) { console.warn('[notice]', err); }
 const LS = (() => { try { return window.localStorage; } catch (err) { return null; } })();
 let memProfile = null;
 // optional Firebase account (src/cloud/*): null when it could not start; every call site works without it
@@ -49,6 +57,7 @@ const app = {
   game: null, renderer: null, ui: null, input: null, audio: null,
   selection: [], paused: false, demo: false, lastAlert: null,
   net: null, me: 0,
+  notice,
 
   select(ids, silent = false) {
     const g = app.game;
@@ -109,6 +118,9 @@ const app = {
       mt: tpStart('mp', session.match || session.code || null),
     });
     app._mpAutoAt = game.tick + MP_AUTOSAVE_TICKS;
+    // the match cut by an update runs again: the main menu's "Kesilen maça devam et" is done
+    if (full.resume) clearInterrupted(session.match || null);
+    game.events.on('gameOver', () => clearInterrupted(session.match || session.code || null));
     const status = (type, text, extra) => { try { app.ui.netStatus?.(Object.assign({ type, text }, extra || {})); } catch (err) { console.warn(err); } };
     const notify = (text, type) => { try { game.events.emit('notify', { text, type }); } catch (err) { console.warn(err); } };
     const offs = [];
@@ -119,8 +131,19 @@ const app = {
     on('resume', () => status('resume', ''));
     // lockstep save: every client serializes the same tick and keeps it in its own IndexedDB
     on('save', ev => { if (app.game === game) saveMpRecord(session, game, ev); });
-    on('saveMismatch', ev => notify('⚠ Kayıt ' + ((ev && ev.name) || 'diğer oyuncu') + ' ile farklı çıktı (senkron sorunu olabilir).', 'warn'));
-    on('desync', ev => status('desync', 'Senkron bozuldu (tur ' + (ev && ev.tick) + '). Oyunlar farklılaştı.', ev));
+    // desyncs are written to the cloud (each client its own view of it) so the cause can be found: tools/read-desync.mjs
+    const logDesync = (kind, ev) => {
+      try {
+        if (!app.cloud || !app.cloud.loggedIn || typeof app.cloud.logDesync !== 'function') return;
+        const d = new Date(), pad = n => String(n).padStart(2, '0');
+        app.cloud.logDesync({ kind, t: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()),
+          room: String(session.room || ''), me: session.me, name: String(session.name || ''), version: LATEST, engine: engineFamily(), players: (session.humans || []).length,
+          tick: ev && ev.tick, ht: ev && ev.ht, saveId: ev && ev.id, mine: ev && ev.mine, peers: (ev && ev.peers) || [], parts: (ev && ev.parts) || null, now: game.tick | 0,
+          map: { size: game.cfg && game.cfg.mapSize, type: game.cfg && game.cfg.mapType, seed: game.cfg && game.cfg.seed } });
+      } catch (err) { console.warn('[desync log]', err); }
+    };
+    on('saveMismatch', ev => { logDesync('save', ev); notify('⚠ Kayıt ' + ((ev && ev.name) || 'diğer oyuncu') + ' ile farklı çıktı (senkron sorunu olabilir).', 'warn'); });
+    on('desync', ev => { logDesync('desync', ev); status('desync', 'Senkron bozuldu (tik ' + (ev && ev.tick) + '). Oyunlar farklılaştı; durum kayda geçti.', ev); });
     on('peerLeft', ev => {
       status('peerLeft', ((ev && ev.name) || 'Bir oyuncu') + ' oyundan ayrıldı.', ev);   // netStatus toasts it
     });
@@ -480,6 +503,28 @@ function startDemo() {
   } catch (err) { showError(err); }
 }
 
+// an update comes (the server's notice, ~15 s before its time; src/net/notice.js): save the running match.
+// Multiplayer: the host requests a shared lockstep save (every client stores it, as with the 2 minute autosave) and every
+// client notes the interrupted match for the main menu's "Kesilen maça devam et". Single player: the normal autosave.
+function preUpdateSave() {
+  const game = app.game;
+  if (!game || app.demo || game.over) return;
+  const s = app.net;
+  try {
+    if (s && game.mp) {
+      if (s.phase !== 'game') return;
+      const match = s.match || s.code || 'MP';
+      if (s.isHost) { s.requestSave(true); app._mpAutoAt = game.tick + MP_AUTOSAVE_TICKS; }
+      markInterrupted({ code: match, key: storage.MP_PREFIX + match + '-auto', host: !!s.isHost, hostName: hostNameOf(s), tick: game.tick | 0 });
+      game.events.emit('notify', { text: '💾 Güncelleme öncesi maç kaydediliyor…', type: 'info' });
+    } else if (!game.mp) {
+      autosaveT = 0;
+      Promise.resolve(app.saveGame('auto')).then(ok => { if (ok && app.game === game) game.events.emit('notify', { text: '💾 Güncelleme öncesi oyun kaydedildi.', type: 'good' }); });
+    }
+  } catch (err) { console.warn('[notice] save', err); }
+}
+notice.onSaveDue(preUpdateSave);
+
 function mpAutosave(game) {
   const s = app.net;
   if (!s || !s.isHost || s.phase !== 'game' || game.over || app.game !== game) return;
@@ -524,6 +569,7 @@ function bgTick() {
   const t = performance.now(), d = Math.min((t - bgLast) / 1000, BG_BACKLOG);
   bgLast = t;
   if (!document.hidden) return;
+  notice.check();   // (the countdown's timer is throttled in a hidden tab)
   // waiting in a multiplayer lobby: keep its housekeeping (lobby broadcasts, resends) going too
   const ls = app.ui && app.ui.lobbySession;
   if (ls && ls !== app.net && ls.phase === 'lobby' && t - bgPumpT >= 100 && typeof ls._pump === 'function') { bgPumpT = t; try { ls._pump(); } catch (err) { console.warn('[bg]', err); } }
@@ -625,6 +671,7 @@ function boot() {
   startDemo();
   app.ui.showMenu();
   startBeat();
+  try { mountNoticeBanner(app.ui, notice); } catch (err) { console.warn('[notice]', err); }
   if (cloud) {
     // invites from friends (and being shown online to them) while signed in
     cloud.startInbox(m => { if (m && m.type === 'invite') app.ui.showInvite(m); });
@@ -640,6 +687,7 @@ function boot() {
   const onVisibility = () => {
     last = performance.now();
     try { app.audio.setBackground(document.hidden); } catch (err) { /* ignore */ }
+    if (!document.hidden) notice.wake();
     if (document.hidden) {
       bgStart();
       if (app.game && !app.demo && !app.game.over && !app.game.mp) app.saveGame('auto');

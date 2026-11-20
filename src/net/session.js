@@ -1,4 +1,5 @@
 import { logChat } from '../chatlog.js';
+import { hashParts } from './hashparts.js';
 // Aevum - multiplayer session: lobby + deterministic lockstep over an abstract transport.
 // Transport: { id, async connect(room), send(topic, data), on(topic, fn(data, from, ident)), peers(), onPeers(fn), close() }
 // A transport with `verified` (the node relay with tickets) hands every message the sender's identity as the relay
@@ -50,6 +51,11 @@ export const cleanUid = u => (typeof u === 'string' && UID_RE.test(u) ? u : null
 const cleanAv = a => (typeof a === 'string' && /^[a-z0-9-]{1,24}$/.test(a) ? a : null);
 const cleanTp = t => (Number.isInteger(t) && t >= 0 && t < 1e7 ? t : null);
 
+// the build id of this tab (the server's /mp/notice ver, src/net/notice.js): a host refuses joiners on another build
+export const VER_TEXT = 'Oyun sürümün farklı. Sayfayı yenileyip tekrar katıl.';
+export const HOST_OLD_TEXT = 'Odayı kuranın oyunu eski sürümde: kurucu sayfayı yenileyip odayı yeniden açmalı.';
+const cleanVer = v => (typeof v === 'string' && /^[A-Za-z0-9._-]{1,40}$/.test(v) ? v : null);
+
 function randCode() { let s = ''; for (let i = 0; i < 5; i++) s += CODE_CHARS[(Math.random() * CODE_CHARS.length) | 0]; return s; }
 const jsonLen = o => JSON.stringify(o).length;
 
@@ -59,6 +65,7 @@ export class NetSession {
     this.clock = opts.clock || realClock;
     this.name = (opts.name || 'Oyuncu').slice(0, 20);
     this.uid = cleanUid(opts.uid);
+    this.ver = cleanVer(opts.ver);   // null: no check (an old client, or the server never answered)
     // our own verified identity (from the relay ticket): name and uid come from the account
     this.ident = opts.ident || null;
     if (this.ident) { this.name = String(this.ident.name || this.name).slice(0, 20); this.uid = cleanUid(this.ident.uid) || this.uid; }
@@ -240,7 +247,7 @@ export class NetSession {
       hello();
       const h = this.clock.setInterval(() => {
         if (this._inLobby()) { this.clock.clearInterval(h); this._joined = true; resolve(this.state.code); return; }
-        if (this._rejected) { this.clock.clearInterval(h); reject(new Error(this._rejected)); return; }
+        if (this._rejected) { this.clock.clearInterval(h); const why = this._rejected; this.close('rejected'); reject(new Error(why)); return; }
         if (this.clock.now() - t0 > 12000) { this.clock.clearInterval(h); reject(new Error('Odaya bağlanılamadı: kurucu bulunamadı (kod doğru mu?).')); return; }
         hello();
       }, 400);
@@ -248,7 +255,14 @@ export class NetSession {
     });
   }
 
-  _hello() { return { k: 'hello', name: this.name, uid: this.uid }; }
+  _hello() { return { k: 'hello', name: this.name, uid: this.uid, ver: this.ver }; }
+  // host, lobby: a joiner on another build is refused (a joiner without a ver - an old client - too, when we have one).
+  // The answer is a 'full' with why 'ver': an old client at least stops trying at once.
+  _verRefused(d, from) {
+    if (!this.ver || cleanVer(d && d.ver) === this.ver) return false;
+    this._send('lobby', { k: 'full', to: from, why: 'ver', ver: this.ver });
+    return true;
+  }
   _slotOfPeer(peer) { const st = this.start0 || this.state; return st ? st.slots.find(s => s.kind === 'human' && s.peer === peer) : null; }
   // are we listed by the host (in a slot, or waiting for a slot of a continued match)?
   _inLobby() {
@@ -269,6 +283,7 @@ export class NetSession {
       this._lobbyGone.delete(from);
       const who = this._who(d, from, ident);
       if (!who && (d.k === 'hello' || d.k === 'req')) return;   // (verified relay: a peer without identity is ignored)
+      if (d.k === 'hello' && this.phase === 'lobby' && this._verRefused(d, from)) return;
       if (this.state && this.state.resume && this.phase === 'lobby' && (d.k === 'hello' || d.k === 'req')) { this._onResumeLobby(d, from, who); return; }
       if (d.k === 'hello' && this.phase === 'lobby') {
         let s = this.state.slots.find(x => x.peer === from);
@@ -301,7 +316,8 @@ export class NetSession {
     } else if (d.k === 'kick' && d.to === this.t.id && this.phase === 'lobby') {
       this.close('kicked');
     } else if (d.k === 'full' && d.to === this.t.id) {
-      this._rejected = 'Oda dolu (en fazla 8 oyuncu).';
+      // (a joiner checked its own build against the server before joining: a different host build means the host is behind)
+      this._rejected = d.why === 'ver' ? (this.ver && d.ver && cleanVer(d.ver) !== this.ver ? HOST_OLD_TEXT : VER_TEXT) : 'Oda dolu (en fazla 8 oyuncu).';
     } else if (d.k === 'start' && d.start) {
       this._verifySlots(d.start.slots);
       if (!this.state) this.state = { code: null, hostPeer: from, settings: d.start.settings, slots: d.start.slots };
@@ -777,7 +793,12 @@ export class NetSession {
   _checkHash(ht) {
     const mine = this.myHashes.get(ht), ph = this.peerHashes.get(ht);
     if (mine == null || !ph || this.desynced) return;
-    for (const [, h] of ph) if (h !== mine) { this.desynced = true; this.emit('desync', { tick: ht * TURN_TICKS }); return; }
+    for (const [, h] of ph) if (h !== mine) {
+      this.desynced = true;
+      const nm = (p) => (this.start0 && this.start0.slots[p] ? this.start0.slots[p].name : '?');
+      this.emit('desync', { tick: ht * TURN_TICKS, ht, mine, peers: [...ph].map(([pid, hh]) => ({ pid, name: nm(pid), h: hh >>> 0 })), parts: (this.myParts && this.myParts.get(ht)) || null });
+      return;
+    }
     // keep maps small
     if (this.myHashes.size > 20) { const k = [...this.myHashes.keys()].sort((a, b) => a - b); for (const x of k.slice(0, k.length - 20)) { this.myHashes.delete(x); this.peerHashes.delete(x); } }
   }
@@ -1093,6 +1114,8 @@ export class NetSession {
     const id = String(args[0] || '').slice(0, 40), auto = !!args[1];
     if (!id || this._saveH.has(id) && this._saveH.get(id).mine != null) return;
     let h = 0; try { h = typeof game.hash === 'function' ? game.hash() >>> 0 : 0; } catch { /* ignore */ }
+    if (!this._saveParts) this._saveParts = new Map();
+    this._saveParts.set(id, { tick: game.tick | 0, parts: hashParts(game) }); if (this._saveParts.size > 8) this._saveParts.delete(this._saveParts.keys().next().value);
     this._noteSaveHash(id, this.me, h, true);
     const e = this._saveH.get(id); e.h = h; e.sentAt = this.clock.now(); e.tries = 1;
     this._send('sync', { k: 'saved', id, h });
@@ -1106,7 +1129,13 @@ export class NetSession {
     if (!e) { e = { mine: null, peers: new Map(), done: false }; this._saveH.set(id, e); if (this._saveH.size > 20) this._saveH.delete(this._saveH.keys().next().value); }
     if (mine) e.mine = h >>> 0; else e.peers.set(pid, h >>> 0);
     if (e.mine == null || e.done) return;
-    for (const [p, ph] of e.peers) if (ph !== e.mine) { e.done = true; this.emit('saveMismatch', { id, pid: p, name: this.start0.slots[p] ? this.start0.slots[p].name : '?' }); return; }
+    for (const [p, ph] of e.peers) if (ph !== e.mine) {
+      e.done = true;
+      const nm = (q) => (this.start0 && this.start0.slots[q] ? this.start0.slots[q].name : '?');
+      const sp = this._saveParts && this._saveParts.get(id);
+      this.emit('saveMismatch', { id, pid: p, name: nm(p), mine: e.mine, peers: [...e.peers].map(([q, hh]) => ({ pid: q, name: nm(q), h: hh >>> 0 })), tick: sp ? sp.tick : null, parts: sp ? sp.parts : null });
+      return;
+    }
     const others = this.humans.filter(p => p !== this.me && !this.leftAt.has(p));
     if (others.every(p => e.peers.has(p))) { e.done = true; this.emit('saveVerified', { id, players: others.length + 1 }); }
   }
@@ -1133,6 +1162,9 @@ export class NetSession {
         if (turn % HASH_EVERY === 0 && !this.myHashes.has(turn) && typeof game.hash === 'function') {
           const h = game.hash() >>> 0;
           this.myHashes.set(turn, h); this._hx = { h, ht: turn };
+          // desync diagnostics: a per-section summary of the same state (read-only), logged if the hashes differ
+          if (!this.myParts) this.myParts = new Map();
+          this.myParts.set(turn, hashParts(game)); if (this.myParts.size > 24) this.myParts.delete(this.myParts.keys().next().value);
           this._checkHash(turn);
         }
         // our command lists run `delay` turns ahead; a raised delay fills the gap with empty lists

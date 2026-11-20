@@ -2,6 +2,32 @@
 // release (Turkish, player-facing: what changed in the game, not how). Shown by src/ui/updates-ui.js.
 export const CHANGELOG = [
   {
+    v: '0.9.1', date: '2026-11-20', title: 'Büyük binalar, maden sınırı, son çağa kadar teknolojiler ve yeni menü',
+    items: [
+      'Rakiplerin başlangıç şehir merkezi oyunun ilk saniyesinden haritada ve mini haritada görünüyor; içeride olan biten (birlikleri, çağı, hasarı) sen oraya gidene kadar sisin içinde kalıyor.',
+      'Bir maden öbeğinde her oyuncunun en fazla 8 köylüsü çalışabilir; fazlası yakındaki başka bir öbeğe gider. Madene tıklayınca kaç işçinin çalıştığı görünüyor.',
+      'Teknolojiler son çağa kadar sürüyor: demirci, üniversite, ahır, kışla, liman, tapınak, kamplar ve diğer binalarda Barut ve Sanayi Çağı için yeni geliştirmeler var. Atlı zırhı geliştirmeleri artık ahırda.',
+      'Ağılın kendi geliştirmeleri var (Seçici Islah, Yonca Otlağı, Kış Ağılı, Yem Ambarı, Mandıra); tarla geliştirmeleri artık ağılı etkilemiyor.',
+      'Tüfekçi ve piyade tüfekçisinin menzili uzadı: artık düşmanın dibine kadar yürümüyorlar.',
+      'Ticaret arabası şimdilik oyundan kaldırıldı.',
+      'Görevler kaldırıldı.',
+      'Üst çubuk yeni düzende: çağ ilerlemesi çubuğun içinde ikinci satır, kaynak kutuları eşit genişlikte.',
+      'Shift + Tab (ya da Shift ile boşta köylü butonu) boştaki tüm köylüleri seçer.',
+      'Üretim kuyruğunda Shift ile tıklayınca 5 tanesi birden iptal edilir.',
+      'Oyundan çıkarken ve kayıt silerken oyunun kendi onay penceresi açılıyor; tek oyunculuda ana menüye dönerken de soruluyor.',
+      'Çok oyunculu maçlarda senkron bozulursa sebebi bulunabilsin diye kayda geçiyor.',
+      'Binalar büyük hâlinde ve temelleri onlara göre büyüdü: temel, inşaat iskelesi, seçim karesi ve yerleştirme önizlemesi artık binayla aynı boyda. Yapay zekâ da büyüyen binalara göre yerleşiyor.',
+      'Ana menü yeni düzende: hesap kartı (profil, Profil · Çıkış, senkron durumu) sol üstte, menü altında, geri bildirim notu menünün hemen altında.',
+      'Çok oyunculu odada harita türü artık resimli kartlarla seçiliyor.',
+      'Çevrimiçi Oyuncular listesi uzayınca menüyü taşırmıyor: liste kendi içinde kayıyor.',
+      'Yeni zafer kuralı: bir oyuncu, birim üreten bütün binaları (şehir merkezi, kışla, okçuluk alanı, ahır, kuşatma atölyesi, fabrika, liman) yıkılınca yenilir. Kalan askerler ve köylüler maçı uzatmaz; rakibin son 1-2 binası mini haritada yanıp söner.',
+      'Güncelleme gelmeden önce herkese geri sayımlı bir uyarı çıkar, çok oyunculu maç kendiliğinden kaydedilir; güncellemeden sonra menüdeki "Kesilen maça devam et" ile kaldığınız yerden sürer.',
+      'Farklı sürümdeki oyuncular aynı maça giremez; eski sürümde kalan sekme "Yeni sürüm hazır" uyarısıyla yenilenir.',
+      'Oyunun artık bir sekme simgesi var: yer imlerinde ve sekmede şehir merkezi simgesi görünüyor.',
+      'Oyun daha hızlı açılıyor: dosyalar tarayıcıda saklanıyor, bina modelleri hızlı bir dağıtım ağından geliyor.',
+    ],
+  },
+  {
     v: '0.9', date: '2026-11-20', title: 'Geri bildirim, dizilişler ve daha akıllı yapay zekâ',
     items: [
       'Sohbete @claude yazarak hata ve önerilerini doğrudan geliştiriciye iletebilirsin; "@" yazınca liste açılır, yazarken etiket vurgulanır.',

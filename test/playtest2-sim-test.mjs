@@ -173,9 +173,11 @@ if (only('D')) {
   };
   runHunt('walled town center', 5, ring, 12, shut);
   runHunt('walled town center (seed 9)', 9, ring, 12, shut);
-  // no town center: four houses far apart, two villagers
+  // scattered remains: a lone town center in a far corner and houses far apart, two villagers (since 2026-11-19 a
+  // player with no town center at all loses after 2 minutes, so the remains keep one for the push to hunt down)
   runHunt('scattered remains', 5, (g, p, place) => {
-    const hs = [[30, 220], [128, 40], [40, 128], [128, 128]].map(([x, z]) => place('house', x, z));
+    place('towncenter', 30, 220);
+    const hs = [[128, 40], [40, 128], [128, 128]].map(([x, z]) => place('house', x, z));
     for (const h of hs.slice(0, 2)) g._addUnit('villager', 0, h.x + 2.5, h.z + 2.5);
   }, 16);
 }
