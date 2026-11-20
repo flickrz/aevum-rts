@@ -25,6 +25,7 @@ export const CHANGELOG = [
       'Farklı sürümdeki oyuncular aynı maça giremez; eski sürümde kalan sekme "Yeni sürüm hazır" uyarısıyla yenilenir.',
       'Oyunun artık bir sekme simgesi var: yer imlerinde ve sekmede şehir merkezi simgesi görünüyor.',
       'Oyun daha hızlı açılıyor: dosyalar tarayıcıda saklanıyor, bina modelleri hızlı bir dağıtım ağından geliyor.',
+      'Öğretici mod geldi: Nasıl Oynanır ekranındaki "Öğretici Savaşı Başlat" ile 9 bölümlük bir hikâyede, Bilge Ayaz eşliğinde oyunun temellerini adım adım öğren.',
       'Düzeltme: çağ atlarken üst çubuk artık sola kaymıyor.',
     ],
   },

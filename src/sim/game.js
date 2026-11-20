@@ -11,6 +11,7 @@ export const MINE_CAP = 8;
 const FARM_SPOT_S = 5;   // seconds a farmer hoes on one spot of his plot before moving on along the row
 import { AIController } from './ai.js';
 import { QuestSystem } from './quests.js';
+import { TutorialSystem } from './tutorial.js';
 
 // the buildings that train units: as long as a player has one, the player is in the game (see _checkWin)
 const PROD_B = new Set(Object.keys(BUILDINGS).filter((k) => (BUILDINGS[k].trains || []).length && !BUILDINGS[k].legacy));
@@ -167,6 +168,7 @@ export class Game {
     // multiplayer: cfg.players [{kind, team, difficulty?, name?}] (index = player id), cfg.me = local human (view only)
     this.mp = !!this.cfg.mp;
     if (this.mp) this.cfg.sandbox = false;
+    if (this.mp && 'tutorial' in this.cfg) delete this.cfg.tutorial;   // (the tutorial is single player only: see sim/tutorial.js)
     this.me = Math.max(0, this.cfg.me | 0);
     this.tick = 0;
     this.events = new Events();
@@ -185,10 +187,15 @@ export class Game {
     if (saved) this._restore(saved); else this._generate();
     this._initTeams();
     this.ais = [];
-    for (const p of this.players) if (p.isAI) { try { this.ais.push(new AIController(this, p.id, p.difficulty || this.cfg.difficulty)); } catch (err) { console.error('AI init', err); } }
+    for (const p of this.players) if (p.isAI && !this.cfg.tutorial) { try { this.ais.push(new AIController(this, p.id, p.difficulty || this.cfg.difficulty)); } catch (err) { console.error('AI init', err); } }
     const noQuests = { list: [], update() {}, serialize() { return null; }, load() {} };
     // (owner 2026-11-20: the quests are gone - the story tutorial teaches the game now; no hidden rewards either)
-    this.quests = noQuests;
+    if (this.mp || !this.cfg.tutorial) this.quests = noQuests;
+    else try { this.quests = new TutorialSystem(this); if (!saved) this.quests.setup(); } catch (err) {
+      // a broken tutorial falls back to a normal game (win check and AI back on) instead of one that can never end
+      console.error('Tutorial init', err); this.quests = noQuests; delete this.cfg.tutorial;
+      for (const p of this.players) if (p.isAI) { try { this.ais.push(new AIController(this, p.id, p.difficulty || this.cfg.difficulty)); } catch (e2) { console.error('AI init', e2); } }
+    }
     void QuestSystem;
     if (saved) {
       try { if (saved.quests) this.quests.load(saved.quests); } catch (err) { console.error(err); }
@@ -1133,7 +1140,7 @@ export class Game {
   }
   // seconds left before the next age-up may start (the minimum stay in the current age)
   ageWait(owner) {
-    const p = this.players[owner], a = p && AGES[p.age + 1]; if (!a || !a.minStay) return 0;
+    const p = this.players[owner], a = p && AGES[p.age + 1]; if (!a || !a.minStay || this.cfg.tutorial) return 0;   // (tutorial: no minimum stay)
     return Math.max(0, (p.ageAt || 0) + a.minStay - this.time);
   }
   _typesOwned(owner) { const s = new Set(); for (const b of this.buildings) if (b.owner === owner && b.done && !['house', 'wall', 'gate', 'towncenter'].includes(b.type)) s.add(b.type); return s.size; }
@@ -1538,6 +1545,17 @@ export class Game {
     if (o && o.type === 'move') u.queue.unshift(o.grp ? { type: 'move', x: o.x, z: o.z, grp: o.grp } : { type: 'move', x: o.x, z: o.z });
     const d = UNITS[u.type], tr = t.kind === 'unit' ? UNITS[t.type].range || 0 : t.kind === 'building' ? BUILDINGS[t.type].range || 0 : 0;
     u.order = { type: 'attack', targetId: t.id, auto: true, ox: u.x, oz: u.z, lr: Math.max(d.los, tr + 4, reach || 0) }; u.targetId = t.id; u.path = null; u.pk = null;
+  }
+  // tutorial setup only: takes a unit off the map at once, like the corpse removal in update() but without a death,
+  // stats or a corpse (the rival tribe's villagers, before the view is attached)
+  _tutRemove(e) {
+    if (!this.cfg.tutorial || !e || e.kind !== 'unit' || !this.entities.has(e.id)) return false;
+    this.entities.delete(e.id);
+    const i = this.units.indexOf(e); if (i >= 0) this.units.splice(i, 1);
+    const p = this.players[e.owner]; if (p) p.pop -= UNITS[e.type].pop;
+    e.dead = true; e._rm = true; e.order = null; e.queue.length = 0; e.path = null;
+    this.events.emit('remove', { e });
+    return true;
   }
   _kill(e, killer) {
     if (e.dead) return; e.dead = true; e.hp = 0;
@@ -2002,7 +2020,7 @@ export class Game {
         if (n > 0) this._near(b.x, b.z, TEMPLE_HEAL_R, e => { if (e.dead || e.owner !== b.owner || e.hp >= e.maxHp || e.state === 'attack' || this.time - (e.hitT || -99) < 5 || Math.hypot(e.x - b.x, e.z - b.z) > TEMPLE_HEAL_R) return; e.hp = Math.min(e.maxHp, e.hp + n); }); }
     }
     const q = b.queue[0]; if (!q) return;
-    const sp = (this.cfg.sandbox && b.owner === 0 ? 2 : 1) / QUEUE_TIME_MUL * (q.kind === 'unit' ? 1 + p.mods.train + (b.type === 'factory' ? p.mods.factory : 0) : 1);
+    const sp = (this.cfg.sandbox && b.owner === 0 ? 2 : 1) / QUEUE_TIME_MUL * (q.kind === 'unit' ? 1 + p.mods.train + (b.type === 'factory' ? p.mods.factory : 0) : 1) * (this.cfg.tutorial && q.kind === 'age' && b.owner === 0 ? 4 : 1);   // (tutorial: the age-up 4x faster)
     if (q.t < q.total) q.t = Math.min(q.total, q.t + dt * sp);
     if (q.kind === 'age') p.ageProgress = q.t / q.total;
     if (q.t < q.total) return;
@@ -2148,7 +2166,7 @@ export class Game {
     return n;
   }
   _checkWin() {
-    if (this.cfg.sandbox || this.players.length < 2) return;
+    if (this.cfg.sandbox || this.cfg.tutorial || this.players.length < 2) return;   // (the tutorial ends the match itself)
     const myTeam = this.teamOf(this.me);
     for (const p of this.players) {
       if (p.defeated) continue;

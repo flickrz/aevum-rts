@@ -203,7 +203,7 @@ export function showInvite(ui, m) {
     safe(() => ui._click());
     const app = ui.app;
     if (app.net) { if (!(await ask({ title: 'Davete Katıl', text: 'Şu an çok oyunculu bir maçtasın. Ondan çıkıp davete katılmak istiyor musun?', ok: 'Katıl' }))) return; safe(() => app.leaveMultiplayer()); }
-    else if (app.game && !app.demo && !app.game.over && ui.mode === 'hud') { if (!(await ask({ title: 'Davete Katıl', text: 'Oyunun kapanacak (otomatik kayıt alınır). Davete katılınsın mı?', ok: 'Katıl' }))) return; await Promise.resolve(safe(() => app.saveGame('auto'))).catch(() => {}); safe(() => app.toMenu()); }
+    else if (app.game && !app.demo && !app.game.over && ui.mode === 'hud') { if (!(await ask({ title: 'Davete Katıl', text: app.game.cfg?.tutorial ? 'Öğretici kapanacak (öğretici kaydedilmez). Davete katılınsın mı?' : 'Oyunun kapanacak (otomatik kayıt alınır). Davete katılınsın mı?', ok: 'Katıl' }))) return; await Promise.resolve(safe(() => app.saveGame('auto'))).catch(() => {}); safe(() => app.toMenu()); }
     if (ui.lobbySession) { safe(() => ui.lobbySession.close()); ui.lobbySession = null; }
     yes.disabled = true; yes.textContent = 'Katılınıyor...';
     try {

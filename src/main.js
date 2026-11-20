@@ -88,7 +88,7 @@ const app = {
       startAge: 0, sandbox: false, seed: (Math.random() * 1e9) | 0, fog: 'explored',
     }, cfg || {});
     attachGame(new Game(full), false);
-    if (!full.sandbox) histCtx.set(app.game, { mode: 'sp', matchId: profile.newMatchId(), mt: tpStart('sp') });
+    if (!full.sandbox && !full.tutorial) histCtx.set(app.game, { mode: 'sp', matchId: profile.newMatchId(), mt: tpStart('sp') });   // (the tutorial: no match history, no TP)
     return app.game;
   },
 
@@ -194,6 +194,8 @@ const app = {
     // multiplayer: a lockstep save request; every client saves when it executes (see saveMpRecord)
     if (app.game && app.game.mp) return !!(app.net && app.net.phase === 'game' && app.net.requestSave(key === 'auto'));
     if (!app.game || app.demo || app.game.mp) return false;
+    // the tutorial is never saved (autosave, F5, hidden tab): closing it starts it again from the menu
+    if (app.game.cfg.tutorial) { if (key !== 'auto') app.game.events.emit('notify', { text: 'Öğretici modunda kayıt kapalı.', type: 'info' }); return false; }
     const auto = key === 'auto';
     const time = Date.now();
     const k = key || ('manual-' + time);
@@ -222,7 +224,7 @@ const app = {
       if (!rec || !rec.data || rec.mp) { app.lastLoadError = 'Kayıt okunamadı.'; return false; }   // multiplayer saves continue through "Kayıtlı Maça Devam Et"
       attachGame(Game.deserialize(rec.data), false);
       // the same match id as before the save: finishing a loaded game updates its one history record
-      if (!app.game.cfg.sandbox) histCtx.set(app.game, { mode: 'sp', matchId: /^[0-9a-f]{16}$/.test(rec.matchId || '') ? rec.matchId : profile.newMatchId(), mt: tpStart('sp') });
+      if (!app.game.cfg.sandbox && !app.game.cfg.tutorial) histCtx.set(app.game, { mode: 'sp', matchId: /^[0-9a-f]{16}$/.test(rec.matchId || '') ? rec.matchId : profile.newMatchId(), mt: tpStart('sp') });
       return true;
     } catch (err) { showError(err); return false; }
   },
@@ -355,7 +357,7 @@ function saveMpRecord(session, game, ev) {
 // Keyed by match id, so a loaded / continued match that ends replaces its earlier 'abandoned' record.
 function recordGame(game, final) {
   const ctx = game && histCtx.get(game);
-  if (!ctx || ctx.done || game.cfg.sandbox || game.cfg.demo) return Promise.resolve(null);
+  if (!ctx || ctx.done || game.cfg.sandbox || game.cfg.demo || game.cfg.tutorial) return Promise.resolve(null);
   const me = game.me | 0, mine = game.players[me];
   if (!final && !game.over && !(mine && mine.defeated) && (game.time || 0) < ABANDON_MIN_S) return Promise.resolve(null);
   const p = app.getProfile();

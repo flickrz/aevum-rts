@@ -8,6 +8,8 @@ import { logChat } from '../chatlog.js';
 import { withMention } from './mention.js';
 import { menuUpdates, hasUnseen } from './updates-ui.js';
 import { mapPreview, previewClimate } from './map-preview.js';
+import { TutorialUI } from './tutorial-ui.js';
+import { TUT_CFG } from '../sim/tutorial.js';
 import { ico, applyIcons, keepIcons, stripIcons, RES_ICONS, CAT_ICONS, NATURE_ICONS } from '../icons.js';
 import { ask, askOpen } from './ask.js';
 import { interruptedEntry } from './notice-ui.js';
@@ -523,6 +525,8 @@ export class UI {
       <b>Zafer:</b> Rakiplerin birim üreten bütün binalarını yık: şehir merkezi, kışla, okçuluk alanı, ahır, kuşatma atölyesi, fabrika ve liman (inşaatına başlanmış temeller de sayılır). Geriye kalan askerler ve köylüler oyunu sürdürmez. Bir rakibin bu binalarından 1-2 tane kalınca mini haritada yanıp söner.<br>
       <b>Diğer:</b> <kbd>Esc</kbd> iptal / duraklat, mini haritaya tıklayarak kamerayı taşı, sağ tıkla birimleri gönder.
       </div>`);
+    // the tutorial battle (sim/tutorial.js): a story with Bilge Ayaz that teaches the mechanics step by step
+    this._mbtn(box, 'Öğretici Savaşı Başlat', () => { try { this.app.newGame({ ...TUT_CFG }); } catch (err) { console.error(err); } }, 'primary');
     this._mbtn(box, 'Geri', () => this._menuMain());
   }
   _settingsBody(parent) {
@@ -619,6 +623,12 @@ export class UI {
     for (const b of [this.pauseBtn]) if (b) b.style.display = mp ? 'none' : '';
     if (this.saveBtn) { this.saveBtn.style.display = ''; this.saveBtn.title = mp ? 'Maçı kaydet: herkes aynı anda kaydeder (Çok Oyunculu → Kayıtlı Maça Devam Et)' : this.saveBtn.title; }
     if (this.chatBtn) this.chatBtn.style.display = mp ? '' : 'none';
+    // tutorial mode: the guide's panel and highlights; no saving there (main.js saveGame)
+    if (this.tut) { safe(() => this.tut.destroy()); this.tut = null; }
+    if (game.cfg?.tutorial && game.quests?.tutorial) {
+      this.tut = safe(() => new TutorialUI(this, game), null);
+      if (this.tut && this.saveBtn) this.saveBtn.style.display = 'none';
+    }
     if (this.netEl) { this.netEl.remove(); this.netEl = null; }
     this.scoreSig = null;
     if (this.mode !== 'hud') this.showHUD();
@@ -769,7 +779,8 @@ export class UI {
       }
       for (const id of this.orphanSince.keys()) if (!seen.has(id)) this.orphanSince.delete(id);
     }
-    // objective line
+    // objective line (tutorial: the chapter's objective)
+    if (this.tut && !demo) { this.tut.objective(this.objEl); return; }
     const next = AGES[p.age + 1];
     if (demo || !next) { this.objEl.classList.add('hidden'); return; }
     this.objEl.classList.remove('hidden');
@@ -910,6 +921,7 @@ export class UI {
       this.frames = 0; this.fpsT = 0;
     }
     if (this.mode !== 'hud' || !this.game) return;
+    if (this.tut) safe(() => this.tut.frame(dt));
     this.acc += dt; this.mmAcc += dt;
     if (this.acc >= 0.125) {
       this.acc = 0;
@@ -917,6 +929,7 @@ export class UI {
       safe(() => this._refreshSel());
       safe(() => this._refreshCard());
       safe(() => this._refreshGroups());
+      if (this.tut) safe(() => this.tut.tick());
       if (this.techTiles && (this.techT = (this.techT || 0) + 1) % 2 === 0) safe(() => this._refreshTech());
       const paused = this.gameMenuVisible();
       safe(() => this._refreshScore());
@@ -1122,7 +1135,7 @@ export class UI {
       const e = ents[0];
       sig += e.id + e.type + (e.done ? 'd' : 'u') + (e.queue ? e.queue.map((q) => q.kind + q.id).join(';') : '') + ents.some((x) => x.type === 'villager') + (ents.length > 1 ? ents.map((x) => x.type + (x.done ? 'd' : 'u')).join(',') : '') + ents.map((x) => x.form || '').join('');
     }
-    if (sig !== this.cardSig) { this.cardSig = sig; this._renderCard(ents); }
+    if (sig !== this.cardSig) { this.cardSig = sig; this._renderCard(ents); if (this.tut) safe(() => this.tut.applyHl()); }
     for (const b of this.buttons) {
       if (!b) continue;
       const c = b.spec.check ? safe(b.spec.check, { ok: true }) : { ok: true };
@@ -1276,7 +1289,7 @@ export class UI {
     if (e.type === 'towncenter' && p.age < AGES.length - 1 && !pool.some((b) => (b.queue || []).some((q) => q.kind === 'age'))) {
       const na = AGES[p.age + 1];
       put({
-        icon: ico('x-ageup'), name: 'Çağ Atla: ' + na.name, cost: na.cost, time: na.time * QUEUE_TIME_MUL / sb,
+        icon: ico('x-ageup'), name: 'Çağ Atla: ' + na.name, cost: na.cost, time: na.time * QUEUE_TIME_MUL / sb / (g.cfg?.tutorial ? 4 : 1),
         desc: (na.unlockText || []).join(' · ') || 'Sonraki çağa geç.',
         check: () => { const r = safe(() => g.canAgeUp(this._me()), { ok: false, reason: '' }) || { ok: false }; return { ok: !!r.ok, reason: r.reason }; },
         run: () => pool.some((b) => safe(() => g.ageUp(b.id), false)),
@@ -1703,6 +1716,7 @@ export class UI {
     this.gameOverShown = true; this.modalLocked = true; this.techTiles = null;
     this.pauseEl.classList.add('hidden');
     this.modalEl.innerHTML = '';
+    if (this.tut && this.game.cfg?.tutorial) { const tm = safe(() => this.tut.gameOver(won), null); if (tm) { this.modalEl.append(tm); this.modalEl.classList.remove('hidden'); return; } }
     if (this.game.mp) won = this._mpWon(won);
     const wt = this.game.mp ? this._winTeam() : null, wtxt = wt != null ? `Takım ${wt} kazandı! ` : '';
     const m = el('div', 'modal panel', `<h1 class="${won ? 'win' : 'lose'}">${won ? 'ZAFER' : 'YENİLGİ'}</h1><div style="color:var(--dim)">${wtxt}${won ? (this.game.mp ? 'Takımın tüm rakipleri alt etti.' : 'Tüm rakiplerini alt ettin. Uygarlığın çağlara damga vurdu.') : 'Uygarlığın tarihe karıştı.'} · Süre: ${fmtTime(this.game.time || 0)}</div>${this._statsTable(true)}`);

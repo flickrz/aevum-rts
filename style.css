@@ -841,6 +841,9 @@ button.gbtn, button.gbtn .gbtn-t { color: #1f1f1f !important; text-shadow: none 
 .up-top h2 { grid-column: 2; margin: 0 !important; }
 .up-top .up-back { grid-column: 1; justify-self: start; width: auto; margin: 0; padding: 8px 16px; font-size: 14px; border-color: var(--gold); color: var(--gold) !important; }
 .menu-box.updates > .mpnote { margin-top: 12px; }
+/* tutorial (src/ui/tutorial-ui.js): the guide's story panel on the right above the command card row, and a gold pulse on what a chapter is about */
+.tut-story { position: absolute; right: 12px; bottom: 262px; width: 340px; padding: 10px 14px 6px; font-size: 13.5px; line-height: 1.45; } .tut-story h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: 2px; color: var(--gold); text-transform: uppercase; font-weight: 600; } .tut-story .th { font-size: 12px; color: var(--dim); } .tut-story .tb { display: flex; align-items: center; justify-content: flex-end; gap: 8px; } .tut-story .tp { font-size: 11px; color: var(--dim); } .tut-story .mbtn.small { margin: 6px 0 4px; }
+.tut-hl { outline: 2px solid var(--gold); outline-offset: 1px; animation: idlePulse 1.4s ease-in-out infinite; }
 /* a rival's building in the fog: its health is not known (owner 2026-11-20) */
 .hpbar.fog i { background: rgba(255,255,255,.18) !important; }
 
