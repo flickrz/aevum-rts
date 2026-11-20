@@ -11,4 +11,3 @@ export function levelOf(tp) {
   const rank = RANKS[Math.min(RANKS.length - 1, Math.floor((level - 1) / 2))];
   return { level, rank, tp, cur: tp - base, need: next - base, next, frac: (tp - base) / (next - base) };
 }
-// contributor change
