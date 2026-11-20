@@ -39,6 +39,7 @@ const G = {
   ring: new THREE.RingGeometry(.42, .5, 24).rotateX(-PI / 2),
   sq: new THREE.RingGeometry(.66, .7071, 4, 1).rotateZ(PI / 4).rotateX(-PI / 2),
   wheel: new THREE.CylinderGeometry(.5, .5, 1, 12).rotateZ(PI / 2),
+  robe: new THREE.CylinderGeometry(.3, .5, 1, 10).translate(0, .5, 0),   // a long skirt: narrow at the waist, wide at the hem
 };
 
 // ---------- material cache ----------
@@ -87,6 +88,8 @@ const XM = {
   bone: mat(0xe8e0cc, .8), hide: mat(0x9a7a52, .97), fur: mat(0x6f5236, 1), copper: mat(0x5fa58c, .6, .4),
   sky: mat(0x9fd0e8, .15, .35, 0x1a3040), water: mat(0x3f6f9f, .3), linen: mat(0xd9cfb4, .95), mail: mat(0x8a9098, .55, .6),
   hose: mat(0x4a4038, .9), capg: mat(0x57524a, .9), hair: mat(0x4a3220, .95),
+  // healer (Büyücü): staff orb, her hair, embroidery, the dark robe of the last age
+  orb: mat(0x9af7d6, .35, 0, 0x2fd8a4), hairF: mat(0x6a3a22, .95), emb: mat(0xd9c27a, .7, .2), robe4: mat(0x2b2e38, .85),
 };
 // buildings: a thin outline laid exactly on the footprint (one geometry per size, line width fixed in world units)
 const SQG = new Map(), SQ_W = .09;
@@ -1314,11 +1317,13 @@ const KIT = {
   lightcav: { cav: 1, weapon: 'spear', helm: 'cap', coat: 0x8a5a35 },
   knight: { cav: 1, armor: 1, weapon: 'spear', shield: 1, helm: 'steel', plume: 1, coat: 0x54453a, barding: 1 },
   cuirassier: { cav: 1, armor: 1, weapon: 'sword', helm: 'hat', coat: 0x2a2420 },
+  healer: { healer: 1 },
 };
 const CARRY_M = { wood: MT.wood, food: MT.red, stone: MT.stone, gold: MT.gold };
 
 function makeHuman(g, color, k, P, age) {
   const A = Math.max(0, Math.min(4, age | 0)), V = !!k.villager;
+  if (k.healer) return makeHealer(g, color, P, A);
   const cloth = mat(color, .85, 0);
   const legM = A <= 1 ? MT.skin : A === 2 ? XM.hose : mat(k.legs || (A === 4 ? 0x2f3540 : 0x5a4632), .9);
   let torsoM, armM;
@@ -1393,6 +1398,55 @@ function makeHuman(g, color, k, P, age) {
     }
     P.bundle = bx(P.torso, MT.wood, .24, .22, .14, 0, .1, -.16); P.bundle.visible = false; P.bundle.userData.dyn = 1; // material swapped per load
   }
+}
+// Büyücü (healer): a woman in a long hooded robe in the owner's colour with a staff topped by a glowing orb. Same rig
+// as makeHuman (legL/legR/torso/head/armL/armR) so _animHuman drives her; the legs are only feet under the hem.
+function makeHealer(g, color, P, A) {
+  const cloth = mat(color, .85, 0);
+  const robeM = A === 4 ? XM.robe4 : cloth;
+  const trimM = [XM.fur, XM.linen, XM.emb, MT.gold, MT.white][A];
+  const sashM = [XM.hide, MT.leather, XM.emb, MT.gold, MT.black][A];
+  const footM = A >= 3 ? MT.black : MT.leather;
+  P.legL = piv(g, .06, .38, 0); bx(P.legL, footM, .07, .06, .11, 0, -.38, .01);
+  P.legR = piv(g, -.06, .38, 0); bx(P.legR, footM, .07, .06, .11, 0, -.38, .01);
+  // the skirt down to the ground (static: merged into the body), its hem in the age's trim
+  mk(G.robe, g, robeM, .44, .44, .32, 0, 0, 0);
+  mk(G.cyl, g, trimM, .45, .05, .33, 0, 0, 0);
+  if (A === 4) bx(g, cloth, .1, .44, .02, 0, 0, .162).rotation.x = -.144;   // owner-colour stole down the front of the dark robe
+  P.torso = piv(g, 0, .38, 0); bx(P.torso, robeM, .26, .34, .16, 0, 0, 0);
+  bx(P.torso, sashM, .27, .045, .17, 0, .05, 0);
+  bx(P.torso, cloth, .3, .08, .19, 0, .27, 0);   // shoulder mantle (owner colour in every age)
+  if (A === 0) { bx(P.torso, XM.fur, .31, .05, .2, 0, .32, 0); bx(P.torso, MT.leather, .015, .1, .01, 0, .17, .085); bx(P.torso, XM.bone, .035, .06, .02, 0, .12, .09); }
+  else if (A === 1) sp(P.torso, MT.bronze, .03, 0, .3, .095);
+  else if (A === 2) bx(P.torso, XM.emb, .05, .26, .02, 0, 0, .08);
+  else if (A === 3) sp(P.torso, MT.gold, .03, 0, .3, .095);
+  else { bx(P.torso, cloth, .12, .26, .02, 0, 0, .08); bx(P.torso, MT.white, .025, .26, .022, .06, 0, .08); bx(P.torso, MT.white, .025, .26, .022, -.06, 0, .08); }
+  // head with the hood up (face open to the front, +z), fringe and long strands of hair falling over the chest
+  P.head = piv(P.torso, 0, .36, 0); bx(P.head, MT.skin, .15, .16, .15, 0, 0, 0);
+  bx(P.head, cloth, .2, .06, .2, 0, .15, -.015);
+  bx(P.head, cloth, .025, .2, .19, .09, -.04, -.02); bx(P.head, cloth, .025, .2, .19, -.09, -.04, -.02);
+  bx(P.head, cloth, .2, .24, .04, 0, -.06, -.1);
+  py(P.head, cloth, .14, .1, .14, 0, .2, -.04).rotation.x = -.5;
+  bx(P.head, A === 3 ? cloth : trimM, .205, .03, .03, 0, .145, .08);   // hood rim
+  bx(P.head, XM.hairF, .15, .03, .02, 0, .125, .076);
+  // (the long strands hang from the torso, at the head's rest place (pivot y .36): on the head they cut into the chest
+  // when the idle head turns)
+  bx(P.torso, XM.hairF, .045, .26, .035, .055, .12, .085); bx(P.torso, XM.hairF, .04, .16, .03, -.055, .22, .085);
+  // slim arms in wide sleeves
+  const sl = robeM, cuff = A === 3 ? cloth : trimM;
+  P.armL = piv(P.torso, .165, .3, 0); bx(P.armL, sl, .08, .3, .08, 0, -.3, 0); bx(P.armL, cuff, .1, .07, .1, 0, -.3, 0); bx(P.armL, MT.skin, .06, .06, .06, 0, -.35, 0);
+  P.armR = piv(P.torso, -.165, .3, 0); bx(P.armR, sl, .08, .3, .08, 0, -.3, 0); bx(P.armR, cuff, .1, .07, .1, 0, -.3, 0); bx(P.armR, MT.skin, .06, .06, .06, 0, -.35, 0);
+  // the staff in her right hand: tilted against the arm's resting angle (-.3, see _animHuman) so it stands upright
+  const st = piv(P.armR, 0, -.33, .03); st.rotation.x = .3;
+  cy(st, A === 0 ? MT.dwood : MT.wood, .016, 1.0, 0, -.32, 0);
+  const cm = [XM.bone, MT.bronze, MT.dwood, MT.gold, MT.steel][A];
+  cy(st, cm, .03, .04, 0, .64, 0);
+  bx(st, cm, .018, .12, .018, .035, .66, 0); bx(st, cm, .018, .12, .018, -.035, .66, 0);
+  bx(st, cm, .018, .12, .018, 0, .66, .035); bx(st, cm, .018, .12, .018, 0, .66, -.035);
+  if (A === 0) bx(st, MT.leather, .04, .07, .04, 0, .5, 0);
+  else if (A === 2) bx(st, XM.emb, .038, .05, .038, 0, .52, 0);
+  sp(st, XM.orb, .045, 0, .74, 0);
+  P.staff = 1;
 }
 function makeHorse(g, coatHex, P, sc) {
   const m = mat(coatHex, .9), dk = mat(0x241a12, .9);
@@ -2113,6 +2167,7 @@ export class EntityView {
       const s = Math.sin(t * 10);
       ll = s * .7; rl = -s * .7; la = -s * .5; ra = s * .5; bob = Math.abs(s) * .035;
       if (P.gun) ra = -.7; if (P.bow) la = -.5;
+      if (P.staff) { ra = -.3 + s * .12; ll *= .5; rl *= .5; }   /* healer: short steps under the robe, staff held upright */
     } else if (a === 'chop' || a === 'mine' || a === 'build' || a === 'farm' || a === 'forage') {
       const s = Math.sin(t * 7.5);
       if (a === 'forage') { ra = -.9 + s * .4; la = -.9 - s * .4; lean = .75; }
@@ -2127,7 +2182,7 @@ export class EntityView {
       else { ra = -1.0 + Math.sin(t * 3) * .08; la = -.5; }
     } else {
       bob = Math.sin(t * 2) * .008; hy = Math.sin(t * .55) * .5;
-      la = Math.sin(t * 1.3) * .05; ra = P.gun ? -.75 : -la;
+      la = Math.sin(t * 1.3) * .05; ra = P.gun ? -.75 : P.staff ? -.3 + la : -la;
     }
     if (!riding) { P.legL.rotation.x = ll; P.legR.rotation.x = rl; P.torso.position.y = .38 + bob; }
     P.armL.rotation.x = la; P.armR.rotation.x = ra; P.torso.rotation.x = lean; P.head.rotation.y = hy;

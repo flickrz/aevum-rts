@@ -1,6 +1,6 @@
 // Aevum UI: main menu, HUD, minimap, tooltips, overlays. DOM only, no three.js.
 import { AGES, UNITS, BUILDINGS, TECHS, PLAYER_COLORS } from '../data.js';
-import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS, MINE_CAP } from '../sim/game.js';
+import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS, MINE_CAP, HEALER_R, HEALER_HP, PROD_B } from '../sim/game.js';
 import { firstLaunch, menuProfile } from './profile-ui.js';
 import { levelOf } from '../rank.js';
 import { menuHud, saveBadge, saveBadgeTitle, confirmDeleteSave, loginScreen, avatarEl, tpText } from './cloud-ui.js';
@@ -521,6 +521,7 @@ export class UI {
       <b>Komut kartı:</b> Sağ alttaki düğmeler; kısayollar <kbd>Q</kbd><kbd>E</kbd><kbd>R</kbd><kbd>T</kbd><kbd>Y</kbd> / <kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd> / <kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd><kbd>B</kbd> ızgara sırasıyla.<br>
       <b>Binalar:</b> <kbd>Shift</kbd>+tık ile aynı türden birden çok bina seç, çift tık ekrandaki tümünü seçer; üretim her binada aynı anda başlar. <kbd>Shift</kbd>+üret: 5 adet sıraya ekler. <kbd>Shift</kbd> basılıyken bina yerleştirmek araç açık kalır, birden çok temel atarsın.<br>
       <b>Ekonomi:</b> Köylülerle yiyecek, odun, taş ve altın topla; tarla ek (nüfus sınırı sabit 1000, ev gerekmez).<br>
+      <b>Büyücü:</b> Tapınakta (Taş Devri'nden itibaren) üretilir. Saldırmaz; çevresindeki (5 kare) yaralı dost birlikleri savaş sırasında da saniyede 2 can iyileştirir, tapınak araştırmaları bunu artırır. Bir birliği aynı anda yalnızca bir büyücü iyileştirir.<br>
       <b>Çağ atlama:</b> Şehir Merkezinden yeterli kaynak ve bina ile sonraki çağa geç; yeni birimler ve binalar açılır.<br>
       <b>Zafer:</b> Rakiplerin birim üreten bütün binalarını yık: şehir merkezi, kışla, okçuluk alanı, ahır, kuşatma atölyesi, fabrika ve liman (inşaatına başlanmış temeller de sayılır). Geriye kalan askerler ve köylüler oyunu sürdürmez. Bir rakibin bu binalarından 1-2 tane kalınca mini haritada yanıp söner.<br>
       <b>Diğer:</b> <kbd>Esc</kbd> iptal / duraklat, mini haritaya tıklayarak kamerayı taşı, sağ tıkla birimleri gönder.
@@ -1022,6 +1023,7 @@ export class UI {
     if (e.kind === 'unit') {
       s.push(`<span>${ico('x-atk')} <b>${d.atk ?? 0}</b></span>`, `<span>${ico('x-armor')} <b>${d.armor ?? 0}</b></span>`);
       if (d.range) s.push(`<span>${ico('x-range')} <b>${d.range}</b></span>`);
+      if (e.type === 'healer') { const hm = this.game?.players?.[e.owner]?.mods?.heal || 0; s.push(`<span>İyileştirme: <b>${Math.round(HEALER_HP * (1 + hm))} can/sn · ${HEALER_R} kare</b></span>`); }
       s.push(`<span>${ico('x-speed')} <b>${d.speed ?? '-'}</b></span>`);
       if (e.type === 'transport' || Array.isArray(e.cargo)) s.push(`<span>${ico('u-transport')} <b>${(e.cargo || []).length}/10</b></span>`);
       if (e.carry && e.carry.amount > 0) s.push(`<span>${RES_ICON[e.carry.type] || ico('x-cargo')} <b>${Math.floor(e.carry.amount)}</b></span>`);
@@ -1494,7 +1496,7 @@ export class UI {
       const blink = 0.5 + 0.5 * Math.sin(performance.now() / 260);
       for (const p of g.players || []) {
         if (p.defeated || p.id === this._me() || this._ally(this._me(), p.id)) continue;
-        const last = g.buildings.filter((b) => b.owner === p.id && !b.dead && (BUILDINGS[b.type]?.trains || []).length && !BUILDINGS[b.type].legacy && (b.done || b.progress > 0));
+        const last = g.buildings.filter((b) => b.owner === p.id && !b.dead && PROD_B.has(b.type) && (b.done || b.progress > 0));   // (same set as the victory rule: no temple)
         if (!last.length || last.length > 2) continue;
         for (const b of last) {
           const r = Math.max(5, (b.size || 3) * k * 0.9) + blink * 3;

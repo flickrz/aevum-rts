@@ -13,8 +13,9 @@ import { AIController } from './ai.js';
 import { QuestSystem } from './quests.js';
 import { TutorialSystem } from './tutorial.js';
 
-// the buildings that train units: as long as a player has one, the player is in the game (see _checkWin)
-const PROD_B = new Set(Object.keys(BUILDINGS).filter((k) => (BUILDINGS[k].trains || []).length && !BUILDINGS[k].legacy));
+// the buildings that train units: as long as a player has one, the player is in the game (see _checkWin). The temple
+// (it trains only the healer) does not count: the owner's rule is about the worker / soldier buildings.
+export const PROD_B = new Set(Object.keys(BUILDINGS).filter((k) => (BUILDINGS[k].trains || []).length && !BUILDINGS[k].legacy && k !== 'temple'));
 const RES_OF = { tree: 'wood', stone: 'stone', gold: 'gold', berries: 'food', deer: 'food', fish: 'food' };
 const RATE = { tree: 0.42, stone: 0.36, gold: 0.36, berries: 0.4, deer: 0.5 };
 // stand spots per resource tile (deer move: none) and their offsets from the tile centre (sides, then corners)
@@ -74,6 +75,10 @@ export const buildingLos = (b, p) => { const d = BUILDINGS[b.type]; const r = d.
 export const TOWER_AGE_ATK = 5;
 // the temple heals own units within this many tiles of its centre (the view draws it when a temple is selected)
 export const TEMPLE_HEAL_R = 7;
+// the healer (Büyücü, owner 2026-11-21): once a second each one heals every wounded friendly living unit within
+// HEALER_R tiles (centre distance) by HEALER_HP x (1 + the temple heal techs), in combat too; a unit gets at most one
+// healer's heal per second (no stacking). An idle healer walks to a wounded friend she sees and stops HEALER_STOP off.
+export const HEALER_R = 5, HEALER_HP = 2, HEALER_STOP = 3;
 // the castle shoots a volley at up to this many targets every 2 s, its attack +4 per age (2026-11-17 playtest)
 export const CASTLE_VOLLEY = 3, CASTLE_AGE_ATK = 4;
 // from the Gunpowder Age on, towers fire cannonballs (with their splash) instead of arrows
@@ -995,7 +1000,7 @@ export class Game {
   // Shift-queue (playtest 2026-11-14): an open-ended order (gathering: trees, farms, endless mines...; trade runs;
   // fishing) never finishes on its own, so nothing queued behind it would ever run. Queuing behind one ends it now
   // (queued open-ended orders are dropped the same way); a villager walking to drop off a load delivers it first.
-  _setOrder(u, o, queue) { u.explore = false; if (queue && u.order && !u.order.auto) { const open = q => !!q && (q.type === 'gather' || q.type === 'trade' || q.type === 'fish'); for (let i = u.queue.length - 1; i >= 0; i--) if (open(u.queue[i])) u.queue.splice(i, 1); u.queue.push(o); if (open(u.order)) this._next(u); else if (u.order.type === 'return') u.order.resume = null; return; } if (u.order && u.order.type === 'gather') this._unhunt(u.order); u.queue.length = 0; u.order = o; u.targetId = o.targetId || null; u.path = null; u.pk = null; u.rpT = 0; }
+  _setOrder(u, o, queue) { u.explore = false; if (u.hsId) u.hsId = 0; if (queue && u.order && !u.order.auto) { const open = q => !!q && (q.type === 'gather' || q.type === 'trade' || q.type === 'fish'); for (let i = u.queue.length - 1; i >= 0; i--) if (open(u.queue[i])) u.queue.splice(i, 1); u.queue.push(o); if (open(u.order)) this._next(u); else if (u.order.type === 'return') u.order.resume = null; return; } if (u.order && u.order.type === 'gather') this._unhunt(u.order); u.queue.length = 0; u.order = o; u.targetId = o.targetId || null; u.path = null; u.pk = null; u.rpT = 0; }
   _unhunt(o) { const t = this.entities.get(o.targetId); if (t && t.type === 'deer') t.hunted = false; }
   cmdMove(ids, x, z, queue = false) {
     const us = this._live(ids); if (!us.length) return false;
@@ -1084,8 +1089,10 @@ export class Game {
   }
   cmdAttack(ids, targetId, queue = false) {
     const t = this.entities.get(targetId); if (!t || t.dead || t.kind === 'resource') return false;
-    const us = this._live(ids); let ok = false;
-    for (const u of us) { if (!this.isEnemy(u.owner, t.owner) || UNITS[u.type].atk <= 0) continue; if (u.type === 'ram' && t.kind !== 'building') continue; if (t.naval && !(UNITS[u.type].range > 0)) continue; this._setOrder(u, { type: 'attack', targetId }, queue); ok = true; }
+    const us = this._live(ids); let ok = false; const hl = [];
+    for (const u of us) { if (u.type === 'healer') { if (this.isEnemy(u.owner, t.owner)) hl.push(u.id); continue; }   /* (a healer never attacks: she walks there) */
+      if (!this.isEnemy(u.owner, t.owner) || UNITS[u.type].atk <= 0) continue; if (u.type === 'ram' && t.kind !== 'building') continue; if (t.naval && !(UNITS[u.type].range > 0)) continue; this._setOrder(u, { type: 'attack', targetId }, queue); ok = true; }
+    if (hl.length && this.cmdMove(hl, t.x, t.z, queue)) ok = true;
     return ok;
   }
   cmdGather(ids, targetId, queue = false) {
@@ -1660,6 +1667,7 @@ export class Game {
       u.state = 'idle'; u.anim = 'idle';
       const d = UNITS[u.type];
       if (d.cls !== 'civil' && d.atk > 0) { u.scanT -= dt; if (u.scanT <= 0) { u.scanT = 0.5; const t = this._acquire(u, u.stance === 'hold' ? (d.range > 0 ? this._wRange(u) : 1.6) : d.los, false, u.type === 'ram'); if (t) { u.order = { type: 'attack', targetId: t.id, auto: true, ox: u.x, oz: u.z }; u.targetId = t.id; } } }
+      else if (u.type === 'healer') { u.scanT -= dt; if (u.scanT <= 0) { u.scanT = 1; this._healerSeek(u); } }
       return;
     }
     switch (o.type) {
@@ -1694,6 +1702,46 @@ export class Game {
       case 'trade': this._uTrade(u, o, dt); break;
       default: this._next(u);
     }
+  }
+  // a wounded friendly living unit a healer may heal (not herself, no siege / ships / trains / buildings)
+  _healable(h, e) {
+    if (e === h || e.dead || e.kind !== 'unit' || e.type === 'tradecart' || e.aboard || e.train || e.naval || !(e.hp < e.maxHp) || !this.isAlly(h.owner, e.owner)) return false;
+    const c = UNITS[e.type].cls; return c !== 'siege' && c !== 'ship' && c !== 'train';
+  }
+  // once a second for every healer in entity order: each wounded friend within HEALER_R gets the first healer's heal only
+  _healTick() {
+    let done = null;
+    for (const h of this.units) {
+      if (h.type !== 'healer' || h.dead || h.aboard) continue;
+      const p = this.players[h.owner], n = Math.round(HEALER_HP * (1 + ((p && p.mods && p.mods.heal) || 0))), R2 = HEALER_R * HEALER_R, got = [];
+      this._near(h.x, h.z, HEALER_R, e => { if ((done && done.has(e.id)) || !this._healable(h, e)) return; const dx = e.x - h.x, dz = e.z - h.z; if (dx * dx + dz * dz <= R2) got.push(e); });
+      if (!got.length) continue;
+      if (!done) done = new Set();
+      for (const e of got) { done.add(e.id); e.hp = Math.min(e.maxHp, e.hp + n); }
+      this.events.emit('heal', { e: h, targets: got });   // (view only)
+    }
+  }
+  // an idle healer with nobody to heal within HEALER_R walks toward the nearest wounded friend within her sight. Her
+  // walk is marked (order.hs, hsId = its target; any other order clears hsId, see _setOrder): when it ends with that
+  // friend still out of reach (unreachable, or he walked off), she gives seeking up for 10 s (hsT) instead of
+  // retrying every second.
+  _healerSeek(u) {
+    if (u.hsT > this.time) return;
+    const R2 = HEALER_R * HEALER_R, los = unitLos(u.type); let best = null, bd = los * los, busy = false;
+    if (u.hsId) {
+      const t = this.entities.get(u.hsId); u.hsId = 0;
+      if (t && this._healable(u, t)) { const dx = t.x - u.x, dz = t.z - u.z; if (dx * dx + dz * dz > R2) { u.hsT = this.time + 10; return; } }
+    }
+    this._near(u.x, u.z, los, e => {
+      if (busy || !this._healable(u, e)) return;
+      const dx = e.x - u.x, dz = e.z - u.z, d = dx * dx + dz * dz;
+      if (d <= R2) { busy = true; return; }
+      if (d < bd || (d === bd && best && e.id < best.id)) { bd = d; best = e; }
+    });
+    if (busy || !best) return;
+    const L = Math.sqrt(bd), k = (L - HEALER_STOP) / L;   /* (L > HEALER_R > HEALER_STOP) */
+    if (!this.cmdMove([u.id], u.x + (best.x - u.x) * k, u.z + (best.z - u.z) * k)) return;
+    if (u.order && u.order.type === 'move') { u.order.hs = 1; u.hsId = best.id; }
   }
   _uAttack(u, o, dt) {
     const t = this.entities.get(o.targetId), d = UNITS[u.type];
@@ -2081,6 +2129,8 @@ export class Game {
       if (px || pz) { const nx = u.x + px * dt * 1.2, nz = u.z + pz * dt * 1.2; this._navMode = !!u.naval; if (this._pass(nx | 0, nz | 0, u.owner)) { u.x = nx; u.z = nz; } this._navMode = false; }
     }
     const bs = this.buildings; for (let i = bs.length - 1; i >= 0; i--) { const b = bs[i]; if (b && !b.dead) this._updateBuilding(b, dt); }
+    // healers: one pulse a second for all of them (see _healTick)
+    this._healT = (this._healT || 0) + dt; if (this._healT >= 1) { this._healT -= 1; this._healTick(); }
     // projectiles
     const pr = this.projectiles;
     for (let i = pr.length - 1; i >= 0; i--) {
@@ -2618,7 +2668,7 @@ export class Game {
       map: { size: this.map.size, h16: packHeights(this.map.heights), tilesR: rleEncode(this.map.tiles), blockedR: rleEncode(this.map.blocked) },
       quests, ais,
       // sim-side timers / state that is not on an entity (needed for an exact multiplayer continue)
-      sim: { blkV: this._blkV || 0, fogT: this._fogT, winT: this._winT, expT: this._expT, bankT: this._bankT, lineId: this._lineId, railT: this._railT, railDirty: this._railDirty, railP: this._railP || null, navT: this._navT },
+      sim: { blkV: this._blkV || 0, fogT: this._fogT, winT: this._winT, expT: this._expT, bankT: this._bankT, lineId: this._lineId, railT: this._railT, railDirty: this._railDirty, railP: this._railP || null, navT: this._navT, healT: this._healT },
       tv: this._tv ? [...this._tv].map(([team, g]) => [team, rleEncode(g)]) : null,
     }));
     { const rt = out.entities; let j = 0; out.entities = packed.map(p => p || rt[j++]); }   // (the packed trees back in their places)
@@ -2668,7 +2718,7 @@ export class Game {
       const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
       if (num(sim.fogT) != null) this._fogT = sim.fogT;
       if (num(sim.winT) != null) this._winT = sim.winT;
-      this._blkV = num(sim.blkV) || 0; this._expT = num(sim.expT); this._bankT = num(sim.bankT); this._lineId = num(sim.lineId); this._railT = num(sim.railT); this._navT = num(sim.navT);
+      this._blkV = num(sim.blkV) || 0; this._expT = num(sim.expT); this._bankT = num(sim.bankT); this._lineId = num(sim.lineId); this._railT = num(sim.railT); this._navT = num(sim.navT); this._healT = num(sim.healT);
       if (Array.isArray(sim.railP)) { this._railP = sim.railP; this._railDirty = sim.railDirty === false ? false : true; }
     }
     if (Array.isArray(s.tv)) {

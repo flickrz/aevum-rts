@@ -7,8 +7,8 @@ export const PLAYER_COLORS = [0x2e7bff, 0xe23b3b, 0xf2c230, 0x9b4de0, 0x2fbf71, 
 // not counted) plus named buildings (reqTypes, finished); and a minimum stay (minStay s since the start or the last
 // age-up), so the next age-up can't be clicked the moment the last one lands.
 export const AGES = [
-  { id: 0, name: 'Taş Devri', cost: {}, time: 0, reqBuildings: 0, unlockText: ['Köylü', 'Mızrakçı', 'Ev', 'Ağıl', 'Kışla', 'Depo', 'Oduncu Kampı', 'Maden Ocağı'] },
-  { id: 1, name: 'Tunç Devri', cost: { food: 1000, wood: 500 }, time: 90, reqBuildings: 3, reqTypes: ['barracks'], minStay: 240, unlockText: ['Tarla', 'Kılıç Ustası', 'Okçu', 'Hafif Süvari', 'Okçuluk Alanı', 'Ahır', 'Demirci', 'Pazar', 'Kule', 'Sur', 'Tapınak'] },
+  { id: 0, name: 'Taş Devri', cost: {}, time: 0, reqBuildings: 0, unlockText: ['Köylü', 'Mızrakçı', 'Ev', 'Ağıl', 'Kışla', 'Depo', 'Oduncu Kampı', 'Maden Ocağı', 'Tapınak', 'Büyücü'] },
+  { id: 1, name: 'Tunç Devri', cost: { food: 1000, wood: 500 }, time: 90, reqBuildings: 3, reqTypes: ['barracks'], minStay: 240, unlockText: ['Tarla', 'Kılıç Ustası', 'Okçu', 'Hafif Süvari', 'Okçuluk Alanı', 'Ahır', 'Demirci', 'Pazar', 'Kule', 'Sur'] },
   { id: 2, name: 'Orta Çağ', cost: { food: 1800, wood: 800, gold: 1000, stone: 400 }, time: 140, reqBuildings: 5, reqTypes: ['blacksmith', 'market'], minStay: 300, unlockText: ['Ağır Piyade', 'Arbaletçi', 'Şövalye', 'Koçbaşı', 'Mancınık', 'Üniversite', 'Kale', 'Kuşatma Atölyesi'] },
   { id: 3, name: 'Barut Çağı', cost: { food: 2500, wood: 1200, gold: 2000, stone: 1000 }, time: 180, reqBuildings: 7, reqTypes: ['university'], minStay: 360, unlockText: ['Tüfekçi', 'Top', 'Zırhlı Süvari', 'Harp Akademisi', 'Banka'] },
   { id: 4, name: 'Sanayi Çağı', cost: { food: 3200, wood: 1600, gold: 3500, stone: 1600 }, time: 220, reqBuildings: 9, reqTypes: ['academy', 'bank'], minStay: 360, unlockText: ['Piyade Tüfekçisi', 'Sahra Topu', 'Fabrika'] },
@@ -34,6 +34,9 @@ export const UNITS = {
   cuirassier: U('cuirassier', 'Zırhlı Süvari', 'cavalry', 3, { food: 85, gold: 110 }, 32, 170, 16, 4, 3.6, 0, 1.5, 7, 1, { ranged: 1.4, siege: 3 }, null, '🦄', 'Barut çağının seçkin süvarisi.'),
   rifleman: U('rifleman', 'Piyade Tüfekçisi', 'ranged', 4, { food: 50, gold: 75 }, 24, 75, 24, 2, 2.3, 9, 2, 10, 1, { cavalry: 1.3 }, 'bullet', '🎖️', 'Hızlı ateş eden modern piyade.'),
   artillery: U('artillery', 'Sahra Topu', 'siege', 4, { wood: 220, gold: 250, stone: 120 }, 50, 120, 48, 1, 1.2, 11, 6, 12, 3, { building: 5.8, cavalry: 0.6 }, 'cannonball', '🧨', 'En uzun menzilli kuşatma silahı.'),
+  // (owner 2026-11-21) the healer: a hooded woman trained at the temple; never attacks, heals the friendly living
+  // units around her every second, in combat too (see Game._healTick, HEALER_R / HEALER_HP in game.js)
+  healer: U('healer', 'Büyücü', 'support', 0, { food: 60, gold: 40 }, 28, 40, 0, 0, 2.2, 0, 1, 7, 1, {}, null, '🧙‍♀️', 'Çevresindeki dost birlikleri savaş sırasında da iyileştirir (5 kare, 2 can/sn). Saldırmaz.'),
   // --- naval (ships: naval:true, cls 'ship', live only on water tiles 3/4) ---
   fishboat: Object.assign(U('fishboat', 'Balıkçı Teknesi', 'ship', 0, { wood: 60 }, 22, 60, 0, 0, 2.6, 0, 2, 7, 1, {}, null, '🎣', 'Balık sürülerinden yiyecek toplar ve en yakın iskeleye taşır.'), { naval: true }),
   transport: Object.assign(U('transport', 'Nakliye Gemisi', 'ship', 1, { wood: 120 }, 30, 160, 0, 2, 2.8, 0, 2, 7, 1, {}, null, '⛵', 'Silahsız. 10 kara birliğini kıyıdan kıyıya taşır.'), { naval: true }),
@@ -67,7 +70,7 @@ export const BUILDINGS = {
   mill: B('mill', 'Değirmen', 0, { wood: 100 }, 25, 800, 3, 0, [], [], ['food'], 0, 0, 5, '🌬️', 'Yiyecek teslim noktası (eski kayıtlar).'),
   lumbercamp: B('lumbercamp', 'Oduncu Kampı', 0, { wood: 70 }, 18, 600, 2, 0, [], ['axe', 'saw', 'twomansaw', 'steamsaw'], ['wood'], 0, 0, 5, '🪵', 'Odun teslim noktası. Odunculuk geliştirmeleri.'),
   minecamp: B('minecamp', 'Maden Ocağı', 0, { wood: 70 }, 18, 600, 2, 0, [], ['pickaxe', 'shaft', 'blasting', 'steampump'], ['stone', 'gold'], 0, 0, 5, '⛏️', 'Taş ve altın teslim noktası. Madencilik geliştirmeleri.'),
-  temple: B('temple', 'Tapınak', 1, { wood: 150, stone: 75 }, 35, 1100, 3, 0, [], ['herbs', 'townwatch', 'medicine', 'hospital'], null, 0, 0, 7, '⛩️', '7 kare içindeki birliklerini yavaşça iyileştirir (savaş dışında 1 can/sn).'),
+  temple: B('temple', 'Tapınak', 0, { wood: 150, stone: 75 }, 35, 1100, 3, 0, ['healer'], ['herbs', 'townwatch', 'medicine', 'hospital'], null, 0, 0, 7, '⛩️', '7 kare içindeki birliklerini yavaşça iyileştirir (savaş dışında 1 can/sn).'),
   academy: B('academy', 'Harp Akademisi', 3, { wood: 250, stone: 150, gold: 200 }, 50, 1500, 3, 0, [], ['formation', 'corning', 'conscription', 'siegeeng', 'mobilization', 'smokeless'], null, 0, 0, 6, '🎖️', 'İleri askeri araştırmalar.'),
   dock: B('dock', 'İskele', 0, { wood: 150 }, 35, 1200, 3, 0, ['fishboat', 'transport', 'galley', 'galleon', 'ironclad'], ['nets', 'trawl', 'shipwright', 'gunnery', 'careening', 'copper', 'turret'], null, 0, 0, 6, '⚓', 'Kıyıya kurulur (en az 2 su, 3 kara karesi). Gemi üretir, balıkçı teknelerinin teslim noktası.'),
   bank: B('bank', 'Banka', 3, { wood: 200, stone: 200, gold: 150 }, 50, 1400, 3, 0, [], ['banking', 'guilds', 'centralbank'], null, 0, 0, 6, '🏦', 'Her banka 3 saniyede +1 altın kazandırır (en fazla 3 banka sayılır). Finans araştırmaları.'),
@@ -142,8 +145,8 @@ export const TECHS = {
   rifling: T('rifling', 'Yivli Namlu', 'Menzilli saldırı +2, menzil +1', 4, { gold: 400, stone: 200 }, 60, 'mil', '🎯', { atk: { ranged: 2 }, range: { ranged: 1 } }),
   explosives: T('explosives', 'Yüksek Patlayıcı', 'Kuşatma saldırısı +%25', 4, { gold: 500, stone: 300 }, 65, 'mil', '🧨', { atkMul: { siege: 0.25 } }),
   // --- defence / support (new) ---
-  herbs: T('herbs', 'Şifalı Otlar', 'Tapınak iyileştirmesi +%50', 1, { food: 75, gold: 50 }, 30, 'def', '🌿', { heal: 0.5 }),
-  medicine: T('medicine', 'Tıp', 'Tapınak iyileştirmesi +%100', 3, { gold: 250, stone: 100 }, 50, 'def', '⚕️', { heal: 1 }),
+  herbs: T('herbs', 'Şifalı Otlar', 'Tapınak ve Büyücü iyileştirmesi +%50', 1, { food: 75, gold: 50 }, 30, 'def', '🌿', { heal: 0.5 }),
+  medicine: T('medicine', 'Tıp', 'Tapınak ve Büyücü iyileştirmesi +%100', 3, { gold: 250, stone: 100 }, 50, 'def', '⚕️', { heal: 1 }),
   townwatch: T('townwatch', 'Şehir Nöbeti', 'Bina görüş mesafesi +3', 1, { food: 75, stone: 50 }, 30, 'def', '👁️', { blos: 3 }),
   guardtower: T('guardtower', 'Gözcü Kulesi', 'Kule ve kale menzili +1', 2, { stone: 200, gold: 100 }, 45, 'def', '🗼', { towerRange: 1 }),
   garrisonart: T('garrisonart', 'Kale Topçusu', 'Kule ve kale saldırısı +4, menzil +1', 3, { stone: 300, gold: 250 }, 55, 'def', '🏰', { towerAtk: 4, towerRange: 1 }),
@@ -209,6 +212,6 @@ Object.assign(TECHS, {
   concrete: T('concrete', 'Betonarme', 'Bina dayanıklılığı +%20', 4, { wood: 300, stone: 300 }, 60, 'def', '🧱', { bhp: 0.2 }),
   shrapnel: T('shrapnel', 'Şarapnel', 'Kule ve kale saldırısı +3', 4, { gold: 350, stone: 250 }, 60, 'def', '💣', { towerAtk: 3 }),
   casemate: T('casemate', 'Kazamat', 'Kule ve kale saldırısı +3', 4, { stone: 400, gold: 350 }, 60, 'def', '🏰', { towerAtk: 3 }),
-  hospital: T('hospital', 'Sahra Hastanesi', 'Tapınak iyileştirmesi +%100', 4, { gold: 350, stone: 200 }, 55, 'def', '🏥', { heal: 1 }),
+  hospital: T('hospital', 'Sahra Hastanesi', 'Tapınak ve Büyücü iyileştirmesi +%100', 4, { gold: 350, stone: 200 }, 55, 'def', '🏥', { heal: 1 }),
 });
 TECHS.caravan.legacy = true;   // (owner 2026-11-20: no trade carts for now, see UNITS.tradecart.legacy)

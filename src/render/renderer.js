@@ -952,6 +952,16 @@ export class Renderer {
         this.fx.burst(siege ? 'spark' : 'blood', px, py, pz);
       } else this.fx.burst('hit', px, py, pz);
     });
+    // a healer's pulse (Game._healTick): soft green motes on the friends she healed that this viewer can see
+    on('heal', ({ targets }) => {
+      if (!targets || !targets.length || !this.fx.burst) return;
+      let n = 0;
+      for (const t of targets) {
+        if (n >= 6) break;
+        if (!t || t.dead || t.aboard || !g.isEntityVisible(t)) continue;
+        this.fx.burst('heal', t.x, this.groundY(t.x, t.z) + 0.56, t.z); n++;
+      }
+    });
     on('death', ({ e }) => {
       if (!e || !vis(e.x, e.z)) return;
       const y = this.groundY(e.x, e.z);

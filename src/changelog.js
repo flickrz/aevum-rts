@@ -2,6 +2,16 @@
 // release (Turkish, player-facing: what changed in the game, not how). Shown by src/ui/updates-ui.js.
 export const CHANGELOG = [
   {
+    v: '0.9.2', date: '2026-11-21', title: 'Büyücü ve Taş Devri tapınağı',
+    items: [
+      'Yeni birim Büyücü: Tapınaktan yetişir, çevresindeki dost birlikleri savaşın ortasında da iyileştirir (5 kare, saniyede 2 can). Kendisi saldırmaz; bir birlik aynı anda tek bir büyücüden iyileşir.',
+      'Tapınak artık Taş Devrinden kurulabiliyor ve bu çağa özel yeni bir görünümü var.',
+      'Tapınağın iyileştirme araştırmaları Büyücüyü de güçlendirir.',
+      'Yapay zekâ da ordusu büyüyünce tapınak kurup büyücü yetiştiriyor.',
+      'Zafer kuralı değişmedi: tapınak, ayakta kalması gereken binalardan sayılmaz.',
+    ],
+  },
+  {
     v: '0.9.1', date: '2026-11-20', title: 'Büyük binalar, maden sınırı, son çağa kadar teknolojiler ve yeni menü',
     items: [
       'Rakiplerin başlangıç şehir merkezi oyunun ilk saniyesinden haritada ve mini haritada görünüyor; içeride olan biten (birlikleri, çağı, hasarı) sen oraya gidene kadar sisin içinde kalıyor.',

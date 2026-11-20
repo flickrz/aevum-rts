@@ -7,9 +7,10 @@
 //  * range outline (2026-11-17 playtest: "a building that works on its surroundings must show its radius when
 //    selected, and a tower how far it shoots"): a selected own / allied tower, castle or town centre gets its shooting
 //    reach (measured from the footprint's edge, as the sim does: a rounded square), a temple its healing circle.
+//    A selected own / allied healer (Büyücü) shows her healing circle round her.
 import * as THREE from 'three';
 import { BUILDINGS } from '../data.js';
-import { towerAgeBonus, TEMPLE_HEAL_R } from '../sim/game.js';
+import { towerAgeBonus, TEMPLE_HEAL_R, HEALER_R } from '../sim/game.js';
 
 const MAX_Q = 1600;          // quads per ribbon mesh (rally / waypoints)
 const MAX_MARK = 96;         // waypoint markers
@@ -17,6 +18,7 @@ const MAX_UNITS = 16;        // selected units that get a waypoint line (big sel
 const MAX_RALLY = 8;         // selected buildings that get a rally line
 const LIFT = 0.16;           // above the ground
 const REFRESH = 0.06;        // seconds between rebuilds
+const MAX_HEAL = 12;         // selected healers that get their circle
 
 class Ribbon {
   constructor(color, opacity) {
@@ -122,7 +124,7 @@ export class OrderLines {
     if (!game || !selected || !selected.size) { if (this.rally.mesh.visible || this.way.mesh.visible || this.marks.visible || this.rAtk.mesh.visible || this.rHeal.mesh.visible) this.clear(); return; }
     const me = game.me;
     this.rally.begin(); this.way.begin(); this.rAtk.begin(); this.rHeal.begin();
-    let nb = 0, nu = 0, nm = 0, rc = null, nr = 0;
+    let nb = 0, nu = 0, nm = 0, rc = null, nr = 0, nh = 0;
     const seen = this._seen; seen.clear();
     const mark = (x, z) => {
       if (nm >= MAX_MARK) return;
@@ -133,6 +135,10 @@ export class OrderLines {
       const e = game.getEntity(id);
       if (!e || e.dead) continue;
       if (e.kind === 'building' && nr < MAX_RALLY && (e.owner === me || (game.isAlly && game.isAlly(e.owner, me))) && this._range(game, e, hf)) nr++;
+      if (e.kind === 'unit' && e.type === 'healer' && nh < MAX_HEAL && (e.owner === me || (game.isAlly && game.isAlly(e.owner, me)))) {
+        const pts = []; for (let i = 0; i < 48; i++) { const a = i / 48 * Math.PI * 2; pts.push([e.x + Math.cos(a) * HEALER_R, e.z + Math.sin(a) * HEALER_R]); }
+        this._loop(this.rHeal, pts, hf); nh++;
+      }
       if (e.owner !== me) continue;
       if (e.kind === 'building') {
         const r = e.rally; if (!r || nb >= MAX_RALLY) continue;

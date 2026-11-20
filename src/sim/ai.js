@@ -6,7 +6,7 @@
 // Difficulty changes decision quality and tempo only (think interval, villager targets, how tightly it
 // follows its plan, counter quality, how often it leaves villagers idle, attack timing / sizes).
 import { UNITS, BUILDINGS, TECHS, AGES, FARM_SLOTS } from '../data.js';
-import { QUEUE_TIME_MUL, unitLos, buildingLos, forDisc, MINE_CAP } from './game.js';
+import { QUEUE_TIME_MUL, unitLos, buildingLos, forDisc, MINE_CAP, HEALER_R } from './game.js';
 
 const MIN = 60;
 const DIFF = {
@@ -190,7 +190,7 @@ export class AIController {
   seenEnt(id) { const e = this.alive(id); if (!e || !this.foe(e.owner)) return e; if (e.kind === 'building') return this.mem.has(id) ? e : null; return this.visible(e.x, e.z) ? e : null; }
   safe(fn) { try { return fn(); } catch (e) { return null; } }
   unlocked(kind, id) { return !!this.safe(() => this.game.isUnlocked(this.pid, kind, id)); }
-  isMil(u) { const d = UNITS[u.type]; return !!d && d.cls !== 'civil' && d.cls !== 'train' && !d.naval && !u.aboard && !u.train; }
+  isMil(u) { const d = UNITS[u.type]; return !!d && d.cls !== 'civil' && d.cls !== 'train' && u.type !== 'healer' && !d.naval && !u.aboard && !u.train; }   // (healers: see _healers)
   countB(c, type, onlyDone) { let n = 0; for (const b of c.blds) if (b.type === type && (!onlyDone || b.done)) n++; return n; }
   minutes() { return this.game.time / MIN; }
   enemyPlayers() { return this.game.players.filter(p => this.foe(p.id) && !p.defeated); }
@@ -203,7 +203,7 @@ export class AIController {
     if (!me || me.defeated || g.over) return;
     const t0 = nowMs();
     const c = this._ctx();
-    const steps = ['_vision', '_income', '_plan', '_economy', '_spend', '_walls', 'camps', 'market', '_navAI', '_railAI', '_scout', '_defend', '_groupsUpdate', '_raidPlanner', '_pushPlanner', '_poolTidy'];
+    const steps = ['_vision', '_income', '_plan', '_economy', '_spend', '_walls', 'camps', 'market', '_navAI', '_railAI', '_scout', '_defend', '_groupsUpdate', '_raidPlanner', '_pushPlanner', '_poolTidy', '_healers'];
     for (const s of steps) { try { this[s](c); } catch (e) { this._err(s, e); } }
     if (this.debug) { try { this._dbg(c); } catch (e) { this._err('dbg', e); } }
     this.stats.thinks++; this.stats.ms += nowMs() - t0;
@@ -995,6 +995,9 @@ export class AIController {
       }
     }
     if (age >= 2 && d.castle && !this.countB(c, 'castle') && (this.countB(c, 'university', true) || age >= 3) && c.can(BUILDINGS.castle.cost)) this._buildType(c, 'castle');
+    // the temple (Stone Age on since 2026-11-21) once an army worth healing is up, for its healers (see _healers); not
+    // while the base is under attack (that money goes into soldiers first)
+    if (c.mil.length >= 8 && !this.countB(c, 'temple') && c.phase !== 'save' && !this._baseThreat && this.unlocked('building', 'temple') && c.can(BUILDINGS.temple.cost) && c.pendingB < d.builds) this._buildType(c, 'temple');
     // gold / everything floating: defensive techs, temple, more production
     let floating = 0; for (const k of RK) if (floatOf(k) > 0) floating++;
     if (floating >= 2 && c.pendingB < d.builds) {
@@ -2051,6 +2054,34 @@ export class AIController {
     const ids = c.pool.filter(u => (!u.order && d2(u.x, u.z, c.rally.x, c.rally.z) > 9 * 9)
       || (u.order && u.order.type === 'attack' && d2(u.x, u.z, H.x, H.z) > 36 * 36 && !c.blds.some(b => d2(u.x, u.z, b.x, b.z) < 14 * 14))).map(u => u.id);
     if (ids.length) g.cmdMove(ids, c.rally.x, c.rally.z);
+  }
+
+  // ---------- healers (2026-11-21) ----------
+  // About one per 8 soldiers (at most 4), trained at the temple with resources the plan does not hold back; they walk
+  // with the army: to the middle of a push out in the field, else to the rally point. One busy healing a friend where
+  // she stands stays until that is done (her own idle search, Game._healerSeek, walks her to wounded friends she sees).
+  _healers(c) {
+    const g = this.game;
+    const hs = c.units.filter(u => u.type === 'healer' && !u.aboard);
+    const temple = c.blds.find(b => b.type === 'temple' && b.done);
+    if (temple && c.can && this.unlocked('unit', 'healer')) {
+      const want = Math.min(4, Math.floor(c.mil.length / 8));
+      if (hs.length < want && !(temple.queue || []).length && c.can(UNITS.healer.cost)) g.train(temple.id, 'healer');
+    }
+    if (!hs.length) return;
+    let pt = c.rally;
+    const push = this.groups.find(gr => gr.kind === 'push' && gr.phase !== 'back');
+    if (push) { let ax = 0, az = 0, n = 0; for (const id of push.ids) { const u = this.alive(id); if (u) { ax += u.x; az += u.z; n++; } } if (n) pt = { x: ax / n, z: az / n }; }
+    const ids = [];
+    for (const h of hs) {
+      const o = h.order;
+      if (o && o.type === 'move' && o.hs) continue;   // walking to a wounded friend (Game._healerSeek)
+      if (o && o.type === 'move' && d2(o.x, o.z, pt.x, pt.z) < 10 * 10) continue;   // already on the way
+      if (d2(h.x, h.z, pt.x, pt.z) < 7 * 7) continue;
+      if (!o) { let busy = false; g._near(h.x, h.z, HEALER_R, e => { if (!busy && g._healable(h, e) && d2(e.x, e.z, h.x, h.z) <= HEALER_R * HEALER_R) busy = true; }); if (busy) continue; }
+      ids.push(h.id);
+    }
+    if (ids.length) g.cmdMove(ids, pt.x, pt.z);
   }
 
   // ---------- persistence ----------

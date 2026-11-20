@@ -19,7 +19,7 @@ const B3 = B2.concat(['academy', 'bank']);
 // gatehouse of a 3-wide gate; each is stretched to the game's wall dimensions (addGlbPiece)
 const WALLS = ['wallseg', 'wallpost', 'gatehouse'];
 // the pasture (an empty pen: the game's own sheep walk in it) in every age, the farm's middle building from the Bronze Age
-const FILES = { 0: BASE.concat(['pasture']), 1: B1.concat(WALLS, ['pasture', 'farmmill']), 2: B2.concat(WALLS, ['pasture', 'farmmill']),
+const FILES = { 0: BASE.concat(['pasture', 'temple']),   /* (2026-11-21: the temple opens in the Stone Age) */ 1: B1.concat(WALLS, ['pasture', 'farmmill']), 2: B2.concat(WALLS, ['pasture', 'farmmill']),
   3: B3.concat(WALLS, ['pasture', 'farmmill']), 4: B3.concat(['factory'], WALLS, ['pasture', 'farmmill']) };
 const PIECE = { wallseg: 1, wallpost: 1, gatehouse: 1 };
 // which horizontal axis of a piece's file runs along the wall line ('z': turned a quarter round on load);

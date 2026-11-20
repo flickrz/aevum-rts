@@ -11,7 +11,8 @@ const OK = /^[a-z0-9-]+$/;
 // it again - every time a panel re-rendered: icons blinked.)
 if (typeof document !== 'undefined' && !document.getElementById('gi-sprite')) {
   try {
-    const txt = await fetch(SPRITE).then(r => (r.ok ? r.text() : ''));
+    /* no-cache: revalidated with the ETag (a tiny 304) so a new icon shows at once despite /assets/ being cached a day */
+    const txt = await fetch(SPRITE, { cache: 'no-cache' }).then(r => (r.ok ? r.text() : ''));
     if (txt.startsWith('<svg')) {
       const holder = document.createElement('div');
       holder.id = 'gi-sprite'; holder.setAttribute('aria-hidden', 'true');

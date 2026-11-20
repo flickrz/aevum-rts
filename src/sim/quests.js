@@ -13,7 +13,7 @@ function cntU(g, pred) {
   for (const u of g.unitsOf(0)) if (!u.dead && pred(u)) n++;
   return n;
 }
-const isMil = (u) => { const d = UNITS[u.type]; return !!d && d.cls !== 'civil'; };
+const isMil = (u) => { const d = UNITS[u.type]; return !!d && d.cls !== 'civil' && d.cls !== 'support'; };   // (the healer is no soldier)
 const frac = (a, b) => Math.min(a, b) + '/' + b;
 const age = (g) => g.players[0].age || 0;
 
