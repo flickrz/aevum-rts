@@ -31,7 +31,7 @@ const DIR = './assets/models/';
 // the public snapshot that holds these exact files: test/cdn-pin-test.mjs checks they still match before a release, and
 // the pin moves to the new snapshot when a model changes. Local servers and ?cdn=0 load them from here; if the CDN fails,
 // the file is loaded from here too.
-export const CDN_SHA = '9dd91a9a362918cc2e8f5f2c51e50f62a516c617';
+export const CDN_SHA = '4c75a897b409e3998308186d0fe4a550082471e9';
 const CDN_DIR = 'https://cdn.jsdelivr.net/gh/flickrz/aevum-rts@' + CDN_SHA + '/assets/models/';
 const USE_CDN = (() => {
   try {
