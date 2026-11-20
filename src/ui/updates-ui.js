@@ -12,7 +12,12 @@ export function hasUnseen() { try { return localStorage.getItem(KEY) !== LATEST;
 export function menuUpdates(ui) {
   const box = ui._menuBox('');
   box.classList.add('updates');
-  box.append(h('h2', '', 'Güncellemeler'));
+  // (owner 2026-11-20: the way back sits at the top, always in view while the list scrolls)
+  const top = h('div', 'up-top');
+  const back = h('button', 'mbtn small up-back', '← Geri'); back.type = 'button';
+  back.onclick = () => { try { ui._click(); } catch (e) { /* ignore */ } ui._menuMain(); };
+  top.append(back, h('h2', '', 'Güncellemeler'));
+  box.append(top);
   box.append(h('div', 'mpnote', 'Oyuna ne zaman ne geldi. Bir hata ya da önerin varsa oyun içi sohbete @claude yazman yeter.'));
   const list = h('div', 'up-list');
   CHANGELOG.forEach((r, i) => {

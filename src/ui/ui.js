@@ -1765,7 +1765,11 @@ export class UI {
   }
   // the online players list on the right (src/ui/online-ui.js), next to this menu box while it is shown
   _onlinePanel(box) {
-    import('./online-ui.js').then((m) => { if (box.isConnected && !this.menuEl.querySelector('.online-panel')) this.menuEl.append(m.onlinePanel(this)); }).catch((e) => console.warn(e));
+    // (owner 2026-11-20: one block, not two panels far apart) the box and the list side by side, same height
+    import('./online-ui.js').then((m) => {
+      if (!box.isConnected || this.menuEl.querySelector('.online-panel')) return;
+      const wrap = el('div', 'mp-wrap'); box.replaceWith(wrap); wrap.append(box, m.onlinePanel(this));
+    }).catch((e) => console.warn(e));
   }
   showLobby(session) {
     // a continued (saved) match has its own lobby

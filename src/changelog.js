@@ -9,6 +9,8 @@ export const CHANGELOG = [
       'Ana menü yeni düzende: solda tek sütun, arkada dönen dünya daha çok görünüyor; her butonun simgesi ve kısa açıklaması var, profil kartı sağ üstte. Menüye "Güncellemeler" ekranı geldi.',
       'Yeni Oyun ekranı yenilendi: her harita türünün küçük bir resmi ve ne tür bir oyun çıkaracağını anlatan açıklaması var, seçim yaparken butonlar artık yer değiştirmiyor.',
       'Oda kodu kalktı: odalara artık sağdaki çevrimiçi oyuncular listesinden davetle girilir.',
+      'Çok Oyunculu ekranı ve lobi, çevrimiçi oyuncular listesiyle yan yana tek blok halinde; lobi ayarları düzgün bir tabloda.',
+      'Güncellemeler ekranında Geri butonu en üstte ve liste kayarken de görünür.',
       'Askerler için diziliş butonu: Hat, Kare ve V.',
       'Şehir merkezleri yıkılan oyuncunun yenisini kurmak için 2 dakikası var; kurmazsa yenilir ve maç biter.',
       'Maç bitip "Haritayı İzle" dendikten sonra Esc menüsü yeniden açılıyor.',
