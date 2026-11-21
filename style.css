@@ -851,6 +851,12 @@ button.gbtn, button.gbtn .gbtn-t { color: #1f1f1f !important; text-shadow: none 
 .topbar .tbrow { display: flex; align-items: center; gap: 4px; }
 .hudtop .devpanel { position: relative; top: auto; right: auto; align-self: flex-end; margin: -1px 14px 0 0; border-top: 0; border-radius: 0 0 8px 8px; padding: 4px 8px 5px; }
 .hudtop .devpanel.hidden { display: none; }
+/* (owner 2026-11-22) the Stone Age objective steps: a tab attached under the middle of the top bar */
+.hudtop .tbsteps { position: relative; align-self: center; margin: -1px 0 0; border-top: 0; border-radius: 0 0 8px 8px; padding: 4px 14px 5px; display: flex; flex-wrap: wrap; justify-content: center; gap: 1px 8px; font-size: 12px; color: var(--dim); white-space: nowrap; }
+.hudtop .tbsteps.hidden { display: none; }
+.hudtop .tbsteps em { font-style: normal; opacity: .5; }
+.hudtop .tbsteps .done { color: var(--green); opacity: .75; }
+.hudtop .tbsteps .cur { color: #fff; font-weight: 600; }
 /* the quests / scoreboard and the toasts start below the block where it reaches over them (ui._clearTop) */
 .hud .quests, .hud .scoreboard { top: var(--quests-top, 56px); }
 .hud .quests { max-height: calc(100vh - var(--quests-top, 56px) - var(--bl-top, 262px)); }

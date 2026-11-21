@@ -170,6 +170,8 @@ export class UI {
     this.pauseBtn = tb(ico('x-pause'), 'Menü / Duraklat', 'Oyun menüsünü aç (Esc). Tek oyunculuda oyun durur; çok oyunculuda menüden herkes için duraklatabilirsin (P).', () => this.toggleGameMenu(true));
     this._buildFullscreenBtn(top);
     this.hudTop = el('div', 'hudtop'); this.hudTop.append(this.topPanel); this.hudEl.append(this.hudTop);
+    // (owner 2026-11-22) the Stone Age objective steps hang under the top bar as an attached tab, not in the age box
+    this.stepsEl = el('div', 'tbsteps panel hidden'); this.hudTop.append(this.stepsEl);
     this.hintAt = {}; this.rateSamples = []; this.rateT = -99; this.slowT = -99; this.orphanSince = new Map(); this.objSig = null;
 
     this.fpsEl = el('div', 'fps', '');
@@ -851,9 +853,9 @@ export class UI {
       for (const id of this.orphanSince.keys()) if (!seen.has(id)) this.orphanSince.delete(id);
     }
     // objective line (tutorial: the chapter's objective)
-    if (this.tut && !demo) { this.tut.objective(this.objEl); return; }
+    if (this.tut && !demo) { this.stepsEl.classList.add('hidden'); this.tut.objective(this.objEl); return; }
     const next = AGES[p.age + 1];
-    if (demo || !next) { this.objEl.classList.add('hidden'); return; }
+    if (demo || !next) { this.objEl.classList.add('hidden'); this.stepsEl.classList.add('hidden'); return; }
     this.objEl.classList.remove('hidden');
     const has = (t) => blds.some((b) => b.type === t && !b.dead);
     const ga = p.stats?.gathered || {};
@@ -898,7 +900,9 @@ export class UI {
     this.objEl.querySelector('.obar i').style.width = (frac * 100).toFixed(1) + '%';
     if (sig === this.objSig) return;
     this.objSig = sig;
-    this.objEl.querySelector('.osteps').innerHTML = steps.map((s, i) => `<span class="${s[1] ? 'done' : i === cur ? 'cur' : ''}">${s[1] ? '✔ ' : ''}${esc(s[0])}</span>`).join('<em>→</em>');
+    this.objEl.querySelector('.osteps').innerHTML = '';
+    this.stepsEl.innerHTML = steps.map((s, i) => `<span class="${s[1] ? 'done' : i === cur ? 'cur' : ''}">${s[1] ? '✔ ' : ''}${esc(s[0])}</span>`).join('<em>→</em>');
+    this.stepsEl.classList.toggle('hidden', !steps.length);
     this.objEl.querySelector('.ot').textContent = next.name;
     this.objEl.querySelector('.acost').innerHTML = cost;
     const om = this.objEl.querySelector('.om'); om.innerHTML = keepIcons(esc(mtxt)); om.classList.toggle('ready', !aging && !miss.length && hasTc);
