@@ -18,7 +18,6 @@ const MAX_UNITS = 16;        // selected units that get a waypoint line (big sel
 const MAX_RALLY = 8;         // selected buildings that get a rally line
 const LIFT = 0.16;           // above the ground
 const REFRESH = 0.06;        // seconds between rebuilds
-const MAX_HEAL = 12;         // selected healers that get their circle
 
 class Ribbon {
   constructor(color, opacity) {
@@ -73,6 +72,56 @@ class Ribbon {
   dispose() { this.geo.dispose(); this.mat.dispose(); }
 }
 
+// (owner 2026-11-22: the healer's dashed circle "titriyor", wanted "daha smooth") a soft light on the ground round ONE
+// selected healer: nearly clear in the middle, brighter toward a thin solid rim, following her smoothly and fading in/out.
+// Rebuilt every frame on the terrain (6 rings x 64 segments), so it never sinks into slopes.
+const HALO_SEG = 64;
+const HALO_RINGS = [[0, 0.04], [0.55, 0.08], [0.82, 0.16], [0.93, 0.28], [0.975, 0.6], [1, 0]];   // [radius share, alpha]
+class HealHalo {
+  constructor(color) {
+    const nv = HALO_RINGS.length * HALO_SEG, g = new THREE.BufferGeometry();
+    this.pos = new Float32Array(nv * 3); this.col = new Float32Array(nv * 4);
+    const c = new THREE.Color(color);
+    for (let r = 0; r < HALO_RINGS.length; r++) for (let i = 0; i < HALO_SEG; i++) { const o = (r * HALO_SEG + i) * 4; this.col[o] = c.r; this.col[o + 1] = c.g; this.col[o + 2] = c.b; this.col[o + 3] = HALO_RINGS[r][1]; }
+    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('color', new THREE.BufferAttribute(this.col, 4));
+    const idx = [];
+    for (let r = 0; r < HALO_RINGS.length - 1; r++) for (let i = 0; i < HALO_SEG; i++) {
+      const a = r * HALO_SEG + i, b = r * HALO_SEG + (i + 1) % HALO_SEG, c2 = a + HALO_SEG, d = b + HALO_SEG;
+      idx.push(a, c2, b, b, c2, d);
+    }
+    g.setIndex(idx);
+    this.geo = g;
+    this.mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, fog: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    this.mesh = new THREE.Mesh(g, this.mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = 24; this.mesh.visible = false;
+    this.id = null; this.x = 0; this.z = 0; this.fade = 0;
+    this.cos = new Float32Array(HALO_SEG); this.sin = new Float32Array(HALO_SEG);
+    for (let i = 0; i < HALO_SEG; i++) { const a = i / HALO_SEG * Math.PI * 2; this.cos[i] = Math.cos(a); this.sin[i] = Math.sin(a); }
+  }
+  // e: the healer to show (or null), R: the radius
+  update(dt, e, R, hf) {
+    if (e) {
+      if (this.id !== e.id || this.fade <= 0.01) { this.id = e.id; this.x = e.x; this.z = e.z; }
+      else { const k = 1 - Math.exp(-dt * 10); this.x += (e.x - this.x) * k; this.z += (e.z - this.z) * k; }
+      this.fade = Math.min(1, this.fade + dt * 4);
+    } else this.fade = Math.max(0, this.fade - dt * 5);
+    this.mesh.visible = this.fade > 0;
+    if (!this.mesh.visible) return;
+    this.mat.opacity = this.fade;
+    const p = this.pos;
+    for (let r = 0; r < HALO_RINGS.length; r++) {
+      const rr = HALO_RINGS[r][0] * R;
+      for (let i = 0; i < HALO_SEG; i++) {
+        const o = (r * HALO_SEG + i) * 3, x = this.x + this.cos[i] * rr, z = this.z + this.sin[i] * rr;
+        p[o] = x; p[o + 1] = hf(x, z) + LIFT * 0.6; p[o + 2] = z;
+      }
+    }
+    this.geo.attributes.position.needsUpdate = true;
+  }
+  hide() { this.fade = 0; this.mesh.visible = false; }
+  dispose() { this.geo.dispose(); this.mat.dispose(); }
+}
+
 export class OrderLines {
   constructor(scene) {
     this.rally = new Ribbon(0xffffff, 0.55);
@@ -85,12 +134,13 @@ export class OrderLines {
     this.marks.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.marks.count = 0; this.marks.frustumCulled = false; this.marks.renderOrder = 26; this.marks.visible = false;
     this.group = new THREE.Group();
-    this.group.add(this.rally.mesh, this.way.mesh, this.marks, this.rAtk.mesh, this.rHeal.mesh);
+    this.halo = new HealHalo(0x4fe8c0);
+    this.group.add(this.rally.mesh, this.way.mesh, this.marks, this.rAtk.mesh, this.rHeal.mesh, this.halo.mesh);
     scene.add(this.group);
     this._t = 0; this._m = new THREE.Matrix4(); this._seen = new Set();
   }
 
-  clear() { for (const r of [this.rally, this.way, this.rAtk, this.rHeal]) { r.begin(); r.end(); } this.marks.count = 0; this.marks.visible = false; }
+  clear() { for (const r of [this.rally, this.way, this.rAtk, this.rHeal]) { r.begin(); r.end(); } this.marks.count = 0; this.marks.visible = false; if (this.halo) this.halo.hide(); }
 
   // closed outline through pts [[x, z], ...] as dashes
   _loop(rb, pts, hf) { let ph = 0; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; ph = rb.seg(a[0], a[1], b[0], b[1], 0.08, hf, [0.9, 0.45], ph); } }
@@ -118,13 +168,22 @@ export class OrderLines {
   }
 
   update(dt, game, selected, hf, colorOf) {
+    // the healer halo runs every frame (smooth follow / fade); the rest below is rebuilt every REFRESH
+    {
+      let he = null;
+      if (game && selected && selected.size === 1) {
+        const e = game.getEntity(selected.values().next().value);
+        if (e && !e.dead && e.kind === 'unit' && e.type === 'healer' && (e.owner === game.me || (game.isAlly && game.isAlly(e.owner, game.me)))) he = e;
+      }
+      this.halo.update(dt, he, HEALER_R, hf);
+    }
     this._t -= dt;
     if (this._t > 0) return;
     this._t = REFRESH;
     if (!game || !selected || !selected.size) { if (this.rally.mesh.visible || this.way.mesh.visible || this.marks.visible || this.rAtk.mesh.visible || this.rHeal.mesh.visible) this.clear(); return; }
     const me = game.me;
     this.rally.begin(); this.way.begin(); this.rAtk.begin(); this.rHeal.begin();
-    let nb = 0, nu = 0, nm = 0, rc = null, nr = 0, nh = 0;
+    let nb = 0, nu = 0, nm = 0, rc = null, nr = 0;
     const seen = this._seen; seen.clear();
     const mark = (x, z) => {
       if (nm >= MAX_MARK) return;
@@ -135,13 +194,6 @@ export class OrderLines {
       const e = game.getEntity(id);
       if (!e || e.dead) continue;
       if (e.kind === 'building' && nr < MAX_RALLY && (e.owner === me || (game.isAlly && game.isAlly(e.owner, me))) && this._range(game, e, hf)) nr++;
-      /* (owner 2026-11-22: the circles 'titriyor') only for ONE selected healer: overlapping dashed circles of a group
-         flickered, and the centre is held while she shifts a little so the dashes do not crawl */
-      if (e.kind === 'unit' && e.type === 'healer' && selected.size === 1 && nh < MAX_HEAL && (e.owner === me || (game.isAlly && game.isAlly(e.owner, me)))) {
-        const hc = this._hc && this._hc.id === e.id && (e.x - this._hc.x) ** 2 + (e.z - this._hc.z) ** 2 < 0.36 ? this._hc : (this._hc = { id: e.id, x: e.x, z: e.z });
-        const pts = []; for (let i = 0; i < 48; i++) { const a = i / 48 * Math.PI * 2; pts.push([hc.x + Math.cos(a) * HEALER_R, hc.z + Math.sin(a) * HEALER_R]); }
-        this._loop(this.rHeal, pts, hf); nh++;
-      }
       if (e.owner !== me) continue;
       if (e.kind === 'building') {
         const r = e.rally; if (!r || nb >= MAX_RALLY) continue;
@@ -165,6 +217,6 @@ export class OrderLines {
     if (nm) this.marks.instanceMatrix.needsUpdate = true;
   }
 
-  dispose() { this.rally.dispose(); this.way.dispose(); this.rAtk.dispose(); this.rHeal.dispose(); this.marks.geometry.dispose(); this.markMat.dispose(); this.group.removeFromParent(); }
+  dispose() { this.rally.dispose(); this.way.dispose(); this.rAtk.dispose(); this.rHeal.dispose(); this.marks.geometry.dispose(); this.markMat.dispose(); this.halo.dispose(); this.group.removeFromParent(); }
 }
 const _white = new THREE.Color(0xffffff);
