@@ -2,7 +2,7 @@
 
 All files are real recordings (no synthesized or AI-generated audio), converted with ffmpeg to mono 44.1 kHz MP3, trimmed and peak-normalized.
 
-- **LIB** = the free "1000+ UR.FASTEDITOR SFX" pack (no redistribution licence: kept out of the public repository)
+- **LIB** = the free "1000+ UR.FASTEDITOR SFX" pack (no explicit redistribution licence; these files are removed on the rights holder's request)
 - **KIT** = owner's normalized kit `D:/Elara/06-araclar/sfx/kit/` (derived from the same library)
 - **KENNEY** = Kenney "RPG Audio" pack (kenney.nl), Creative Commons Zero (CC0 1.0)
 - **KIMPACT** = Kenney "Impact Sounds" 1.0 (https://kenney.nl/assets/impact-sounds), CC0 1.0 (License.txt in the pack)
