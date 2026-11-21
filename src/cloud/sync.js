@@ -778,6 +778,15 @@ export class CloudSync {
   // incremental pull (cursor = last (t, name) seen); merges into the local cache. -> number of new / changed records
   async _pull(sid) {
     const st = this._st(), p = this.o.profile.get();
+    // (2026-11-22: an account showed 2 of its 22 matches) the cursor only fetches records newer than the last pull, so
+    // a local history that was emptied (site data cleared, a new browser profile) never got the older ones back. When
+    // this PC holds fewer of the account's records than it did after the last pull, or that count was never kept
+    // (older state), pull everything again once.
+    if (st.cursor && p) {
+      const mine = (await this.o.history.list()).filter((r) => r && r.uid === p.uid).length;
+      this._alive(sid);
+      if (st.known == null || mine < st.known) st.cursor = null;
+    }
     const first = !st.cursor;
     let cursor = st.cursor;
     const got = [];
@@ -807,7 +816,9 @@ export class CloudSync {
     if (first && p) for (const r of local.values()) if (r.uid === p.uid && !seen.has(r.id)) up.push(r.id);
     if (put.length) await this.o.history.put(put);
     this._alive(sid);
-    st.cursor = cursor; this._save();
+    st.cursor = cursor;
+    if (p) { st.known = (await this.o.history.list()).filter((r) => r && r.uid === p.uid).length; this._alive(sid); }
+    this._save();
     if (up.length) this._queue('h', up);
     return put.length;
   }

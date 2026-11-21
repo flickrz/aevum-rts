@@ -347,6 +347,10 @@ console.log('History sync');
   const r1 = ff.stats.reads;
   await A2.cloud.flush({ pull: true });
   ok(ff.stats.reads - r1 === 3, 'nothing new -> three reads (account profile + TP ledger + empty query): ' + (ff.stats.reads - r1));
+  // (2026-11-22) this PC's local history is emptied (site data cleared): the next pull brings the account's records back
+  { const pu = A2.cloud.o.profile.get().uid, mine = () => [...A2.history.m.values()].filter((r) => r.uid === pu).length;
+    const before = mine(); A2.history.m.clear(); await A2.cloud.flush({ pull: true });
+    ok(before > 0 && mine() === before, 'emptied local history is pulled back in full (' + mine() + '/' + before + ')'); }
   // the same match: PC2 has it finished, PC1 then writes an older 'abandoned' (left a loaded older save)
   const won = mkRec(aUid, { id: 'sp-00000000000000aa', endedAt: T, result: 'won' });
   await A2.history.put(won); A2.cloud.onRecord(won); await A2.cloud.flush();
