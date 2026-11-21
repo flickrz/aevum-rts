@@ -26,9 +26,17 @@ export const CLIMATES = ['random', 'temperate', 'spring', 'autumn', 'winter', 'a
 export const DROP_SILENT_MS = 60000;
 export const DROP_LEFT_MS = 3000;     // after an explicit 'bye'
 export const KEEP_TURNS = 600;        // command lists kept for re-sends (~60 s)
+// a peer that keeps talking (pings, keep-alives) but holds back his command lists is dropped after this much
+// waiting for him alone (net: a short wait now and then is paid back twice as fast while his lists flow)
+export const DROP_STALL_MS = 90000;
+// ...counted only while his own turns make no progress for this long
+export const STALL_NOPROG_MS = 3000;
+// an honest list is at most our own scheduled lists (MAX_DELAY) + the sender's delay ahead of our turn; REDUNDANCY on
+// top is slack. Lists further ahead are not stored (one dropped by mistake is fetched again through 'need')
+export const MAX_AHEAD = 2 * MAX_DELAY + REDUNDANCY;
 export const LOBBY_GONE_MS = 8000;    // lobby: a peer the relay reports gone is removed only if it stays gone this long
 export const METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload',
-  'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation'];
+  'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol'];
 // session-level commands: travel and execute in lockstep like game commands, but are handled by the session
 export const SESSION_CMDS = ['@save', '@pause'];
 const METHOD_SET = new Set(METHODS);
@@ -55,6 +63,37 @@ const cleanTp = t => (Number.isInteger(t) && t >= 0 && t < 1e7 ? t : null);
 export const VER_TEXT = 'Oyun sürümün farklı. Sayfayı yenileyip tekrar katıl.';
 export const HOST_OLD_TEXT = 'Odayı kuranın oyunu eski sürümde: kurucu sayfayı yenileyip odayı yeniden açmalı.';
 const cleanVer = v => (typeof v === 'string' && /^[A-Za-z0-9._-]{1,40}$/.test(v) ? v : null);
+
+// the host's lobby state / start message as a guest takes it: slot names short strings, teams 1-8, settings one of the
+// lobby's choices (or dropped), numbers integers. In place, and a no-op on what an honest host sends (every client
+// builds its Game cfg from the same start message). false: not usable at all (ignored).
+const START_RES = ['low', 'normal', 'high'], FOGS = ['explored', 'dark'], DIFFS = ['easy', 'normal', 'hard'], MODES = ['idle', 'play', 'ai'];
+const isObj = o => !!o && typeof o === 'object' && !Array.isArray(o);
+const SETTING_OK = {
+  mapSize: v => Number.isInteger(v) && v >= 32 && v <= 1024, mapType: v => MAP_TYPES.includes(v), climate: v => CLIMATES.includes(v),
+  startRes: v => START_RES.includes(v), startAge: v => Number.isInteger(v) && v >= 0 && v <= 4, fog: v => FOGS.includes(v), seed: Number.isInteger,
+};
+const peerOk = p => p == null || (typeof p === 'string' && p.length <= 64);
+function cleanLobby(st) {
+  if (!isObj(st) || !isObj(st.settings) || !Array.isArray(st.slots) || !st.slots.length || st.slots.length > MAX_PLAYERS) return false;
+  if (!st.slots.every(s => isObj(s) && (s.kind === 'human' || s.kind === 'ai') && peerOk(s.peer))) return false;
+  if (st.waiting != null && !(Array.isArray(st.waiting) && st.waiting.length <= MAX_PLAYERS && st.waiting.every(w => isObj(w) && peerOk(w.peer)))) return false;
+  if (st.resume != null && typeof st.resume !== 'boolean' && !isObj(st.resume)) return false;   // (true in a start message)
+  for (const s of st.slots) {
+    if (s.name != null) s.name = String(s.name).slice(0, 20);
+    if (!Number.isInteger(s.team) || s.team < 1 || s.team > MAX_PLAYERS) s.team = Math.max(1, Math.min(4, s.team | 0));
+    if (s.difficulty != null && !DIFFS.includes(s.difficulty)) delete s.difficulty;
+    if (s.mode != null && !MODES.includes(s.mode)) delete s.mode;
+    for (const k of ['uid', 'savedUid']) if (s[k] != null) s[k] = cleanUid(s[k]);
+    if (s.av != null) s.av = cleanAv(s.av);
+    if (s.tp != null) s.tp = cleanTp(s.tp);
+  }
+  for (const w of st.waiting || []) { if (w.name != null) w.name = String(w.name).slice(0, 20); if (w.uid != null) w.uid = cleanUid(w.uid); }
+  for (const k in SETTING_OK) if (st.settings[k] != null && !SETTING_OK[k](st.settings[k])) delete st.settings[k];
+  if (isObj(st.resume)) { st.resume.name = String(st.resume.name ?? '').slice(0, 120); st.resume.tick = st.resume.tick | 0; }
+  if (st.seed != null && !Number.isInteger(st.seed)) st.seed = st.seed | 0;
+  return true;
+}
 
 function randCode() { let s = ''; for (let i = 0; i < 5; i++) s += CODE_CHARS[(Math.random() * CODE_CHARS.length) | 0]; return s; }
 const jsonLen = o => JSON.stringify(o).length;
@@ -169,10 +208,15 @@ export class NetSession {
     this.t.on('lobby', (d, from, ident) => this._onLobby(d, from, ident));
     this.t.on('turn', (d, from) => this._onTurn(d, from));
     this.t.on('sync', (d, from) => this._onSync(d, from));
-    this.t.on('chat', (d, from) => {
+    this.t.on('chat', (d, from, ident) => {
       if (!d || typeof d.text !== 'string') return;
-      const s = this._slotOfPeer(from);
-      const m = { from, name: s ? s.name : (d.name || '?'), text: d.text.slice(0, 200) };
+      // the name of the sender's seat (or waiting place), else his verified account; the message's own name only
+      // on a transport without identities (LAN)
+      const s = this._slotOfPeer(from), st = this.start0 || this.state;
+      const w = !s && st && Array.isArray(st.waiting) ? st.waiting.find(x => x.peer === from) : null;
+      const who = !s && !w && this.verified ? this._who(null, from, ident) : null;
+      const name = s ? s.name : w ? w.name : who ? who.name : this.verified ? '?' : String(d.name || '?').slice(0, 20);
+      const m = { from, name, text: d.text.slice(0, 200) };
       try { logChat({ room: this.room, name: m.name, text: m.text }); } catch { /* never let logging break the chat */ }
       this.emit('chat', m);
     });
@@ -307,10 +351,13 @@ export class NetSession {
       }
       return;
     }
-    // client side
-    if (from !== (this.state ? this.state.hostPeer : from)) return;
+    // client side: only the host's messages. Before the first state, the relay names the room's host when it can
+    // (transport hostPeer, from its hello); without it the first state claiming its own sender as host is taken
+    const host = this.state ? this.state.hostPeer : (typeof this.t.hostPeer === 'string' ? this.t.hostPeer : from);
+    if (from !== host) return;
     this._hostGoneAt = null;
-    if (d.k === 'state' && d.state && this.phase === 'lobby') {
+    if (d.k === 'state' && this.phase === 'lobby') {
+      if (!cleanLobby(d.state) || d.state.hostPeer !== from) return;
       this._verifySlots(d.state.slots);
       this.state = d.state; this.emit('lobby', this.state);
     } else if (d.k === 'kick' && d.to === this.t.id && this.phase === 'lobby') {
@@ -318,7 +365,8 @@ export class NetSession {
     } else if (d.k === 'full' && d.to === this.t.id) {
       // (a joiner checked its own build against the server before joining: a different host build means the host is behind)
       this._rejected = d.why === 'ver' ? (this.ver && d.ver && cleanVer(d.ver) !== this.ver ? HOST_OLD_TEXT : VER_TEXT) : 'Oda dolu (en fazla 8 oyuncu).';
-    } else if (d.k === 'start' && d.start) {
+    } else if (d.k === 'start' && cleanLobby(d.start)) {
+      if (d.start.resume && !(isObj(d.start.blob) && typeof d.start.blob.id === 'string')) return;
       this._verifySlots(d.start.slots);
       if (!this.state) this.state = { code: null, hostPeer: from, settings: d.start.settings, slots: d.start.slots };
       if (d.start.resume) {
@@ -486,6 +534,12 @@ export class NetSession {
       const txt = await this.t.getBlob(start.blob.id);
       if (strHash32(txt) !== (start.blob.h >>> 0)) throw new Error('İndirilen kayıt bozuk (özet tutmadı).');
       const data = JSON.parse(txt);
+      // the host could send any save under the match's name: a client that saved this match at that tick itself
+      // compares (the app's hook: its own record's state hash against the downloaded one; null = no copy, not checked)
+      if (typeof NetSession.checkResume === 'function') {
+        const why = await NetSession.checkResume(data, { match: start.match || null, tick: start.blob.tick | 0 });
+        if (why) throw new Error(String(why));
+      }
       if (this.phase !== 'lobby') return;
       this.resumeData = data;
       this._beginGame(start);
@@ -661,6 +715,11 @@ export class NetSession {
     this._resent = new Map();
     this.desynced = false;
     this.paused = false; this.pausedBy = null;
+    this.withheld = new Map();        // pid -> ms we waited for his lists while he kept talking (see DROP_STALL_MS)
+    this.turnHeard = new Set();       // pids whose own turn packets reached us (a client still loading sends none)
+    this.ownTop = new Map();          // pid -> {t, at}: the highest turn of his own packets and when it last grew
+    this._relayAsk = new Map();       // pid -> time we last asked the others to forward his lists
+    this._fwd = new Set();            // 'pid:turn' of lists stored from another player's forward
     this.streamHash = 2166136261 >>> 0; this.execCount = 0;
     // adaptive input delay + pacing (real-time only: never part of the simulation; every turn's list is explicit)
     const host = typeof location !== 'undefined' ? location.hostname : '';
@@ -760,12 +819,17 @@ export class NetSession {
     this._unsent = 0; this._hx = null; this._lastTurnSend = this.clock.now();
   }
 
-  _store(pid, turn, c) {
+  // fwd: the list came from another player (a forward after our 'need' with relay): kept only until the owner's own
+  // packet brings that turn before it runs (honest forwards are the same list; a forged one is then replaced, or
+  // shows as a desync instead of passing silently)
+  _store(pid, turn, c, fwd) {
     if (!Array.isArray(c)) return;
-    const m = this.recv.get(pid);
-    if (m.has(turn) || turn < DELAY) return;
+    const m = this.recv.get(pid), k = pid + ':' + turn;
+    if (turn < DELAY || turn > this.turn + MAX_AHEAD) return;
+    if (m.has(turn) && (fwd || !this._fwd.has(k) || turn <= this.turn)) return;
     if (turn < this.turn && this._isActive(pid, turn)) return; // already executed without it?? cannot happen; ignore
     m.set(turn, c.filter(x => Array.isArray(x) && LOCKSTEP_SET.has(x[0]) && Array.isArray(x[1])).slice(0, MAX_CMDS));
+    if (fwd) { this._fwd.add(k); if (this._fwd.size > 2000) this._fwd.clear(); } else this._fwd.delete(k);
   }
 
   _onTurn(d, from) {
@@ -776,12 +840,21 @@ export class NetSession {
     this.lastHeard.set(fromPid, this.clock.now());
     const pid = d.p | 0;
     if (!this.recv.has(pid) || pid === this.me) return;
+    // another player's lists in a packet from someone else (the relay stamps who sent it): only a forward we asked for
+    const fwd = pid !== fromPid;
+    if (fwd && !(this.clock.now() - (this._relayAsk.get(pid) || -1e9) < 10000)) return;
+    if (!fwd) {
+      this.turnHeard.add(pid);
+      // his own progress: a slow but honest client keeps scheduling new turns, one who withholds his lists does not
+      if (typeof d.t === 'number') { const top = this.ownTop.get(pid), tt = d.t | 0; if (!top || tt > top.t) this.ownTop.set(pid, { t: tt, at: this.clock.now() }); }
+    }
     if (typeof d.t === 'number') {
-      this._store(pid, d.t | 0, d.c);
+      this._store(pid, d.t | 0, d.c, fwd);
       // how early his lists arrive, in turns (pacing, see _onPing)
       if (pid === fromPid) { const s = (d.t | 0) - this.tick / TURN_TICKS, l = this.lead.get(pid); this.lead.set(pid, l == null ? s : l * 0.8 + s * 0.2); }
     }
-    if (Array.isArray(d.r)) for (const e of d.r) if (Array.isArray(e)) this._store(pid, e[0] | 0, e[1]);
+    // (honest packets repeat at most 11 bundled + REDUNDANCY turns, see _flushTurn)
+    if (Array.isArray(d.r)) for (const e of d.r.slice(0, MAX_AHEAD)) if (Array.isArray(e)) this._store(pid, e[0] | 0, e[1], fwd);
     if (d.h != null && pid === fromPid) {
       if (!this.peerHashes.has(d.ht)) this.peerHashes.set(d.ht, new Map());
       this.peerHashes.get(d.ht).set(pid, d.h >>> 0);
@@ -996,6 +1069,16 @@ export class NetSession {
       const flows = !others.length || others.some(q => now - (this.lastHeard.get(q) || -1e9) < 3000);
       if (up && flows) this.silentAcc.set(p, (this.silentAcc.get(p) || 0) + dt);
     }
+    // waiting for the lists of a peer who is heard all along (he sent lists before: not a client still loading) and
+    // whose own turns have not grown for STALL_NOPROG_MS (a slow client that keeps sending new turns is not counted)
+    const waitFor = this.stallSince != null && up ? this._missing(this.turn) : [];
+    for (const p of this.humans) {
+      if (p === this.me || this.leftAt.has(p)) continue;
+      const heard = now - (this.lastHeard.get(p) || -1e9) < 3000, w = this.withheld.get(p) || 0;
+      const top = this.ownTop.get(p), stuck = !top || now - top.at > STALL_NOPROG_MS;
+      if (waitFor.length === 1 && waitFor[0] === p && heard && this.turnHeard.has(p) && stuck) this.withheld.set(p, w + dt);
+      else if (w) this.withheld.set(p, Math.max(0, w - 2 * dt));
+    }
     // round-trip pings + pacing info (also the keep-alive: a peer with nothing to send is not taken for silent)
     if (now - this._lastPing >= PING_MS) {
       this._lastPing = now;
@@ -1024,7 +1107,7 @@ export class NetSession {
       for (const p of this.humans) {
         if (p === this.me || this.leftAt.has(p)) continue;
         const gone = this.goneAt.get(p);
-        if ((gone != null && now - gone >= DROP_LEFT_MS) || (this.silentAcc.get(p) || 0) >= DROP_SILENT_MS) {
+        if ((gone != null && now - gone >= DROP_LEFT_MS) || (this.silentAcc.get(p) || 0) >= DROP_SILENT_MS || (this.withheld.get(p) || 0) >= DROP_STALL_MS) {
           // first turn we still lack from that player (at or after our current turn)
           let t = Math.max(this.turn, DELAY);
           while (this.recv.get(p).has(t)) t++;
@@ -1041,7 +1124,7 @@ export class NetSession {
     } else {
       // the authority itself may have vanished: after DROP_SILENT_MS of (relay-up) silence the next human takes over
       const a = this._authority();
-      if (a !== this.me && (this.silentAcc.get(a) || 0) >= DROP_SILENT_MS) this.goneAt.set(a, now - DROP_LEFT_MS);
+      if (a !== this.me && ((this.silentAcc.get(a) || 0) >= DROP_SILENT_MS || (this.withheld.get(a) || 0) >= DROP_STALL_MS)) this.goneAt.set(a, now - DROP_LEFT_MS);
     }
     // stall handling
     if (this.stallSince != null) {
@@ -1050,7 +1133,9 @@ export class NetSession {
       if (miss.length && now - this.stallSince >= 200 && now - this._lastNeed >= 300) {
         this._lastNeed = now;
         const need = []; for (let t = this.turn; t <= this.turn + DELAY; t++) need.push(t);
-        this._send('sync', { need, of: miss, relay: now - this.stallSince > 2000 ? 1 : 0 });
+        const relay = now - this.stallSince > 2000 ? 1 : 0;
+        if (relay) for (const p of miss) this._relayAsk.set(p, now);
+        this._send('sync', { need, of: miss, relay });
       }
       if (now - this.stallSince >= 1000) {
         const relayDown = !up;
@@ -1060,7 +1145,9 @@ export class NetSession {
           const names = miss.map(p => this.start0.slots[p].name);
           const left = Math.max(0, Math.ceil((DROP_SILENT_MS - Math.max(0, ...miss.map(p => this.silentAcc.get(p) || 0))) / 1000));
           const quiet = miss.some(p => (this.silentAcc.get(p) || 0) >= 5000);
-          text = 'Bekleniyor: ' + names.join(', ') + (quiet ? ' — bağlantı yok, ' + left + ' sn sonra oyundan çıkarılacak' : '');
+          const held = !quiet && miss.some(p => (this.withheld.get(p) || 0) >= 15000);
+          const hleft = Math.max(0, Math.ceil((DROP_STALL_MS - Math.max(0, ...miss.map(p => this.withheld.get(p) || 0))) / 1000));
+          text = 'Bekleniyor: ' + names.join(', ') + (quiet ? ' — bağlantı yok, ' + left + ' sn sonra oyundan çıkarılacak' : held ? ' — hamle göndermiyor, ' + hleft + ' sn sonra oyundan çıkarılacak' : '');
         }
         // one 'stall' per stall period ('resume' ends it); text changes meanwhile come as 'stallUpdate'
         if (!this._stallEmitted || text !== this._stallText) {
@@ -1208,3 +1295,6 @@ export class NetSession {
     this.emit('closed', { reason });
   }
 }
+// continue a saved match, client: the app's check of the downloaded save, async (data, {match, tick}) -> null when
+// fine or not checkable, else the Turkish reason the match is refused (see main.js)
+NetSession.checkResume = null;

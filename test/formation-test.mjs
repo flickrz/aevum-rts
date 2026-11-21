@@ -20,12 +20,13 @@ const tc = () => ({ x: 82, z: 58 });
   const sp = us.slice(0, 6).reduce((a, u) => a + u.z, 0) / 6, ar = us.slice(6).reduce((a, u) => a + u.z, 0) / 6;
   ok(sp > ar, 'melee in front of archers (moving +z: ' + sp.toFixed(1) + ' vs ' + ar.toFixed(1) + ')');
 }
-// 2) a moving soldier fights an enemy on the way, then resumes the trip
+// 2) an attack-moving soldier fights an enemy on the way, then resumes the trip (a human's plain move ignores it:
+// test/amove-test.mjs)
 {
   const g = mk(), b = tc(g);
   const f0 = g._freeNear(b.x + 6, b.z + 6, 0), me = g._addUnit('swordsman', 0, f0.x, f0.z);
   const f1 = g._freeNear(b.x + 6, b.z + 14, 1), foe = g._addUnit('spearman', 1, f1.x, f1.z); foe.hp = 5;
-  g.cmdMove([me.id], b.x + 6, b.z + 30);
+  g.cmdAttackMove([me.id], b.x + 6, b.z + 30);
   let engaged = false; for (let i = 0; i < 30 * 20; i++) { g.update(1 / 30); if (me.order && me.order.type === 'attack' && me.order.targetId === foe.id) engaged = true; }
   ok(engaged, 'soldier engaged the enemy on its way');
   ok(foe.dead, 'enemy killed');

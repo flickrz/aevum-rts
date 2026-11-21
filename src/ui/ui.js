@@ -516,7 +516,7 @@ export class UI {
   _menuHowto() {
     const box = this._menuBox(`<h2>Nasıl Oynanır</h2><div class="howto">
       <b>Seçim:</b> Sol tık ile seç, sürükleyerek çoklu seç.<br>
-      <b>Komut:</b> Sağ tık — yürü, topla, saldır, inşa et / onar. <kbd>Shift</kbd> basılıyken verilen emirler sıraya eklenir (köylü önce mevcut işini bitirir).<br>
+      <b>Komut:</b> Sağ tık — yürü, topla, saldır, inşa et / onar. <kbd>Shift</kbd> basılıyken verilen emirler sıraya eklenir (köylü önce mevcut işini bitirir). Düz sağ tıkla yürüyen birlikler yoldaki düşmanlara aldırmaz; yolda savaşmaları için <kbd>K</kbd> (Saldırarak Yürü) ya da <kbd>V</kbd> (Devriye) tuşuna basıp yere sol tıkla. Kendi oduncu ya da maden kampına sağ tık, köylüleri en yakın kaynağa gönderir.<br>
       <b>Kamera:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / ok tuşları veya ekran kenarı ile kaydır (WASD yalnızca kamerayı oynatır), tekerlek ile yakınlaş, orta tuş ya da <kbd>Boşluk</kbd> basılıyken fareyle döndür, <kbd>Home</kbd> / <kbd>Backspace</kbd> Şehir Merkezine dön.<br>
       <b>Komut kartı:</b> Sağ alttaki düğmeler; kısayollar <kbd>Q</kbd><kbd>E</kbd><kbd>R</kbd><kbd>T</kbd><kbd>Y</kbd> / <kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd> / <kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd><kbd>B</kbd> ızgara sırasıyla.<br>
       <b>Binalar:</b> <kbd>Shift</kbd>+tık ile aynı türden birden çok bina seç, çift tık ekrandaki tümünü seçer; üretim her binada aynı anda başlar. <kbd>Shift</kbd>+üret: 5 adet sıraya ekler. <kbd>Shift</kbd> basılıyken bina yerleştirmek araç açık kalır, birden çok temel atarsın.<br>
@@ -1205,6 +1205,9 @@ export class UI {
         const fIcon = (f) => '<svg class="gi" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">' + (f === 'box' ? [5, 12, 19].flatMap((y) => [5, 12, 19].map((x) => `<circle cx="${x}" cy="${y}" r="2.6"/>`)).join('') : f === 'wedge' ? [[12, 5], [8, 10], [16, 10], [4, 15], [20, 15], [1.8, 20], [22.2, 20]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.4"/>`).join('') : [3, 9, 15, 21].flatMap((x) => [9, 15].map((y) => `<circle cx="${x}" cy="${y}" r="2.5"/>`)).join('')) + '</svg>';
         const f0 = fNow(), fNext = FORMATIONS[(FORMATIONS.indexOf(f0) + 1) % FORMATIONS.length];
         put({ icon: fIcon(f0), name: 'Diziliş: ' + FM[f0][0], desc: FM[f0][1] + ' Tıklayınca sıradakine geçer (' + FM[fNext][0] + '). Bir sonraki hareket emrinde bu dizilişe girerler.', run: () => safe(() => g.cmdFormation(fighters.map((e) => e.id), fNext), false) !== false }, slots[8] == null ? 8 : 9);
+        // attack-move (K) and patrol (V): the order is given by the next left click on the ground
+        put({ icon: ico('x-amove'), name: 'Saldırarak Yürü', desc: 'Seçili askerler hedef noktaya yürür, yolda gördüğü düşman birim ve binalarla dövüşür, sonra yoluna devam eder: ardından haritada bir noktaya sol tıkla (Shift: sıraya ekle, Esc: iptal). Normal yürüyüş (sağ tık) düşmana aldırmadan gider.', run: () => !!safe(() => this.app.input?.startGroundCmd?.('amove'), false) }, 9);
+        put({ icon: ico('x-patrol'), name: 'Devriye', desc: 'Seçili askerler bulundukları yerle hedef nokta arasında gidip gelir, yolda gördüğü düşmanla dövüşür. Başka bir emir verene kadar sürer: ardından haritada bir noktaya sol tıkla (Shift: sıraya ekle, Esc: iptal).', run: () => !!safe(() => this.app.input?.startGroundCmd?.('patrol'), false) }, 13);
       }
       put({ icon: ico('x-stop'), name: 'Dur', desc: 'Seçili birimler mevcut işini bırakır.', run: () => safe(() => g.cmdStop(ids), false) !== false }, 10);
       put({ icon: ico('x-explore'), name: 'Keşfet', desc: 'Seçili birimler haritada kendi kendine dolaşıp keşfedilmemiş bölgeleri açar. Başka bir emir verene kadar sürer.', run: () => safe(() => g.cmdExplore(ids), false) !== false }, 11);
@@ -1987,7 +1990,7 @@ export class UI {
         row.append(el('span', 'lb-kind ' + s.kind, s.kind === 'ai' ? 'Yapay Zekâ' : 'İnsan'));
         const canTeam = mine || (host && s.kind === 'ai');
         if (canTeam) row.append(sel(TEAMS, s.team || 1, (v) => (mine ? call('setTeam', +v) : call('setSlot', i, { team: +v })), 'lb-team'));
-        else row.append(el('span', 'lb-teamtag', 'Takım ' + (s.team || 1)));
+        else row.append(el('span', 'lb-teamtag', 'Takım ' + esc(s.team || 1)));
         if (s.kind === 'ai') {
           if (host) row.append(sel(DIFF, s.difficulty || 'normal', (v) => call('setSlot', i, { difficulty: v })));
           else row.append(el('span', 'lb-teamtag', (DIFF.find((d) => d[0] === s.difficulty) || DIFF[1])[1]));
@@ -2015,7 +2018,7 @@ export class UI {
       } else {
         const sets = st.settings || {};
         body.append(this._lobbyMap(sets, slots.length, null));
-        body.append(el('div', 'lb-hint', `Harita: ${({ 256: 'Küçük', 320: 'Orta', 384: 'Büyük', 448: 'Çok Büyük', 512: 'Dev' })[sets.mapSize] || sets.mapSize || '-'} · Tür: ${MAP_TYPE_TR[sets.mapType || 'river'] || '-'} · İklim: ${(CLIMATE_OPTS.find((c) => c[0] === (sets.climate || 'random')) || CLIMATE_OPTS[0])[1]} · Kaynak: ${({ low: 'Düşük', normal: 'Normal', high: 'Yüksek' })[sets.startRes] || '-'} · Çağ: ${AGES[sets.startAge ?? 0]?.name || '-'}`));
+        body.append(el('div', 'lb-hint', `Harita: ${esc(({ 256: 'Küçük', 320: 'Orta', 384: 'Büyük', 448: 'Çok Büyük', 512: 'Dev' })[sets.mapSize] || sets.mapSize || '-')} · Tür: ${MAP_TYPE_TR[sets.mapType || 'river'] || '-'} · İklim: ${(CLIMATE_OPTS.find((c) => c[0] === (sets.climate || 'random')) || CLIMATE_OPTS[0])[1]} · Kaynak: ${({ low: 'Düşük', normal: 'Normal', high: 'Yüksek' })[sets.startRes] || '-'} · Çağ: ${AGES[sets.startAge ?? 0]?.name || '-'}`));
       }
       foot.innerHTML = '';
       const mySlot = slots.find((s) => s.kind === 'human' && s.peer === me);

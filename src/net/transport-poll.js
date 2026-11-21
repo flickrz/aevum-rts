@@ -19,6 +19,8 @@ export function identMixin(T) {
     _noteIds(m) {
       if (m.ids && typeof m.ids === 'object') for (const [p, id] of Object.entries(m.ids)) if (id) this._ids.set(p, id);
       if (m.type === 'joined' && m.id) this._ids.set(m.peer, m.id);
+      // the room's host as the relay knows it (the peer that opened the room): a joiner takes lobby state only from him
+      if (m.type === 'hello' && typeof m.host === 'string' && m.host) this.hostPeer = m.host;
       if (m.type === 'msg' && m.id && m.from) this._ids.set(m.from, m.id);
     },
     identOf(peer) { return this._ids.get(peer) || null; },

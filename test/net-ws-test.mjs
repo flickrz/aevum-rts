@@ -43,6 +43,7 @@ try {
   const code = await A.host();
   await B.join(code);
   ok(A.state.slots.length === 2, 'joiner reached the host over WebSocket');
+  ok(typeof B.t.hostPeer === 'string' && B.t.hostPeer === A.t.id, 'the relay hello names the room creator as host (joiner hostPeer ' + B.t.hostPeer + ', creator ' + A.t.id + ')');
   A.addAI(2, 'easy'); B.setTeam(1); B.setReady(true);
   for (let i = 0; i < 60 && !A.canStart().ok; i++) await sleep(100);
   A.start();

@@ -38,7 +38,7 @@ function gameIdOf(game) { const c = game && histCtx.get(game); return c ? (c.mod
 const histCtx = new WeakMap();   // multiplayer: the host requests a lockstep autosave every 2 game minutes
 // commands that travel over the network in a multiplayer match (same list as Game.execCommand's whitelist)
 const NET_METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload',
-  'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation'];
+  'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol'];
 
 function showError(err) {
   console.error(err);
@@ -109,13 +109,16 @@ const app = {
     } else game = new Game(full);
     if (game.mp == null) game.mp = true;           // fallbacks in case the sim does not set them itself
     if (game.me == null) game.me = full.me | 0;
+    // the whole map shows only when the match opens it (own defeat, match over): a console 'app.game.reveal = true'
+    // would show one player everything without anybody noticing (view only: the simulation never reads it)
+    Object.defineProperty(game, 'reveal', { configurable: false, get: () => !!(game.over || (game.players[game.me] && game.players[game.me].defeated)), set: () => {} });
     wrapNetCommands(game);
     app.net = session;
     attachGame(game, false);
     histCtx.set(game, {
       mode: 'mp', match: session.match || session.code || 'MP',
       uids: ((session.start0 && session.start0.slots) || []).map(s => (s && s.kind === 'human' ? profile.cleanUid(s.uid) : null)),
-      mt: tpStart('mp', session.match || session.code || null),
+      mt: tpStart('mp', session.match || session.code || null, game.players[game.me] ? game.players[game.me].team : null),
     });
     app._mpAutoAt = game.tick + MP_AUTOSAVE_TICKS;
     // the match cut by an update runs again: the main menu's "Kesilen maça devam et" is done
@@ -407,7 +410,7 @@ function startBeat() {
   setInterval(beat, 60 * 1000);
 }
 
-function tpStart(mode, room) { return cloudOn() ? cloud.tpStart(mode, room).catch(() => null) : Promise.resolve(null); }
+function tpStart(mode, room, team) { return cloudOn() ? cloud.tpStart(mode, room, team).catch(() => null) : Promise.resolve(null); }
 function notifyTp(game, text, type) {
   try { if (app.game === game) game.events.emit('notify', { text, type }); else app.ui.toast?.(text, type); } catch (err) { console.warn(err); }
 }
@@ -526,6 +529,21 @@ function preUpdateSave() {
   } catch (err) { console.warn('[notice] save', err); }
 }
 notice.onSaveDue(preUpdateSave);
+
+// continue a saved match, joiner: the host could send any save under this match's name. When this client saved the
+// match at that tick itself, the state hash every client agreed on then (rec.hash) must match the downloaded save.
+// -> null (fine, or no copy here to compare with) or the reason the match is refused (NetSession.checkResume)
+async function checkResumeSave(data, at) {
+  if (!at || typeof at.match !== 'string' || !at.match) return null;
+  const base = storage.MP_PREFIX + at.match + '-';
+  let rec = await storage.get(base + at.tick);
+  if (!rec || (rec.tick | 0) !== at.tick) { const a = await storage.get(base + 'auto'); rec = a && (a.tick | 0) === at.tick ? a : null; }
+  if (!rec || rec.hash == null) return null;
+  let h;
+  try { h = Game.deserialize(structuredClone(data), { me: 0 }).hash() >>> 0; } catch (err) { console.warn('[resume check]', err); return 'Kurucunun gönderdiği kayıt açılamadı.'; }
+  return h === (rec.hash >>> 0) ? null : 'Kurucunun gönderdiği kayıt, bu maçın sendeki kaydıyla aynı değil.';
+}
+import('./net/session.js').then(m => { m.NetSession.checkResume = checkResumeSave; }).catch(err => console.warn('[resume check]', err));
 
 function mpAutosave(game) {
   const s = app.net;

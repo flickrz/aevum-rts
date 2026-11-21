@@ -18,8 +18,11 @@ Tarayıcıda çalışan, özgün bir 3B gerçek zamanlı strateji oyunu. Taş De
 | Sol tık / sürükle | Seç / kutu ile seç |
 | Shift + sol tık | Seçime ekle / çıkar |
 | Çift tık | Ekrandaki aynı türden tüm birimleri seç |
-| Sağ tık | Yürü, saldır, topla, inşa et / onar; bina seçiliyken toplanma noktası |
+| Sağ tık | Yürü (düşmana aldırmadan), saldır, topla, inşa et / onar; bina seçiliyken toplanma noktası |
+| Köylüyle oduncu kampına / maden ocağına sağ tık | Kampa en yakın ağaçta / madende çalış |
 | Shift + sağ tık | Komutu sıraya ekle |
+| K, sonra sol tık | Saldırarak yürü (asker seçiliyken): yolda gördüğü düşman birim ve binalarla dövüşür, sonra yoluna devam eder; Shift + sol tık sıraya ekler |
+| V, sonra sol tık | Devriye (asker seçiliyken): bulunduğu yerle hedef nokta arasında gidip gelir, yolda dövüşür |
 | WASD / ok tuşları / ekran kenarı | Kamerayı kaydır (WASD yalnızca kamerayı oynatır) |
 | Fare tekerleği | İmlece doğru yakınlaş / uzaklaş |
 | Orta tuş sürükle | Kamerayı döndür |
@@ -49,7 +52,6 @@ Bina yerleştirirken: sol tık yerleştirir, Shift basılıyken yerleştirmeye d
 
 - Modüller paralel yazıldı; bu sürümde uçtan uca oyun testi yapılmadı, hata çıkabilir.
 - Harita editörü ve senaryo/kampanya yok.
-- Kontrol grupları kayda dahil değil (yüklemeden sonra sıfırlanır).
 - Duvarı sürüklerken önizleme yalnızca uç karoyu gösterir.
 - Kayıtlar tarayıcıya özeldir; tarayıcı verisi silinirse kayıtlar da gider.
 

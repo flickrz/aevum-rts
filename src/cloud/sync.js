@@ -563,16 +563,24 @@ export class CloudSync {
     if (!r.ok) throw new CloudError('server', 'STATS_' + r.status, r.status === 403 ? 'Bu ekran yalnızca oyunun sahibine açık.' : 'İstatistikler alınamadı (' + r.status + ').', r.status);
     return r.json();
   }
-  // a match starts -> the server's match ticket (null when it cannot be had: no TP for this match then)
-  async tpStart(mode, room) {
-    try { const t = await this.relayTicket(); const r = await this._relay('/mp/tp/start', { mode, room }, t.ticket); return typeof r.mt === 'string' ? r.mt : null; } catch (e) { console.warn('[tp] start', e && e.message); return null; }
+  // a match starts -> the server's match ticket (null when it cannot be had: no TP for this match then).
+  // team: my team in a multiplayer match; the server keeps it as my team for the result (a claim cannot change it)
+  async tpStart(mode, room, team) {
+    try { const t = await this.relayTicket(); const r = await this._relay('/mp/tp/start', Number.isInteger(team) ? { mode, room, team } : { mode, room }, t.ticket); return typeof r.mt === 'string' ? r.mt : null; } catch (e) { console.warn('[tp] start', e && e.message); return null; }
   }
-  // a match ended -> {ok, gained, tp, reason}
-  async tpClaim(mt, result) {
+  // a match ended -> {ok, gained, tp, reason}. team: my team in a multiplayer match (default: the record that was
+  // just stored, see onRecord). A multiplayer win waits on the server for the other players' reports (pending).
+  async tpClaim(mt, result, team) {
     if (!mt || (result !== 'won' && result !== 'lost')) return { ok: false, gained: 0, tp: this.tp.tp, reason: '' };
+    if (team == null && this._lastRec && this._lastRec.mode === 'mp' && this.now() - this._lastRec.at < 60000) team = this._lastRec.team;
     try {
-      const t = await this.relayTicket();
-      const r = await this._relay('/mp/tp/claim', { mt, result, ledger: this._st().tp || '' }, t.ticket);
+      let r;
+      for (let i = 0; ; i++) {
+        const t = await this.relayTicket();
+        r = await this._relay('/mp/tp/claim', { mt, result, team: Number.isInteger(team) ? team : null, ledger: this._st().tp || '' }, t.ticket);
+        if (!r.pending || i >= 20) break;
+        await new Promise((res) => this.setTimer(res, Math.max(1000, Math.min(10000, (r.retryIn | 0) || 5000))));
+      }
       if (r.ok && typeof r.ledger === 'string') {
         const st = this._st();
         if (r.ledger !== st.tp) { st.tp = r.ledger; st.tpDirty = true; this._save(); }
@@ -746,6 +754,8 @@ export class CloudSync {
   }
   // a finished / abandoned match of this profile (main.js recordGame)
   onRecord(rec) {
+    // (my team of the match, for its TP claim that follows: tpClaim)
+    try { this._lastRec = { mode: rec.mode, team: rec.players[rec.me].team | 0, at: this.now() }; } catch (e) { this._lastRec = null; }
     const p = this.o.profile.get();
     if (!this.loggedIn || !rec || !p || rec.uid !== p.uid) return;
     this._queue('h', [rec.id]);

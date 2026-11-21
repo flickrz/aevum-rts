@@ -181,5 +181,7 @@
   "x-back": "lorc/return-arrow",
   "x-stance-aggr": "own drawing (crossed swords)",
   "x-stance-def": "own drawing (shield)",
-  "x-stance-hold": "own drawing (planted banner)"
+  "x-stance-hold": "own drawing (planted banner)",
+  "x-amove": "own drawing (sword over an arrow)",
+  "x-patrol": "own drawing (two opposite arrows)"
 }

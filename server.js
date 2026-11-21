@@ -13,18 +13,24 @@
   const { pathToFileURL } = await import('node:url');
   const IDM = await import(pathToFileURL(path.join(ROOT, 'srv', 'identity.mjs')).href);
   const NO_AUTH = /^(1|true|yes)$/i.test(process.env.AEVUM_NO_AUTH || '');
+  // AEVUM_TEST_ACCOUNTS=1 (local tests only): aevum-test-*@example.com password accounts are accepted as well
+  const TEST_ACCOUNTS = /^(1|true|yes)$/i.test(process.env.AEVUM_TEST_ACCOUNTS || '');
   const KEYS = IDM.keysFromEnv(process.env);
-  const ID = IDM.createIdentity({ projectId: process.env.AEVUM_FIREBASE_PROJECT || undefined, keys: KEYS.keys, noAuth: NO_AUTH, tpMinMs: process.env.AEVUM_TP_MIN_MS != null ? Number(process.env.AEVUM_TP_MIN_MS) : undefined });
-  if (KEYS.source === 'ephemeral') console.warn('AEVUM_SECRET yok: TP kayitlari bu surec kapaninca gecersiz olur (yalnizca yerel test icin uygun).');
-  if (NO_AUTH) console.warn('AEVUM_NO_AUTH: kimlik dogrulamasi KAPALI (yalnizca yerel test).');
-  // player statistics (srv/stats.mjs), shown only to the accounts in AEVUM_OWNERS (comma separated Firebase uids).
-  // AEVUM_SA (a service account key, set in the host's dashboard) keeps the daily numbers in Firestore.
-  const STM = await import(pathToFileURL(path.join(ROOT, 'srv', 'stats.mjs')).href);
+  // AEVUM_SA (a service account key, set in the host's dashboard) keeps the daily statistics and the owners of the
+  // profile uids (srv/identity.mjs) in Firestore. (identity.mjs calls the store's claimUid, the method it has)
   const SAM = await import(pathToFileURL(path.join(ROOT, 'srv', 'firestore-sa.mjs')).href);
-  const OWNERS = new Set(String(process.env.AEVUM_OWNERS || '').split(',').map(s => s.trim()).filter(Boolean));
   const SA = SAM.serviceAccountFromEnv(process.env);
+  const SA_STORE = SA ? SAM.createSaStore({ sa: SA, projectId: process.env.AEVUM_FIREBASE_PROJECT || undefined }) : null;
+  const ID = IDM.createIdentity({ projectId: process.env.AEVUM_FIREBASE_PROJECT || undefined, keys: KEYS.keys, noAuth: NO_AUTH, testAccounts: TEST_ACCOUNTS, uidStore: SA_STORE, log: (t, e) => logErr(t, e), tpMinMs: process.env.AEVUM_TP_MIN_MS != null ? Number(process.env.AEVUM_TP_MIN_MS) : undefined });
+  if (KEYS.source === 'ephemeral') console.warn('AEVUM_SECRET yok: TP kayitlari bu surec kapaninca gecersiz olur (yalnizca yerel test icin uygun).');
+  if (KEYS.source === 'service') console.warn('AEVUM_SECRET yok: imza anahtari RENDER_SERVICE_ID ile turetiliyor (gizli degil). AEVUM_SECRET ayarlayin.');
+  if (NO_AUTH) console.warn('AEVUM_NO_AUTH: kimlik dogrulamasi KAPALI (yalnizca yerel test).');
+  if (TEST_ACCOUNTS) console.warn('AEVUM_TEST_ACCOUNTS: test hesaplari kabul ediliyor (yalnizca yerel test).');
+  // player statistics (srv/stats.mjs), shown only to the accounts in AEVUM_OWNERS (comma separated Firebase uids).
+  const STM = await import(pathToFileURL(path.join(ROOT, 'srv', 'stats.mjs')).href);
+  const OWNERS = new Set(String(process.env.AEVUM_OWNERS || '').split(',').map(s => s.trim()).filter(Boolean));
   const STATS = STM.createStats({
-    store: SA ? SAM.createSaStore({ sa: SA, projectId: process.env.AEVUM_FIREBASE_PROJECT || undefined }) : null,
+    store: SA_STORE,
     log: (t, e) => logErr(t, e),
   });
   if (!SA) console.warn('AEVUM_SA yok: istatistikler yalnizca bellekte tutulur.');
@@ -109,10 +115,18 @@
   const MAX_PEERS = 16, MAX_ROOMS = 1000, MAX_Q = 4000, MAX_SSE_BUF = 2 * 1024 * 1024;
   const MAX_BODY = 65536, BLOB_MAX = 32 * 1024 * 1024,   // (saves of 512 maps)
     BLOB_TTL = 30 * 60 * 1000, BLOB_TOTAL = 96 * 1024 * 1024, BLOB_EMPTY_KEEP = 60 * 1000;
+  // abuse limits: open rooms per account, saves being uploaded per account and how long a body may take (a save may
+  // pause BLOB_IDLE_MS between chunks and take BLOB_BODY_MS in all, the client's own timeout), relayed messages per
+  // connection (a token bucket: lockstep turns + acks + chat stay far below it). The bytes of the saves being uploaded
+  // are reserved up front (their Content-Length), so uploads + stored saves never hold more than BLOB_TOTAL in memory.
+  const ROOMS_PER_FB = 3, BLOB_UP_PER_FB = 1, BODY_MS = 20000, BLOB_BODY_MS = 60000, BLOB_IDLE_MS = 15000;
+  const RL_MSGS = 400, RL_MSGS_S = 100, RL_BYTES = 8 * 1024 * 1024, RL_BYTES_S = 2 * 1024 * 1024, RL_DROP_CLOSE = 2000;
   const J = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
   const rooms = new Map();      // room -> Map(peer -> peer object)
   const blobs = new Map();      // room -> Map(id -> { buf, t })
   const emptySince = new Map(); // room -> time it became empty (its blobs are kept a little longer)
+  const blobUps = new Map();    // account (or room + peer without one) -> saves it is uploading right now
+  let blobReserved = 0;         // the Content-Length bytes of all the saves being uploaded right now
   const okName = s => typeof s === 'string' && /^[A-Za-z0-9_.-]{1,48}$/.test(s);
   const alive = res => !!res && !res.destroyed && !res.writableEnded;
   const reply = (res, code, headers, body) => { try { if (!alive(res)) return; if (!res.headersSent) res.writeHead(code, headers); res.end(body); } catch { /* closed */ } };
@@ -131,10 +145,11 @@
   function addPeer(room, peer, pe, r) {
     const old = r.get(peer);
     if (old) { try { old.end(); } catch { /* ignore */ } }
-    // one account = one player: the same uid under another peer id (a second tab) replaces the older connection
+    // one account = one player: the same account under another peer id (a second tab) replaces the older connection
+    // (compared by the verified Firebase id: the profile uid is written by the player himself)
     if (pe.ident) {
       for (const [p, o] of [...r]) {
-        if (p === peer || !o.ident || o.ident.uid !== pe.ident.uid) continue;
+        if (p === peer || !o.ident || o.ident.fb !== pe.ident.fb) continue;
         kicked.set(room + ' ' + p, Date.now());
         tell(o, { type: 'dup' });
         r.delete(p);
@@ -142,12 +157,36 @@
         for (const q of r.values()) if (q !== pe) tell(q, { type: 'left', peer: p });
       }
     }
+    // the first peer of a new room is its host (the room Map is deleted once it is empty, so a new one starts over)
+    if (!r.size && !r.host) r.host = peer;
     r.set(peer, pe);
     const ids = {}; for (const [p, o] of r) if (o.ident) ids[p] = pub(o.ident);
-    tell(pe, { type: 'hello', peers: [...r.keys()], ids });
+    tell(pe, { type: 'hello', peers: [...r.keys()], ids, host: r.host || null });
     if (!old) for (const [p, o] of r) if (p !== peer) tell(o, { type: 'joined', peer, id: pub(pe.ident) });
   }
   setInterval(() => { const t = Date.now(); for (const [k, v] of kicked) if (t - v > 120000) kicked.delete(k); }, 30000).unref();
+  // rooms an account is in; a new room (or a room it is not in yet) is refused once it is in ROOMS_PER_FB others
+  function roomsOf(fb) { let n = 0; for (const r of rooms.values()) for (const o of r.values()) if (o.ident && o.ident.fb === fb) { n++; break; } return n; }
+  function roomRefused(room, peer, ident) {
+    const r0 = rooms.get(room);
+    if ((!r0 && rooms.size >= MAX_ROOMS) || (r0 && !r0.has(peer) && r0.size >= MAX_PEERS)) return true;
+    if (!ident) return false;
+    if (r0) for (const o of r0.values()) if (o.ident && o.ident.fb === ident.fb) return false;
+    return roomsOf(ident.fb) >= ROOMS_PER_FB;
+  }
+  // a message of size n from connection pe: false = over its budget (dropped; a connection that keeps on is closed)
+  function rateOk(pe, n) {
+    if (!pe) return true;
+    const t = Date.now();
+    if (!pe.rl) pe.rl = { m: RL_MSGS, b: RL_BYTES, t, drops: 0 };
+    const rl = pe.rl, dt = Math.max(0, t - rl.t) / 1000;
+    rl.t = t;
+    rl.m = Math.min(RL_MSGS, rl.m + dt * RL_MSGS_S); rl.b = Math.min(RL_BYTES, rl.b + dt * RL_BYTES_S);
+    if (rl.m >= 1 && rl.b >= n) { rl.m -= 1; rl.b -= n; return true; }
+    if (++rl.drops === 1 || rl.drops % 500 === 0) console.warn('relay: mesaj siniri asildi (' + rl.drops + ')');
+    if (rl.drops >= RL_DROP_CLOSE) { try { pe.dead = true; pe.end(); } catch { /* ignore */ } }
+    return false;
+  }
   // friends: one inbox per account {q, waiter, seen}; online = a long-poll is open or ended < 40 s ago
   const FB_OK = /^[A-Za-z0-9]{1,128}$/;
   const inboxes = new Map(), inviteRate = new Map();
@@ -172,6 +211,38 @@
     for (const [fb, b] of inboxes) if (!b.waiter && t - b.seen > 10 * 60000) inboxes.delete(fb);
     for (const [fb, l] of inviteRate) if (!l.some(x => t - x < 60000)) inviteRate.delete(fb);
   }, 60000).unref();
+  // TP: the relay room an account plays in (the one it named, else any) and the verified accounts in it
+  function mpRoomOf(fb, want) {
+    const w = typeof want === 'string' ? want.toUpperCase() : '';
+    let pick = null;
+    for (const [name, r] of rooms) {
+      let mine = false; for (const o of r.values()) if (o.ident && o.ident.fb === fb) { mine = true; break; }
+      if (mine && (!pick || name === w)) pick = name;
+    }
+    if (!pick) return null;
+    const humans = []; for (const o of rooms.get(pick).values()) if (o.ident && !humans.includes(o.ident.fb)) humans.push(o.ident.fb);
+    return { room: pick, humans };
+  }
+  // statistics beats without an account: at most BEAT_VIDS browser ids per address an hour
+  // (the address: the CDN's own header (Cloudflare cf-connecting-ip / true-client-ip) first; else the host's proxy
+  // appends the caller's address last to X-Forwarded-For, so the last entry is the one to trust; else the socket)
+  const BEAT_VIDS = 30, beatIps = new Map();
+  function clientIp(req) {
+    const one = (h) => String(req.headers[h] || '').split(',')[0].trim().slice(0, 64);
+    const cf = one('cf-connecting-ip') || one('true-client-ip');
+    if (cf) return cf;
+    const xf = String(req.headers['x-forwarded-for'] || '').split(',').map(x => x.trim()).filter(Boolean);
+    return (xf.length ? xf[xf.length - 1] : req.socket && req.socket.remoteAddress) || '?';
+  }
+  function beatOk(ip, vid) {
+    const t = Date.now();
+    let e = beatIps.get(ip);
+    if (!e || t - e.t > 3600000) { e = { t, v: new Set() }; beatIps.set(ip, e); }
+    if (e.v.has(vid)) return true;
+    if (e.v.size >= BEAT_VIDS) return false;
+    e.v.add(vid); return true;
+  }
+  setInterval(() => { const t = Date.now(); for (const [ip, e] of beatIps) if (t - e.t > 3600000) beatIps.delete(ip); }, 10 * 60000).unref();
   // the identity of a request: ticket in the X-Aevum-Ticket header or the tk query parameter (EventSource cannot set headers)
   function identOf(req, url) {
     const tk = req.headers['x-aevum-ticket'] || url.searchParams.get('tk') || '';
@@ -207,10 +278,16 @@
       },
     };
   }
-  function readBody(req, max, cb) {
-    const chunks = []; let size = 0, done = false;
-    const finish = (err, buf) => { if (done) return; done = true; try { cb(err, buf); } catch (e) { logErr('body cb', e); } };
-    req.on('data', c => { if (done) return; size += c.length; if (size > max) { chunks.length = 0; finish('big'); return; } chunks.push(c); });
+  // reads a request body (at most max bytes, within ms; with idleMs also at most idleMs between two chunks):
+  // cb(err 'big'|'slow'|'err'|null, buf)
+  function readBody(req, max, cb, ms = BODY_MS, idleMs = 0) {
+    const chunks = []; let size = 0, done = false, idle = null;
+    const slow = () => { if (done) return; chunks.length = 0; finish('slow'); try { req.destroy(); } catch { /* ignore */ } };
+    const to = setTimeout(slow, ms);
+    const poke = () => { if (!idleMs) return; clearTimeout(idle); idle = setTimeout(slow, idleMs); };
+    const finish = (err, buf) => { if (done) return; done = true; clearTimeout(to); clearTimeout(idle); try { cb(err, buf); } catch (e) { logErr('body cb', e); } };
+    poke();
+    req.on('data', c => { if (done) return; poke(); size += c.length; if (size > max) { chunks.length = 0; finish('big'); return; } chunks.push(c); });
     req.on('end', () => finish(null, Buffer.concat(chunks)));
     req.on('error', () => finish('err'));
     req.on('aborted', () => finish('err'));
@@ -288,11 +365,13 @@
     };
   }
   // relays one {topic, data} message of `peer` to the rest of its room (shared by POST /mp/send and WebSocket)
-  function relay(room, peer, m) {
+  function relay(room, peer, m, n) {
     const r = rooms.get(room);
     if (!r || !m || typeof m.topic !== 'string' || m.topic.length > 32) return;
     const sender = r.get(peer);
     if (!sender && !NO_AUTH) return;   // (only a peer that is in the room may post; its verified identity travels with the message)
+    if (sender && sender.dead) return;
+    if (n != null && !rateOk(sender, n)) { if (sender && sender.dead) removePeer(room, peer, sender); return; }
     const msg = { type: 'msg', topic: m.topic, data: m.data, from: peer, id: pub(sender && sender.ident) };
     for (const [p, o] of r) if (p !== peer) tell(o, msg);
   }
@@ -310,15 +389,15 @@
     if (!ident && !NO_AUTH) { bye({ type: 'err', code: 401 }); return; }
     if (kicked.has(room + ' ' + peer)) { bye({ type: 'dup' }); return; }
     const known = rooms.get(room) && rooms.get(room).get(peer);
-    if (known && known.ident && (!ident || ident.uid !== known.ident.uid)) { bye({ type: 'err', code: 403 }); return; }
-    const r0 = rooms.get(room);
-    if ((!r0 && rooms.size >= MAX_ROOMS) || (r0 && !r0.has(peer) && r0.size >= MAX_PEERS)) { bye({ type: 'err', code: 429 }); return; }
+    if (known && known.ident && (!ident || ident.fb !== known.ident.fb)) { bye({ type: 'err', code: 403 }); return; }
+    if (roomRefused(room, peer, ident)) { bye({ type: 'err', code: 429 }); return; }
     const pe = makeWsPeer(socket);
     pe.ident = ident;
     addPeer(room, peer, pe, getRoom(room));
     const hb = setInterval(() => pe.send({ type: 'hb' }), 15000);
     wsReader(socket, (text) => {
       if (pe.dead) return;
+      if (!rateOk(pe, text.length)) return;
       let m; try { m = JSON.parse(text); } catch { return; }
       if (m && m.type === 'ping') { pe.send({ type: 'pong', t: m.t }); return; }
       relay(room, peer, m);
@@ -343,6 +422,7 @@
           const code = ownerCheck(identOf(req, url));
           if (code) { reply(res, code, J, code === 401 ? '{"error":"ticket"}' : '{"error":"owner"}'); return; }
           if (req.method === 'POST') { try { body = JSON.parse(buf.toString('utf8') || '{}') || {}; } catch { reply(res, 400, J, '{"error":"bad json"}'); return; } }
+          if (typeof body !== 'object') { reply(res, 400, J, '{"error":"bad json"}'); return; }
         }
         if (req.method === 'DELETE' || body.cancel === true) {
           if (notice && notice.kind === 'update') notice = null;   // (a restart that is under way cannot be called off)
@@ -360,13 +440,14 @@
     if (url.pathname === '/mp/health') {
       let peers = 0; for (const r of rooms.values()) peers += r.size;
       let nb = 0; for (const m of blobs.values()) nb += m.size;
-      reply(res, 200, J, JSON.stringify({ ok: true, uptime: Math.round(process.uptime()), since: new Date(T0).toISOString(), rooms: rooms.size, peers, blobs: nb, blobBytes: blobBytes(), rssMB: Math.round(process.memoryUsage().rss / 1048576), pid: process.pid, auth: NO_AUTH ? 'off' : 'on', tpKey: KEYS.source, ver: BUILD_VER }));
+      reply(res, 200, J, JSON.stringify({ ok: true, uptime: Math.round(process.uptime()), since: new Date(T0).toISOString(), rooms: rooms.size, peers, blobs: nb, blobBytes: blobBytes(), rssMB: Math.round(process.memoryUsage().rss / 1048576), pid: process.pid, auth: NO_AUTH ? 'off' : 'on', ver: BUILD_VER }));
       return;
     }
     // ---- statistics: a beat from every open game tab (a random browser id, what it is doing), the owner's report ----
     if (url.pathname === '/mp/beat') {
       const me = identOf(req, url);
-      STATS.beat(url.searchParams.get('v') || '', url.searchParams.get('s') || '', me ? me.fb : null);
+      // a beat without an account counts only for a few browser ids per address (or anyone could invent visitors)
+      if (me || beatOk(clientIp(req), url.searchParams.get('v') || '')) STATS.beat(url.searchParams.get('v') || '', url.searchParams.get('s') || '', me ? me.fb : null);
       reply(res, 204, { 'Cache-Control': 'no-store' });
       return;
     }
@@ -397,6 +478,7 @@
         const me = identOf(req, url);
         if (!me) { reply(res, 401, J, '{"error":"ticket"}'); return; }
         let body; try { body = JSON.parse(buf.toString('utf8') || '{}'); } catch { reply(res, 400, J, '{"error":"bad json"}'); return; }
+        if (!body || typeof body !== 'object') { reply(res, 400, J, '{"error":"bad json"}'); return; }
         if (url.pathname === '/mp/online') {
           const fbs = Array.isArray(body.fbs) ? body.fbs.filter(f => typeof f === 'string' && FB_OK.test(f)).slice(0, 200) : [];
           inboxOf(me.fb).seen = Date.now();
@@ -432,6 +514,7 @@
         const me = identOf(req, url);
         if (!me) { reply(res, 401, J, '{"error":"ticket"}'); return; }
         let body; try { body = JSON.parse(buf.toString('utf8') || '{}'); } catch { reply(res, 400, J, '{"error":"bad json"}'); return; }
+        if (!body || typeof body !== 'object') { reply(res, 400, J, '{"error":"bad json"}'); return; }
         const code = String(body.code || '').toUpperCase();
         if (!/^[A-Z0-9]{5}$/.test(code)) { reply(res, 400, J, '{"error":"bad invite"}'); return; }
         // once every 2 minutes per account (everyone gets a card, so it must not become spam)
@@ -453,6 +536,7 @@
       readBody(req, 32768, (err, buf) => {
         if (err) { reply(res, 400, J, '{"error":"bad body"}'); return; }
         let body; try { body = JSON.parse(buf.toString('utf8') || '{}'); } catch { reply(res, 400, J, '{"error":"bad json"}'); return; }
+        if (!body || typeof body !== 'object') { reply(res, 400, J, '{"error":"bad json"}'); return; }
         const fail = (code, msg) => reply(res, code, J, JSON.stringify({ error: msg }));
         if (url.pathname === '/mp/auth') {
           ID.auth(body).then((r) => reply(res, 200, J, JSON.stringify(Object.assign(r, OWNERS.has(r.ident.fb) ? { owner: true } : {}))), (e) => {
@@ -464,7 +548,7 @@
         const me = identOf(req, url);
         if (!me) { fail(401, 'Bilet geçersiz.'); return; }
         try {
-          if (url.pathname === '/mp/tp/start') { reply(res, 200, J, JSON.stringify(ID.matchStart(me, body))); STATS.match(body.mode === 'mp' ? 'mp' : 'sp', typeof body.room === 'string' ? body.room.slice(0, 16) : null, me.fb); }
+          if (url.pathname === '/mp/tp/start') { reply(res, 200, J, JSON.stringify(ID.matchStart(me, body, body.mode === 'mp' ? mpRoomOf(me.fb, body.room) : null))); STATS.match(body.mode === 'mp' ? 'mp' : 'sp', typeof body.room === 'string' ? body.room.slice(0, 16) : null, me.fb); }
           else if (url.pathname === '/mp/tp/claim') reply(res, 200, J, JSON.stringify(ID.matchClaim(me, body)));
           else if (url.pathname === '/mp/tp/info') reply(res, 200, J, JSON.stringify(ID.ledgerInfo(me, body.ledger)));
           else reply(res, 404, {}, '');
@@ -478,10 +562,9 @@
     if (kicked.has(room + ' ' + peer)) { reply(res, 409, J, '{"error":"dup"}'); return; }
     // a peer id belongs to the identity that registered it
     const known = rooms.get(room) && rooms.get(room).get(peer);
-    if (known && known.ident && (!ident || ident.uid !== known.ident.uid)) { reply(res, 403, J, '{"error":"peer"}'); return; }
+    if (known && known.ident && (!ident || ident.fb !== known.ident.fb)) { reply(res, 403, J, '{"error":"peer"}'); return; }
     if (url.pathname === '/mp/events' && req.method === 'GET') {
-      const r0 = rooms.get(room);
-      if ((!r0 && rooms.size >= MAX_ROOMS) || (r0 && !r0.has(peer) && r0.size >= MAX_PEERS)) { reply(res, 429, {}, 'full'); return; }
+      if (roomRefused(room, peer, ident)) { reply(res, 429, {}, 'full'); return; }
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
       try { res.write('retry: 1500\n\n'); } catch { /* ignore */ }
       const pe = makeSsePeer(room, peer, res);
@@ -497,7 +580,7 @@
       let r = rooms.get(room);
       let pe = r && r.get(peer);
       if (!pe || !pe.poll || pe.dead) {
-        if ((!r && rooms.size >= MAX_ROOMS) || (r && !pe && r.size >= MAX_PEERS)) { reply(res, 429, {}, 'full'); return; }
+        if (roomRefused(room, peer, ident)) { reply(res, 429, {}, 'full'); return; }
         r = getRoom(room);
         pe = makePollPeer(room, peer);
         pe.ident = ident;
@@ -515,15 +598,35 @@
       readBody(req, MAX_BODY, (err, buf) => {
         if (err) { reply(res, err === 'big' ? 413 : 400, { Connection: 'close' }, ''); return; }
         let m; try { m = JSON.parse(buf.toString('utf8')); } catch { reply(res, 400, {}, 'bad json'); return; }
-        relay(room, peer, m);
+        relay(room, peer, m, buf.length);
         reply(res, 204, { 'Cache-Control': 'no-store' });
       });
       return;
     }
     if (url.pathname === '/mp/blob' && req.method === 'POST') {
       // a saved match handed from the host to the other players (in memory, per room, 30 min)
-      readBody(req, BLOB_MAX, (err, buf) => {
-        if (err) { reply(res, err === 'big' ? 413 : 400, { Connection: 'close' }, err === 'big' ? 'too big' : ''); return; }
+      // only a peer in the room may upload (its identity is checked above), or anyone could push out a room's save;
+      // one upload per account; its Content-Length is required and reserved while it runs (see BLOB_TOTAL)
+      if (!known) { reply(res, 403, J, '{"error":"peer"}'); return; }
+      const upKey = ident ? ident.fb : 'peer ' + room + ' ' + peer;
+      const clen = String(req.headers['content-length'] || '');
+      if (!/^\d{1,12}$/.test(clen)) { reply(res, 411, { Connection: 'close' }, 'length required'); return; }
+      const want = Number(clen);
+      if (want > BLOB_MAX) { reply(res, 413, { Connection: 'close' }, 'too big'); return; }
+      if ((blobUps.get(upKey) | 0) >= BLOB_UP_PER_FB || blobReserved + want > BLOB_TOTAL) { reply(res, 429, { Connection: 'close' }, 'busy'); return; }
+      /* stored saves make room for a new upload: the oldest go first (only uploads in flight can refuse one) */
+      while (blobReserved + want + blobBytes() > BLOB_TOTAL) {
+        let old = null; for (const [rm, m] of blobs) for (const [id, b] of m) if (!old || b.t < old.b.t) old = { rm, id, b };
+        if (!old) break; blobs.get(old.rm).delete(old.id); if (!blobs.get(old.rm).size) blobs.delete(old.rm);
+      }
+      blobUps.set(upKey, (blobUps.get(upKey) | 0) + 1);
+      blobReserved += want;
+      readBody(req, want, (err, buf) => {
+        const left = (blobUps.get(upKey) | 0) - 1;
+        if (left > 0) blobUps.set(upKey, left); else blobUps.delete(upKey);
+        blobReserved = Math.max(0, blobReserved - want);
+        if (err) { reply(res, err === 'big' ? 413 : err === 'slow' ? 408 : 400, { Connection: 'close' }, err === 'big' ? 'too big' : ''); return; }
+        if (!buf.length) { reply(res, 400, J, '{"error":"empty"}'); return; }
         let m = blobs.get(room); if (!m) { m = new Map(); blobs.set(room, m); }
         while (m.size >= 8) { const k = m.keys().next().value; m.delete(k); }
         const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -531,7 +634,7 @@
         if (!rooms.has(room) && !emptySince.has(room)) emptySince.set(room, Date.now());
         try { sweepBlobs(true); } catch (e) { logErr('sweep', e); }
         reply(res, 200, J, JSON.stringify({ id, size: buf.length }));
-      });
+      }, BLOB_BODY_MS, BLOB_IDLE_MS);
       return;
     }
     if (url.pathname === '/mp/blob' && req.method === 'GET') {
@@ -557,6 +660,45 @@
     socket.on('error', () => {});
     try { handleUpgrade(req, socket); } catch (e) { logErr('upgrade ' + req.url, e); try { socket.destroy(); } catch { /* ignore */ } }
   });
+  // never served: dotfiles and folders (.git, .env, .claude), logs, and on Windows the names that reach them another
+  // way: 8.3 short names (GIT~1), alternate streams (x.log::$DATA) and trailing dots / spaces (x.log.)
+  function hiddenPath(rel) {
+    return rel.split(/[\\/]/).some(s => s.startsWith('.') || s.includes('~') || s.includes(':') || /[. ]$/.test(s)) || /\.log$/i.test(rel);
+  }
+  // Content-Security-Policy of the game page, sent as Report-Only (the browser console names what it would block):
+  // the inline import map by its hash, three.js and models from jsDelivr, the emoji font, Firebase / Google sign-in,
+  // the relay on this host (also ws/wss for older browsers where 'self' does not cover them)
+  const cspCache = new Map();   // file -> {mtime, hashes}
+  function cspFor(req, file) {
+    let hashes = '';
+    try {
+      const st = fs.statSync(file), hit = cspCache.get(file);
+      if (hit && hit.mtime === st.mtimeMs) hashes = hit.hashes;
+      else {
+        const html = fs.readFileSync(file, 'utf8'), list = [];
+        for (const m of html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)) list.push("'sha256-" + crypto.createHash('sha256').update(m[1].replace(/\r\n?/g, '\n'), 'utf8').digest('base64') + "'");   // (the browser hashes the text with \n line ends)
+        hashes = list.join(' ');
+        cspCache.set(file, { mtime: st.mtimeMs, hashes });
+      }
+    } catch { /* no hashes */ }
+    const host = /^[A-Za-z0-9.:[\]-]{1,255}$/.test(String(req.headers.host || '')) ? String(req.headers.host) : '';
+    const g = 'https://www.gstatic.com https://apis.google.com https://accounts.google.com https://aevum-a081f.firebaseapp.com';
+    return [
+      "default-src 'self'",
+      // 'wasm-unsafe-eval': three's MeshoptDecoder compiles WebAssembly (it allows WebAssembly only, not eval)
+      "script-src 'self' 'wasm-unsafe-eval' " + hashes + ' https://cdn.jsdelivr.net ' + g,
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "img-src 'self' data: blob: https://cdn.jsdelivr.net https://*.googleusercontent.com https://www.gstatic.com",
+      "media-src 'self' data: blob:",
+      "connect-src 'self'" + (host ? ' ws://' + host + ' wss://' + host : '') + ' https://cdn.jsdelivr.net https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com ' + g,
+      'frame-src ' + g,
+      "worker-src 'self' blob:",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join('; ');
+  }
   function handle(req, res) {
     if ((req.url || '').startsWith('/mp/')) {
       let url; try { url = new URL(req.url, 'http://x'); } catch { res.writeHead(400); res.end(); return; }
@@ -565,9 +707,11 @@
     let rel;
     try { rel = decodeURIComponent((req.url || '/').split('?')[0].split('#')[0]); }
     catch { res.writeHead(400); res.end('Bad request'); return; }
+    if (rel.includes('\0')) { res.writeHead(400); res.end('Bad request'); return; }   // (fs.stat would throw)
     if (rel.endsWith('/')) rel += 'index.html';
     const file = path.normalize(path.join(ROOT, rel));
     if (file !== ROOT && !file.startsWith(ROOT + path.sep)) { res.writeHead(403); res.end('Forbidden'); return; }
+    if (hiddenPath(rel)) { res.writeHead(403); res.end('Forbidden'); return; }
     fs.stat(file, (err, st) => {
       if (err || !st.isFile()) {
         res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -586,6 +730,7 @@
         ETag: etag,
         Vary: 'Accept-Encoding',
       };
+      if (ext === '.html') head['Content-Security-Policy-Report-Only'] = cspFor(req, file);
       const inm = String(req.headers['if-none-match'] || '');
       if (inm && inm.split(',').some((t) => t.trim() === etag || t.trim() === '*')) { res.writeHead(304, head); res.end(); return; }
       if (GZ_EXT.has(ext) && st.size > 1024 && st.size < 8 * 1024 * 1024 && /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {

@@ -61,6 +61,17 @@ export function createSaStore({ sa, projectId, fetch: fetchFn = globalThis.fetch
   }
 
   return {
+    // uidOwners/{uid} {fb}: the account that first showed a profile uid (srv/identity.mjs); created once, never changed
+    async claimUid(uid, fb) {
+      const url = `${base}/uidOwners/${uid}`;
+      const d = await call(url);
+      if (d) return fromFields(d.fields).fb || null;
+      try { await call(url + '?currentDocument.exists=false', { method: 'PATCH', body: JSON.stringify({ fields: toFields({ fb, t: now() }) }) }); return fb; } catch (e) {
+        const d2 = await call(url);   // (another server request created it first)
+        if (d2) return fromFields(d2.fields).fb || null;
+        throw e;
+      }
+    },
     async get(day) {
       const d = await call(`${base}/stats/${day}`);
       return d ? fromFields(d.fields) : null;

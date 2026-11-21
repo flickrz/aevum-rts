@@ -1,6 +1,7 @@
 // Mouse / keyboard input: selection, commands, placement, camera.
 import { BUILDINGS, UNITS } from './data.js';
 import { RES_ICONS } from './icons.js';
+import { MINE_CAP } from './sim/game.js';
 
 const DRAG_PX = 5;
 const EDGE_PX = 12;
@@ -199,17 +200,28 @@ export class Input {
     }
   }
 
-  // ---------- one-shot targeting (transport unload) ----------
+  // ---------- one-shot targeting (transport unload, attack-move, patrol) ----------
   startUnload(transportId) {
     if (!this.game.cmdUnload) return false;
+    return this.startTargeting({ kind: 'unload', id: transportId }, '⚓ Boşaltma noktası: kıyıya sol tık · Esc / sağ tık: iptal');
+  }
+  // kind 'amove' / 'patrol': the next left click on the ground gives the order to the selected units (Shift: queued)
+  startGroundCmd(kind) {
+    if (!this.ownUnits().length) return false;
+    return this.startTargeting({ kind }, this.groundCmdLabel(kind));
+  }
+  groundCmdLabel(kind) {
+    return kind === 'patrol' ? '🔁 Devriye: hedef noktaya sol tık · Shift: sıraya ekle · Esc / sağ tık: iptal' : '⚔ Saldırarak yürü: hedef noktaya sol tık · Shift: sıraya ekle · Esc / sağ tık: iptal';
+  }
+  startTargeting(t, label) {
     this.cancelPlacement();
-    this.targeting = { kind: 'unload', id: transportId };
+    this.targeting = t;
     if (!this.tgtLbl) {
       this.tgtLbl = document.createElement('div');
       this.tgtLbl.style.cssText = 'position:fixed;z-index:60;pointer-events:none;padding:2px 7px;border-radius:4px;font:600 12px system-ui,sans-serif;background:rgba(10,12,16,.82);color:#bfe6ff;white-space:nowrap';
       document.body.appendChild(this.tgtLbl);
     }
-    this.tgtLbl.textContent = '⚓ Boşaltma noktası: kıyıya sol tık · Esc / sağ tık: iptal';
+    this.tgtLbl.textContent = label;
     this.tgtLbl.style.left = (this.mouse.x + 16) + 'px'; this.tgtLbl.style.top = (this.mouse.y + 18) + 'px';
     this.tgtLbl.style.display = 'block';
     try { this.canvas.style.cursor = 'crosshair'; } catch (err) { /* ignore */ }
@@ -226,6 +238,12 @@ export class Input {
     const g = this.app.renderer.screenToGround(e.clientX, e.clientY);
     if (!g) return;
     if (t.kind === 'unload' && this.game.cmdUnload?.(t.id, g.x, g.z)) { this.app.renderer.addMarker(g.x, g.z, C_MOVE); this.sfx('command'); }
+    // (the whole selection in one command: the sim gives villagers, carts, healers and unarmed ships a plain move in the same formation)
+    else if ((t.kind === 'amove' || t.kind === 'patrol') && this.game[t.kind === 'patrol' ? 'cmdPatrol' : 'cmdAttackMove']?.(this.ownUnits(), g.x, g.z, !!e.shiftKey)) {
+      this.app.renderer.addMarker(g.x, g.z, C_ATTACK); this.sfx('command');
+      // Shift held: stay armed for the next waypoint
+      if (e.shiftKey) this.startTargeting(t, this.groundCmdLabel(t.kind));
+    }
     else this.sfx('error');
   }
 
@@ -403,15 +421,27 @@ export class Input {
           return;
         }
       } else if (target.kind === 'building' && target.owner === this.me() && villagers.length) {
+        const rad = (target.size || 0) * 0.71;   // (the ring goes round the footprint, not under the model)
         if (!target.done || target.hp < target.maxHp) {
           game.cmdBuild(villagers, target.id, queue);
-          r.addMarker(target.x, target.z, C_BUILD); this.sfx('command');
+          r.addMarker(target.x, target.z, C_BUILD, rad); this.sfx('command');
           return;
         }
         if (target.type === 'farm' || target.type === 'pasture') {
           game.cmdGather(villagers, target.id, queue);
-          r.addMarker(target.x, target.z, C_GATHER); this.sfx('command');
+          r.addMarker(target.x, target.z, C_GATHER, rad); this.sfx('command');
           return;
+        }
+        // a lumber camp / mine camp: work the nearest tree / stone or gold to it on explored tiles (a mine whose
+        // deposit already has MINE_CAP of my villagers, not counting these, only when no other one has room)
+        if (target.type === 'lumbercamp' || target.type === 'minecamp') {
+          const best = this._campRes(target, villagers);
+          if (best && game.cmdGather(villagers, best.id, queue)) {
+            // (the rest of a mixed selection walks to the camp, as with a right click on a resource)
+            const rest = units.filter(id => !villagers.includes(id));
+            if (rest.length) game.cmdMove(rest, target.x, target.z, queue);
+            r.addMarker(target.x, target.z, C_GATHER, rad); r.addMarker(best.x, best.z, C_GATHER); this.sfx('command'); return;
+          }
         }
       }
     }
@@ -448,6 +478,30 @@ export class Input {
     }
     const p = g || (target ? { x: target.x, z: target.z } : null);
     if (p && game.cmdMove(ships, p.x, p.z, queue)) ok(p.x, p.z, C_MOVE);
+  }
+
+  // the resource villagers sent to their own lumber / mine camp go to work: the nearest tree (or stone / gold) to the
+  // camp on an explored tile; for a mine, the nearest one on a deposit that still has room comes first
+  _campRes(camp, vils) {
+    const game = this.game, N = game.map.size, fog = game.fog, wood = camp.type === 'lumbercamp', me = this.me();
+    const cap = !wood && typeof game.mineLoad === 'function' && typeof game._depOf === 'function';
+    // places the selected villagers already hold, per deposit (they free them when they switch)
+    const mineOf = new Map();
+    if (cap) for (const id of vils) { const u = this.ent(id); let o = u && u.order; if (o && o.type === 'return') o = o.resume; if (o && o.type === 'gather' && o.dadm) mineOf.set(o.dadm, (mineOf.get(o.dadm) || 0) + 1); }
+    const room = new Map();
+    let best = null, bd = Infinity, full = null, fd = Infinity;
+    for (const e of game.entities.values()) {
+      if (e.kind !== 'resource' || e.dead || !(e.amount > 0) || (wood ? e.type !== 'tree' : (e.type !== 'stone' && e.type !== 'gold'))) continue;
+      if (fog && !fog[(e.z | 0) * N + (e.x | 0)]) continue;
+      const d = (e.x - camp.x) ** 2 + (e.z - camp.z) ** 2; if (d >= bd) continue;
+      if (cap) {
+        const dep = game._depOf(e); let ok = room.get(dep);
+        if (ok === undefined) { ok = game.mineLoad(dep, me) - (mineOf.get(dep) || 0) < MINE_CAP; room.set(dep, ok); }
+        if (!ok) { if (d < fd) { fd = d; full = e; } continue; }
+      }
+      bd = d; best = e;
+    }
+    return best || full;
   }
 
   commandGround(x, z, queue = false) {

@@ -2,6 +2,16 @@
 // release (Turkish, player-facing: what changed in the game, not how). Shown by src/ui/updates-ui.js.
 export const CHANGELOG = [
   {
+    v: '0.9.3', date: '2026-11-22', title: 'Saldırarak yürüme, devriye ve hileye karşı önlemler',
+    items: [
+      'Yeni komutlar: K ile Saldırarak Yürü (askerler yolda gördükleri düşmanla dövüşüp yollarına devam eder), V ile Devriye (iki nokta arasında gidip gelir). Tuşa bastıktan sonra yere sol tıkla; Shift basılıyken birden çok nokta verebilirsin.',
+      'Sağ tıkla gönderilen askerler artık yoldaki düşmana sapmıyor, gittikleri yere varınca dövüşüyor. Yolda dövüşsünler istersen K ile gönder.',
+      'Köylüler seçiliyken kendi Oduncu Kampına ya da Maden Ocağına sağ tıklayınca kampa en yakın kaynakta çalışmaya giderler.',
+      'Çok oyunculuda hile açıkları kapatıldı: başkası adına komut gönderme, maçı kasten bekletme, sahte lobi ayarları ve TP puanı hileleri.',
+      'Katkı: webalet (GitHub). Teşekkürler!',
+    ],
+  },
+  {
     v: '0.9.2', date: '2026-11-21', title: 'Büyücü ve Taş Devri tapınağı',
     items: [
       'Yeni birim Büyücü: Tapınaktan yetişir, çevresindeki dost birlikleri savaşın ortasında da iyileştirir (5 kare, saniyede 2 can). Kendisi saldırmaz; bir birlik aynı anda tek bir büyücüden iyileşir.',
