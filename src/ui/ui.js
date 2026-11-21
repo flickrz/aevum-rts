@@ -146,23 +146,11 @@ export class UI {
     this.root.append(this.hudEl, this.menuEl);
 
     // top bar
-    // (owner 2026-11-20: tidy the top like the main menu) ONE block: row 1 = resources / age / clock / buttons,
-    // row 2 inside the same panel = next age progress; the developer age buttons hang under it as a tab
+    // (owner 2026-11-22) one slim row: current age / clock / buttons; the developer age buttons hang under it as a tab.
+    // The resources, population, idle villagers and the next age live in the bottom-left block (minimap + panels).
     this.topPanel = el('div', 'topbar panel');
     const top = el('div', 'tbrow');
     this.topPanel.append(top);
-    this.resEls = {};
-    for (const r of RES_LIST) {
-      const d = el('div', 'res', `<span class="i">${RES_ICON[r]}</span><b>0</b><small class="rate"></small><small class="wk"></small>`);
-      this._tip(d, () => ({ name: RES_NAME[r], desc: 'Mevcut ' + RES_NAME[r].toLowerCase() + ' stoğu. Yeşil sayı: son 30 saniyeye göre dakikalık gelir. ' + ico('u-villager') + ' sayısı: bu kaynağı toplayan işçin.' }));
-      this.resEls[r] = d; top.append(d);
-    }
-    this.popEl = el('div', 'res', `<span class="i">${ico('x-pop')}</span><b>0/0</b>`);
-    this._tip(this.popEl, () => ({ name: 'Nüfus', desc: 'Mevcut / azami nüfus. Sınır sabit: 1000.' }));
-    this.idleEl = el('button', 'tbtn idlebtn', ico('u-villager') + '<b>0</b>');
-    this.idleEl.onclick = (ev) => { this._click(); safe(() => this.app.input?.nextIdleVillager(!!ev?.shiftKey)); };
-    this._tip(this.idleEl, () => ({ name: 'Boşta köylüler', desc: 'Sıradaki boşta köylüyü seç ve ona git. Kısayol: Tab veya nokta (.). Shift ile: tüm boştaki köylüleri seç.' }));
-    top.append(el('div', 'sep'), this.popEl, this.idleEl, el('div', 'sep'));
     this.ageEl = el('div', 'agebox', '<span class="n"></span><div class="agebar"><i></i></div>');
     this.clockEl = el('div', 'clock', '00:00');
     top.append(this.ageEl, el('div', 'sep'), this.clockEl, el('div', 'sep'));
@@ -182,20 +170,52 @@ export class UI {
     this.pauseBtn = tb(ico('x-pause'), 'Menü / Duraklat', 'Oyun menüsünü aç (Esc). Tek oyunculuda oyun durur; çok oyunculuda menüden herkes için duraklatabilirsin (P).', () => this.toggleGameMenu(true));
     this._buildFullscreenBtn(top);
     this.hudTop = el('div', 'hudtop'); this.hudTop.append(this.topPanel); this.hudEl.append(this.hudTop);
-    this.objEl = el('div', 'objective hidden', '<div class="osteps"></div><div class="oage"><span class="ot"></span><div class="obar"><i></i></div><span class="om"></span></div>');
-    this.topPanel.append(this.objEl);
+    // (owner 2026-11-22) the Stone Age objective steps hang under the top bar as an attached tab, not in the age box
+    this.stepsEl = el('div', 'tbsteps panel hidden'); this.hudTop.append(this.stepsEl);
     this.hintAt = {}; this.rateSamples = []; this.rateT = -99; this.slowT = -99; this.orphanSince = new Map(); this.objSig = null;
 
     this.fpsEl = el('div', 'fps', '');
     this.hudEl.append(this.fpsEl);
     this.fpsEl.onclick = () => { this.fpsMore = !this.fpsMore; };
 
+    // bottom-left block (owner 2026-11-22, the layout of the medeniyet-rts fork): the next age box on top, spanning
+    // the minimap and the resource panel to its right (the panel is as tall as the minimap)
+    this.blEl = el('div', 'hudbl');
+    // next age: objective steps (Stone Age only), cost, missing requirements and the age-up button on the right
+    this.objEl = el('div', 'agepanel panel hidden', '<div class="ainfo"><div class="osteps"></div><div class="ahead"><span class="ot"></span><span class="acost"></span></div><div class="obar"><i></i></div><span class="om"></span></div>');
+    this.ageBtn = el('button', 'agebtn', ico('x-ageup'));
+    this.ageBtn.onclick = () => { this._press({ spec: this._ageSpec() }); this.slowT = -99; };
+    this._tip(this.ageBtn, () => this._ageSpec());
+    this.objEl.append(this.ageBtn);
+    this._tip(this.objEl.querySelector('.ahead'), () => {
+      const p = this.game?.players?.[this._me()], na = p && AGES[p.age + 1];
+      return this.tut || !na ? null : { name: 'Sonraki çağ: ' + na.name, desc: 'Bedeli (kırmızı: henüz yetmiyor) ve gereken farklı bina türü sayısı (ev, sur ve Şehir Merkezi sayılmaz). Hazır olunca sağdaki düğme çağ atlamayı Şehir Merkezi\'nde başlatır.' };
+    });
+    const blRow = el('div', 'blrow');
     // minimap
     const mmWrap = el('div', 'minimap panel');
     this.mm = el('canvas');
     this.mm.width = MM; this.mm.height = MM;
     mmWrap.append(this.mm);
-    this.hudEl.append(mmWrap);
+    // resources: idle villagers + population on top, then one row per resource (amount, income / min, workers)
+    this.resPanel = el('div', 'respanel panel');
+    const rtop = el('div', 'rtop');
+    this.idleEl = el('button', 'tbtn idlebtn', ico('u-villager') + '<b>0</b>');
+    this.idleEl.onclick = (ev) => { this._click(); safe(() => this.app.input?.nextIdleVillager(!!ev?.shiftKey)); };
+    this._tip(this.idleEl, () => ({ name: 'Boşta köylüler', desc: 'Sıradaki boşta köylüyü seç ve ona git. Kısayol: Tab veya nokta (.). Shift ile: tüm boştaki köylüleri seç.' }));
+    this.popEl = el('div', 'res pop', `<span class="i">${ico('x-pop')}</span><b>0/0</b>`);
+    this._tip(this.popEl, () => ({ name: 'Nüfus', desc: 'Mevcut / azami nüfus. Sınır sabit: 1000.' }));
+    rtop.append(this.idleEl, this.popEl);
+    this.resPanel.append(rtop);
+    this.resEls = {};
+    for (const r of RES_LIST) {
+      const d = el('div', 'res', `<span class="i">${RES_ICON[r]}</span><b>0</b><small class="rate"></small><small class="wk"></small>`);
+      this._tip(d, () => ({ name: RES_NAME[r], desc: 'Mevcut ' + RES_NAME[r].toLowerCase() + ' stoğu. Yeşil sayı: son 30 saniyeye göre dakikalık gelir. ' + ico('u-villager') + ' sayısı: bu kaynağı toplayan işçin.' }));
+      this.resEls[r] = d; this.resPanel.append(d);
+    }
+    blRow.append(mmWrap, this.resPanel);
+    this.blEl.append(this.objEl, blRow);
+    this.hudEl.append(this.blEl);
     this._bindMinimap();
 
     // bottom
@@ -833,9 +853,9 @@ export class UI {
       for (const id of this.orphanSince.keys()) if (!seen.has(id)) this.orphanSince.delete(id);
     }
     // objective line (tutorial: the chapter's objective)
-    if (this.tut && !demo) { this.tut.objective(this.objEl); return; }
+    if (this.tut && !demo) { this.stepsEl.classList.add('hidden'); this.tut.objective(this.objEl); return; }
     const next = AGES[p.age + 1];
-    if (demo || !next) { this.objEl.classList.add('hidden'); return; }
+    if (demo || !next) { this.objEl.classList.add('hidden'); this.stepsEl.classList.add('hidden'); return; }
     this.objEl.classList.remove('hidden');
     const has = (t) => blds.some((b) => b.type === t && !b.dead);
     const ga = p.stats?.gathered || {};
@@ -871,15 +891,50 @@ export class UI {
     const wait = g.ageWait ? g.ageWait(p.id) : 0;
     if (wait > 0) miss.push(`⏳ ${Math.floor(wait / 60)}:${String(Math.floor(wait % 60)).padStart(2, '0')}`);
     const frac = aging ? this._qprog(aging) : (parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : 1);
-    const costTxt = RES_LIST.filter((r) => next.cost[r]).map((r) => `${RES_ICON[r]} ${next.cost[r]}`).join(' ');
-    const mtxt = aging ? 'Çağ atlanıyor…' : miss.length ? 'Eksik: ' + miss.join(' · ') : 'Hazır! Şehir Merkezi\'nden çağ atla';
-    const sig = steps.map((s) => (s[1] ? 1 : 0)).join('') + '|' + p.age + '|' + mtxt;
+    // the cost as chips (red: not enough yet) and the building types count
+    let cost = this._costHtml(next.cost);
+    if (next.reqBuildings > 0) cost += `<span class="${types.size < next.reqBuildings ? 'no' : ''}">${ico('x-buildings')} ${Math.min(types.size, next.reqBuildings)}/${next.reqBuildings}</span>`;
+    const hasTc = blds.some((b) => b.type === 'towncenter' && b.done && !b.dead);
+    const mtxt = aging ? 'Çağ atlanıyor…' : miss.length ? 'Eksik: ' + miss.join(' · ') : !hasTc ? 'Çağ atlamak için bir Şehir Merkezi gerekli' : 'Hazır! Sağdaki düğmeyle çağ atla';
+    const sig = steps.map((s) => (s[1] ? 1 : 0)).join('') + '|' + p.age + '|' + mtxt + '|' + cost;
     this.objEl.querySelector('.obar i').style.width = (frac * 100).toFixed(1) + '%';
     if (sig === this.objSig) return;
     this.objSig = sig;
-    this.objEl.querySelector('.osteps').innerHTML = steps.map((s, i) => `<span class="${s[1] ? 'done' : i === cur ? 'cur' : ''}">${s[1] ? '✔ ' : ''}${esc(s[0])}</span>`).join('<em>→</em>');
-    this.objEl.querySelector('.ot').innerHTML = keepIcons(esc(`${next.name} (${costTxt}${next.reqBuildings ? ' · ' + next.reqBuildings + ' bina türü' : ''})`));
-    const om = this.objEl.querySelector('.om'); om.innerHTML = keepIcons(esc(mtxt)); om.classList.toggle('ready', !aging && !miss.length);
+    this.objEl.querySelector('.osteps').innerHTML = '';
+    this.stepsEl.innerHTML = steps.map((s, i) => `<span class="${s[1] ? 'done' : i === cur ? 'cur' : ''}">${s[1] ? '✔ ' : ''}${esc(s[0])}</span>`).join('<em>→</em>');
+    this.stepsEl.classList.toggle('hidden', !steps.length);
+    this.objEl.querySelector('.ot').textContent = next.name;
+    this.objEl.querySelector('.acost').innerHTML = cost;
+    /* (owner 2026-11-22) no 'Eksik: …' line: the cost chips show what is short and the age button's tooltip lists the rest */
+    const om = this.objEl.querySelector('.om'); om.innerHTML = ''; om.classList.remove('ready'); void mtxt;
+    // what is missing besides resources (building types, named buildings, the minimum stay) for the age button's tooltip
+    const resIc = Object.values(RES_ICON);
+    this._ageMiss = miss.filter((m) => !resIc.some((ic) => m.startsWith(ic))).map((m) => stripIcons(m).trim()).filter(Boolean).join(' · ');
+  }
+
+  // the age-up button of the next age box: the town center's own age-up action (same check / run as the card button)
+  _ageSpec() {
+    const g = this.game, me = this._me(), p = g?.players?.[me], na = p && AGES[p.age + 1];
+    if (!na) return { icon: ico('x-ageup'), name: 'Son çağdasın', check: () => ({ ok: false, reason: 'Zaten son çağdasın' }), run: () => false };
+    const tcs = () => (safe(() => g.buildingsOf(me), []) || []).filter((b) => b.type === 'towncenter' && b.done && !b.dead);
+    const sb = g.cfg?.sandbox ? 2 : 1;
+    return {
+      icon: ico('x-ageup'), name: 'Çağ Atla: ' + na.name, cost: na.cost, time: na.time * QUEUE_TIME_MUL / sb / (g.cfg?.tutorial ? 4 : 1),
+      desc: ((na.unlockText || []).join(' · ') || 'Sonraki çağa geç.') + ' (Şehir Merkezi\'nde başlar.)',
+      check: () => {
+        if (!tcs().length) return { ok: false, reason: 'Şehir Merkezi yok' };
+        const r = safe(() => g.canAgeUp(me), { ok: false, reason: '' }) || { ok: false };
+        return { ok: !!r.ok, reason: !r.ok && this._ageMiss ? 'Gerekli: ' + this._ageMiss : r.reason };
+      },
+      run: () => tcs().some((b) => safe(() => g.ageUp(b.id), false)),
+    };
+  }
+  // ready / aging / not yet: the look of the age-up button (about 8 times a second, so a click shows at once)
+  _refreshAgeBtn(g, p) {
+    const b = this.ageBtn; if (!b || this.objEl.classList.contains('hidden')) return;
+    const aging = (safe(() => g.buildingsOf(this._me()), []) || []).some((x) => x.queue?.[0]?.kind === 'age');
+    const ok = !aging && !!AGES[p.age + 1] && !!(safe(() => this._ageSpec().check(), null) || {}).ok;
+    b.classList.toggle('ready', ok); b.classList.toggle('aging', aging); b.classList.toggle('off', !ok && !aging);
   }
 
   // ------------------------------------------------------------------ update loop
@@ -953,10 +1008,13 @@ export class UI {
     const tb = this.topPanel.getBoundingClientRect(), all = this.hudTop.getBoundingClientRect(), vw = window.innerWidth || 0;
     if (!tb.width) return;
     const q = tb.left < 266 ? Math.ceil(tb.bottom + 8) : 56, t = all.right > vw - 326 ? Math.ceil(all.bottom + 8) : 60;
-    const sig = q + ',' + t;
+    // the chat dock (left edge) ends above the bottom-left block, whose height changes with the next age box
+    const bl = this.blEl?.getBoundingClientRect(), vh = window.innerHeight || 0;
+    const b = bl && bl.height ? Math.ceil(vh - bl.top + 10) : 262;
+    const sig = q + ',' + t + ',' + b;
     if (sig === this._clearSig) return;
     this._clearSig = sig;
-    this.hudEl.style.setProperty('--quests-top', q + 'px'); this.hudEl.style.setProperty('--toasts-top', t + 'px');
+    this.hudEl.style.setProperty('--quests-top', q + 'px'); this.hudEl.style.setProperty('--toasts-top', t + 'px'); this.hudEl.style.setProperty('--bl-top', b + 'px');
     safe(() => this._chatTick());   // the chat dock starts below the quests: follow them at once
   }
   update(dt) {
@@ -1029,6 +1087,7 @@ export class UI {
     for (const b of safe(() => g.buildingsOf(this._me()), [])) { const q = b.queue?.[0]; if (q && q.kind === 'age') { prog = this._qprog(q); break; } }
     this.ageEl.querySelector('i').style.width = (prog * 100).toFixed(1) + '%';
     this.clockEl.textContent = fmtTime(g.time || 0);
+    safe(() => this._refreshAgeBtn(g, p));
     safe(() => this._refreshRates(g, p));
     safe(() => this._refreshSlow(g, p));
   }
@@ -1449,7 +1508,7 @@ export class UI {
       this._error();
       let why = c.reason || '';
       if (why === 'Yetersiz kaynak' && b.spec.cost) {
-        const res = this.game?.players?.[0]?.res || {};
+        const res = this.game?.players?.[this._me()]?.res || {};
         const miss = RES_LIST.filter((r) => (b.spec.cost[r] || 0) > (res[r] || 0)).map((r) => `${RES_ICON[r]} ${Math.ceil(b.spec.cost[r] - (res[r] || 0))}`);
         if (miss.length) why = 'Yetersiz kaynak — eksik: ' + miss.join(' · ');
       }
