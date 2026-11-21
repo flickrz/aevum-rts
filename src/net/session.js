@@ -36,7 +36,7 @@ export const STALL_NOPROG_MS = 3000;
 export const MAX_AHEAD = 2 * MAX_DELAY + REDUNDANCY;
 export const LOBBY_GONE_MS = 8000;    // lobby: a peer the relay reports gone is removed only if it stays gone this long
 export const METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload',
-  'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol'];
+  'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol', 'cmdRotateBuilding', 'cmdRelocate'];
 // session-level commands: travel and execute in lockstep like game commands, but are handled by the session
 export const SESSION_CMDS = ['@save', '@pause'];
 const METHOD_SET = new Set(METHODS);
@@ -611,7 +611,7 @@ export class NetSession {
   setSettings(patch = {}) {
     this._hostOnly(); this._notResume();
     const st = this.state.settings;
-    if ([256, 320, 384, 448, 512].includes(patch.mapSize)) st.mapSize = patch.mapSize;
+    if ([160, 192, 256, 320, 384, 448, 512].includes(patch.mapSize)) st.mapSize = patch.mapSize;
     if (['low', 'normal', 'high'].includes(patch.startRes)) st.startRes = patch.startRes;
     if (MAP_TYPES.includes(patch.mapType)) st.mapType = patch.mapType;
     if (CLIMATES.includes(patch.climate)) st.climate = patch.climate;

@@ -11,12 +11,15 @@ import { QUEUE_TIME_MUL, unitLos, buildingLos, forDisc, MINE_CAP, HEALER_R } fro
 const MIN = 60;
 const DIFF = {
   easy: {
-    think: 2.5, vill: [11, 20, 28, 34, 38], army: [0.15, 0.3, 0.38, 0.45, 0.5], minArmy: [2, 3, 5, 6, 6],
+    // (2026-11-22 feedback "even easy pushes a beginner too hard"): a smaller, hard-capped army, no attack before
+    // the Bronze Age, later and smaller raids / pushes (no reinforcements), and raiders do not single out villagers
+    think: 2.5, vill: [11, 20, 28, 34, 38], army: [0.1, 0.22, 0.3, 0.36, 0.42], minArmy: [1, 2, 4, 5, 5],
     ageVill: [14, 23, 31, 37], ageDelay: [135, 110, 230, 170], barracksAt: 12,
-    raidFrom: 16, pushFrom: 25, raidGap: 300, raidSize: 2, firstPush: 6, pushBase: 8, pushGrow: 3, pushGap: 300,
-    counter: 0.25, moves: 1, builds: 1, prodQ: 1, tcQ: 1, prod: [1, 2, 2, 3, 3], tc2Age: 9, carts: 2,
+    raidFrom: 22, pushFrom: 32, raidGap: 420, raidSize: 2, firstPush: 5, pushBase: 6, pushGrow: 2, pushGap: 420,
+    attackAge: 1, capArmy: true, vilFocus: false, pushAll: false,
+    counter: 0.25, moves: 1, builds: 1, prodQ: 1, tcQ: 1, prod: [1, 1, 2, 3, 3], tc2Age: 9, carts: 2,
     towers: [0, 1, 1, 2, 2], castle: false, techPar: 1, rescout: 330, idleChance: 0.35, floatMul: 2.2, slack: 0, banks: 1, rails: 1,
-    elastic: 0.6, tradeMul: 1.8, armyCap: [6, 16, 28, 40, 50], prodMax: [1, 2, 3, 5, 6], prodQmax: 2, towersX: 1,
+    elastic: 0.4, tradeMul: 1.8, armyCap: [4, 12, 22, 32, 42], prodMax: [1, 2, 2, 4, 5], prodQmax: 2, towersX: 1,
     tcs: [1, 1, 2, 2, 2], fwd: 0.2, wallFrom: 18, wallSides: 1, wallTowers: 0, wallRmax: 20, wallChunk: 12, wallKeep: 120, wallBuilders: 1, wallGates2: false,
   },
   normal: {
@@ -373,6 +376,7 @@ export class AIController {
     c.minDef = Math.max(d.minArmy[age] + (c.behind ? 2 : 0), Math.round(this.enemyArmySeen(90).n * (0.6 + 0.4 * d.counter)), recentHits ? d.minArmy[age] + 3 : 0);
     let at = Math.max(c.minDef, Math.round(c.vills.length * d.army[age]));
     if (ea.n > at * 0.8) at = Math.max(at, Math.round(ea.n * (0.9 + 0.3 * d.counter)));
+    if (d.capArmy) at = Math.min(at, Math.max(c.minDef, d.armyCap[age]));   // (easy: never out-builds its cap to match the player)
     if (this._baseThreat) at += 4;
     c.roleW = this._roleWeights(c);
     // elastic spending: resources floating above ~1.5x the last 2-minute shopping list are turned into
@@ -1763,6 +1767,7 @@ export class AIController {
   _raidPlanner(c) {
     const g = this.game, d = this.d, now = g.time;
     if (now < this.nextRaid || this._baseThreat) return;
+    if (d.attackAge && c.age < d.attackAge) return;
     if (this.groups.some(gr => gr.kind === 'raid')) return;
     const size = Math.min(d.raidSize, c.age === 0 ? 3 : d.raidSize);
     const keep = 2;
@@ -1785,6 +1790,7 @@ export class AIController {
     const live = this.groups.find(gr => gr.kind === 'push');
     if (live) { this._reinforce(c, live); return; }
     if (now < this.nextPush || this._baseThreat) return;
+    if (d.attackAge && c.age < d.attackAge) return;
     const pool = c.pool;
     const first = this.pushN === 0;
     const size = first ? d.firstPush : d.pushBase + d.pushGrow * (this.pushN - 1);
@@ -1810,6 +1816,7 @@ export class AIController {
     const guardN = first ? 0 : Math.floor(pool.length * 0.15);
     const guard = new Set(pool.filter(u => UNITS[u.type].cls !== 'siege').sort((a, b) => d2(a.x, a.z, c.home.x, c.home.z) - d2(b.x, b.z, c.home.x, c.home.z)).slice(0, guardN).map(u => u.id));
     const ids = pool.filter(u => !guard.has(u.id)).map(u => u.id);
+    if (d.pushAll === false && ids.length > size) ids.length = size;   // (easy: a push is its planned size, the rest stays home)
     if (ids.length < 3) return;
     const tgt = this._pushTarget(c.home);
     const eb = this.enemyBase();
@@ -1841,7 +1848,7 @@ export class AIController {
   // a push that is fighting gets the new soldiers from home (above the home guard) every ~20 s
   _reinforce(c, gr) {
     const g = this.game, now = g.time;
-    if (gr.phase !== 'fight' || this._baseThreat || now - (gr.reinfT || gr.start) < 20) return;
+    if (gr.phase !== 'fight' || this._baseThreat || now - (gr.reinfT || gr.start) < 20 || this.d.pushAll === false) return;
     const keep = Math.max(2, Math.ceil(c.minDef * 0.5));
     const pool = c.pool.slice().sort((a, b) => d2(b.x, b.z, c.home.x, c.home.z) - d2(a.x, a.z, c.home.x, c.home.z));
     const n = pool.length - keep;
@@ -1920,7 +1927,7 @@ export class AIController {
           if (nt && nt.id != null && d2(nt.x, nt.z, ax, az) < 22 * 22) { gr.targetId = nt.id; gr.tx = nt.x; gr.tz = nt.z; focus = nt; }
           else if (!live.some(u => this._nearEnemyUnit(u, 8, true))) { if (now - (gr.emptyT || now) > 12) { this._retreat(gr, c); continue; } gr.emptyT = gr.emptyT || now; }
         }
-        this._fight(live, focus, 6, true);
+        this._fight(live, focus, 6, this.d.vilFocus !== false);
         continue;
       }
       // push

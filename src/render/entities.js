@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BUILDINGS } from '../data.js';
 import { updateConstruction, disposeConstruction, updateRepair } from './construction.js';
-import { SEA_BUILD, SEA_UNITS, makeSeaUnit, seaAnimUnit, seaAnimBuilding, makeFish, seaAnimFish, seaMask, pastureSheepK } from './models-sea.js';
+import { SEA_BUILD, SEA_UNITS, makeSeaUnit, seaAnimUnit, seaAnimBuilding, makeFish, seaAnimFish, seaMask, pastureSheepK, dockY } from './models-sea.js';
 import { StaticBatches } from './static-batch.js';
 import { loadGlbModels, loadEra, glbVersion, hasGlb, glbPlanned, eraSettled, addGlbBuilding, addGlbPiece, loadCrop, cropGeo } from './glb-models.js';
 
@@ -854,6 +854,10 @@ const BUILD = {
 const WDIR = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const LINKS = { wall: 1, gate: 1, tower: 1, castle: 1 };
 const MASKED = { wall: 1, gate: 1, tower: 1, rail: 1, dock: 1 };
+// a building's own quarter turn (b.rot 0..3, players turn them: view only, footprints are square); pieces whose
+// model follows their links / the water / the field layout keep theirs
+const NO_TURN = { wall: 1, gate: 1, tower: 1, rail: 1, dock: 1, farm: 1 };
+const bYaw = (type, rot) => NO_TURN[type] ? 0 : ((rot | 0) & 3) * PI / 2;
 // box from distance a0 to a1 (0 = tile centre, .5 = tile edge) along direction d, width w across it, offset off across it
 function wArmBase(p, m, d, a0, a1, w, h, y, off) {
   const L = a1 - a0, ca = (a0 + a1) / 2; off = off || 0;
@@ -1904,6 +1908,8 @@ export class EntityView {
     v.bs = bs; v.k = (e.size || bs) / bs;
     v.root = makeBuilding(e.type, bs, v.age, this._color(e.owner), v.mask | 0, (e.tx | 0) * 92821 + (e.tz | 0) * 68917);   // (seed: wall logs vary per tile)
     if (v.k !== 1) v.root.scale.setScalar(v.k);
+    if (v.ry == null) v.ry = bYaw(e.type, e.rot);   // (a remade model keeps the turn it is drawn at; _updBuilding eases it)
+    v.root.rotation.y = v.ry;
     const quiet = v.quiet; v.quiet = false;
     if (had && e.done && !quiet) {
       v.pop = .5;
@@ -2091,6 +2097,15 @@ export class EntityView {
     if (v.pop > 0) this._pop(v, dt);
     root.position.set(e.x, y, e.z);
     v.x = e.x; v.z = e.z;
+    // a player's quarter turn: eased over ~0.3 s the short way round (in the fog: the turn last seen)
+    if (!fogd) {
+      let d = bYaw(e.type, e.rot) - v.ry;
+      if (d !== 0) {
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        v.ry = Math.abs(d) < .002 ? bYaw(e.type, e.rot) : v.ry + d * Math.min(1, dt * 12);
+        root.rotation.y = v.ry;
+      }
+    }
     if (e.type === 'farm') {
       U.fur.visible = U.fur.visible && true;
       // until it is built the farm is only its marked-out ground: the granary rises with the work (no ready-made
@@ -2133,7 +2148,8 @@ export class EntityView {
       } else if (U.chim.length && (e.type === 'house' || e.type === 'blacksmith' || e.type === 'factory' || e.type === 'temple' || v.age >= 4)) {
         v.smokeT = e.type === 'factory' ? .45 + Math.random() * .4 : 1.2 + Math.random() * 2.2;
         const i = ((Math.random() * (U.chim.length / 3)) | 0) * 3;
-        const k = v.k || 1; this.fx.smoke(e.x + U.chim[i] * k, y + U.chim[i + 1] * k, e.z + U.chim[i + 2] * k);
+        const k = v.k || 1, cr = Math.cos(v.ry || 0), sr = Math.sin(v.ry || 0), cx = U.chim[i], cz = U.chim[i + 2];   // (the chimney turns with the model)
+        this.fx.smoke(e.x + (cx * cr + cz * sr) * k, y + U.chim[i + 1] * k, e.z + (cz * cr - cx * sr) * k);
       } else v.smokeT = 5;
     }
   }
@@ -2142,6 +2158,7 @@ export class EntityView {
   _static(v, e, vis) {
     if (!vis || !e.done || e.dead || v.cons || v.pop > 0 || v.damaged) return false;
     const r = v.root, U = r.userData, k = v.k || 1;
+    if (r.rotation.y !== bYaw(e.type, e.rot) && !this._fogged(e)) return false;   // (still turning)
     if (!r.visible || r.scale.x !== k || r.scale.y !== k || r.scale.z !== k || (U.scaf && U.scaf.visible && U.scaf.children.length)) return false;   // (an empty scaffold group, e.g. a farm's, is no scaffold)
     return grpStatic(U.slab) && grpStatic(U.body) && grpStatic(U.roof);
   }
@@ -2367,7 +2384,7 @@ export class EntityView {
       const sel = this.selected.has(e.id);
       let y;
       if (e.kind === 'building') {
-        y = map.heightAt(e.x, e.z);
+        y = e.type === 'dock' ? dockY(map, e.x, e.z, e.tx, e.tz, e.size) : map.heightAt(e.x, e.z);   // (the dock's deck above the water, see dockY)
         this._updBuilding(v, e, dt, y, vis);
         this._sb.sync(v, this.batching && this._static(v, e, vis), tm);
         if (v.root.userData.sheepSlots) this._sheep(v, vis);
@@ -2474,7 +2491,12 @@ export class EntityView {
     }
     return m;
   }
-  // spec {type,tx,tz,valid[,size]} or an ARRAY of specs (wall line preview); null hides all
+  // the placement ghost's quarter turn (0..3, key R while placing): kept for every later ghost until changed
+  setGhostRot(rot) {
+    this._ghostRot = (rot | 0) & 3;
+    if (this.ghosts) for (const g of this.ghosts) if (g && g.root.visible) g.root.rotation.y = bYaw(g.type, this._ghostRot);
+  }
+  // spec {type,tx,tz,valid[,size][,rot]} or an ARRAY of specs (wall line preview); null hides all
   setGhost(spec) {
     const pool = this.ghosts || (this.ghosts = []);
     const specs = !spec ? [] : Array.isArray(spec) ? spec : [spec];
@@ -2511,7 +2533,8 @@ export class EntityView {
       if (valid !== g.valid) { g.valid = valid; const m = GHM[valid ? 0 : 1]; g.root.traverse(o => { if (o.isMesh) o.material = m; }); }
       const s = g.root.userData.size, x = sp.tx + s / 2, z = sp.tz + s / 2;
       g.root.visible = true;
-      g.root.position.set(x, this.game.map.heightAt(x, z) + .03, z);
+      g.root.position.set(x, sp.type === 'dock' ? dockY(this.game.map, x, z, sp.tx, sp.tz, s) + .03 : this.game.map.heightAt(x, z) + .03, z);
+      g.root.rotation.y = bYaw(sp.type, sp.rot != null ? sp.rot : this._ghostRot);
     }
     for (let i = specs.length; i < pool.length; i++) if (pool[i]) pool[i].root.visible = false;
     // keep the old single-ghost fields meaningful

@@ -253,6 +253,7 @@ export class Renderer {
     this.world = null;
     this._subs = [];
     this._markers = [];
+    this._flashes = [];
     this._markerGeo = new THREE.RingGeometry(0.72, 0.9, 40).rotateX(-Math.PI / 2);
     this._ray = new THREE.Raycaster();
     this._v = new THREE.Vector3();
@@ -384,6 +385,8 @@ export class Renderer {
     }
     for (const m of this._markers) { this.scene.remove(m.mesh); m.mesh.material.dispose(); }
     this._markers = [];
+    for (const f of this._flashes) { this.scene.remove(f.mesh); f.mesh.material.dispose(); }
+    this._flashes = [];
     if (this.floaters) this.floaters.clear();
     if (this.fowTex) { this.fowTex.dispose(); this.fowTex = null; }
     if (this.depthTex) { this.depthTex.dispose(); this.depthTex = null; }
@@ -1134,6 +1137,47 @@ export class Renderer {
     if (this.entityView && this.entityView.setGhost) { try { this.entityView.setGhost(spec); } catch (e) { /* ignore */ } }
   }
 
+  // placement ghost turn in quarter turns (0..3), kept until changed; a spec's own .rot wins over it
+  setGhostRot(rot) {
+    if (this.entityView && this.entityView.setGhostRot) { try { this.entityView.setGhostRot(rot); } catch (e) { /* ignore */ } }
+  }
+
+  // the entity an order went to (a tree, mine, bush, fish, animal, farm, foundation...): a ring round it pulses for
+  // about a second so the player sees which one the workers took; follows a moving target. Returns false if unknown.
+  flashTarget(id, colorHex = 0xffd84a) {
+    const g = this.game, e = g && g.entities && g.entities.get(id);
+    if (!e || e.dead) return false;
+    const r = e.kind === 'building' ? Math.max(1, (e.size || 1) * .71) : e.kind === 'unit' ? .7 : e.type === 'tree' ? .62 * (e.scale || 1) : e.type === 'fish' ? .9 : .75;
+    for (let i = this._flashes.length - 1; i >= 0; i--) {   // (a second order on the same target restarts its flash)
+      const f = this._flashes[i];
+      if (f.id === id) { this.scene.remove(f.mesh); f.mesh.material.dispose(); this._flashes.splice(i, 1); }
+    }
+    if (!this._markerGeoB) this._markerGeoB = new THREE.RingGeometry(0.93, 1, 64).rotateX(-Math.PI / 2);
+    if (!this._flashGeoS) this._flashGeoS = new THREE.RingGeometry(0.8, 1, 48).rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 1, depthTest: false, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    const mesh = new THREE.Mesh(r > 1.5 ? this._markerGeoB : this._flashGeoS, mat);
+    mesh.renderOrder = 30;
+    this.scene.add(mesh);
+    this._flashes.push({ id, e, mesh, t: 0, r });
+    if (this._flashes.length > 8) { const f = this._flashes.shift(); this.scene.remove(f.mesh); f.mesh.material.dispose(); }
+    this._updateFlashes(0);
+    return true;
+  }
+
+  _updateFlashes(dt) {
+    const FT = 1.1;
+    for (let i = this._flashes.length - 1; i >= 0; i--) {
+      const f = this._flashes[i], e = f.e;
+      f.t += dt;
+      if (f.t >= FT || !e || e.dead) { this.scene.remove(f.mesh); f.mesh.material.dispose(); this._flashes.splice(i, 1); continue; }
+      // three beats: the ring breathes out and back while its brightness blinks, fading out on the last one
+      const k = f.t / FT, beat = .5 + .5 * Math.cos(f.t * Math.PI * 2 * 2.7), s = f.r * (1 + .14 * beat);
+      f.mesh.position.set(e.x, this.groundY(e.x, e.z) + 0.13, e.z);
+      f.mesh.scale.set(s, 1, s);
+      f.mesh.material.opacity = (.35 + .65 * beat) * (k < .75 ? 1 : (1 - k) / .25);
+    }
+  }
+
   // radius > 0: the ring closes onto a footprint of that radius and stays around it (a building as the target),
   // drawn with a thinner ring of radius 1 so a big ring is not a thick band
   addMarker(x, z, colorHex = 0x7dff7a, radius = 0) {
@@ -1259,6 +1303,7 @@ export class Renderer {
       catch (err) { if (!this._warnedOL) { this._warnedOL = true; console.error('[Renderer] orderLines', err); } }
     }
     this._updateMarkers(dt);
+    this._updateFlashes(dt);
     this._updateAtmosphere(dt);
     this.fx.scale = (this._h * this.renderer.getPixelRatio() * 0.5) / Math.tan((this.camera.fov * Math.PI) / 360);
     this.fx.update(dt);

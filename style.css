@@ -180,6 +180,9 @@ table.st th { color: var(--gold); font-weight: 600; }
 /* --- HUD additions: income rates, idle villagers, objective line, compact quests --- */
 .res { min-width: 92px; }
 .res .rate { font-size: 10.5px; font-weight: 500; color: #9fe0a8; opacity: .85; min-width: 26px; }
+.res .wk { font-size: 10.5px; font-weight: 500; color: var(--dim); display: inline-flex; align-items: center; gap: 1px; margin-left: -2px; }
+.res .wk:empty { display: none; }
+.topbar .res .wk .gi { width: 11px; height: 11px; vertical-align: 0; fill: currentColor; }
 .res.pulse { animation: pulseSoft .45s ease; }
 @keyframes pulseSoft { 0% { background: rgba(232,194,106,.16); } 100% { background: transparent; } }
 .tbtn.idlebtn { width: auto; padding: 0 8px; display: flex; align-items: center; gap: 4px; font-size: 15px; opacity: .55; }
@@ -986,3 +989,12 @@ button.gbtn, button.gbtn .gbtn-t { color: #1f1f1f !important; text-shadow: none 
 .menu.m-left .mh-acct > .mh-right .mh-chip { padding: 2px 7px; border: 0; border-radius: 5px; background: none; color: var(--dim) !important; font-size: 12px; letter-spacing: .4px; }
 .menu.m-left .mh-acct > .mh-right .mh-chip:hover { color: var(--gold) !important; background: rgba(232,194,106,.08); }
 .menu.m-left .mh-acct > .mh-right .mh-chip + .mh-chip::before { content: "·"; margin: 0 8px 0 -3px; color: rgba(255,255,255,.25); }
+/* (players 2026-11-22) multi selection: one chip per unit type with its count; click = only that type, Shift = drop it */
+.mgrp { display: flex; align-items: center; gap: 4px; overflow: hidden; white-space: nowrap; min-height: 26px; }
+.mgrp > b { font-size: 13px; margin-right: 4px; font-variant-numeric: tabular-nums; }
+.mg { display: inline-flex; align-items: center; gap: 3px; height: 26px; padding: 0 7px; border-radius: 6px; border: 1px solid rgba(255,255,255,.14); background: rgba(0,0,0,.35); color: var(--ink); font-size: 15px; cursor: pointer; }
+.mg:hover { border-color: var(--gold); }
+.mg b { font-size: 12px; font-variant-numeric: tabular-nums; }
+.mg .gi { width: 17px; height: 17px; fill: #f1e6cc; }
+.selinfo.msel { gap: 6px; min-height: 0; overflow: hidden; }
+.selinfo.msel .multi { min-height: 0; }

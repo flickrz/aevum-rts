@@ -91,7 +91,7 @@ export class StaticBatches {
   // per building view and frame: want = it looks exactly like its static model this frame
   sync(v, want, now) {
     const m = v.sb;
-    if (m && (!want || m.root !== v.root || m.x !== v.root.position.x || m.y !== v.root.position.y || m.z !== v.root.position.z)) this.leave(v);
+    if (m && (!want || m.root !== v.root || m.x !== v.root.position.x || m.y !== v.root.position.y || m.z !== v.root.position.z || m.ry !== v.root.rotation.y)) this.leave(v);
     if (want && !v.sb && v.sbSkip !== v.root) this._join(v, now);
   }
   _join(v, now) {
@@ -101,7 +101,7 @@ export class StaticBatches {
     let c = this.chunks.get(key);
     if (!c) this.chunks.set(key, c = { key, members: new Set(), meshes: [], built: false, dirty: true, t: now });
     c.members.add(v); c.t = now; c.dirty = true;
-    v.sb = { c, root, meshes, x: p.x, y: p.y, z: p.z };   // (drawn on its own until the chunk is merged again)
+    v.sb = { c, root, meshes, x: p.x, y: p.y, z: p.z, ry: root.rotation.y };   // (drawn on its own until the chunk is merged again)
   }
   // the view stops being static (or is removed): drawn on its own again, the chunk falls back until rebuilt
   leave(v) {

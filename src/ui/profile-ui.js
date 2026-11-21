@@ -11,7 +11,7 @@ import { ask } from './ask.js';
 import { RES_ICONS, keepIcons } from '../icons.js';
 
 const MAP_TR = { random: 'Rastgele', river: 'Nehir Vadisi', continent: 'Kıta', highlands: 'Yaylalar', plains: 'Ovalar', inlandsea: 'İç Deniz', islands: 'Adalar' };
-const SIZE_TR = { 96: 'Eski Küçük', 128: 'Eski Orta', 160: 'Eski Büyük', 192: 'Eski Çok Büyük', 256: 'Küçük', 320: 'Orta', 384: 'Büyük', 448: 'Çok Büyük', 512: 'Dev' };
+const SIZE_TR = { 96: 'Eski Küçük', 128: 'Eski Orta', 160: 'Eski Büyük', 192: 'Minik', 256: 'Küçük', 320: 'Orta', 384: 'Büyük', 448: 'Çok Büyük', 512: 'Dev' };
 const DIFF_TR = { easy: 'Kolay', normal: 'Normal', hard: 'Zor' };
 const RES_TR = { won: 'Zafer', lost: 'Yenilgi', abandoned: 'Yarıda' };
 const RES_ICON = RES_ICONS;

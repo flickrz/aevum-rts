@@ -1,10 +1,13 @@
 // Mouse / keyboard input: selection, commands, placement, camera.
 import { BUILDINGS, UNITS } from './data.js';
 import { RES_ICONS } from './icons.js';
-import { MINE_CAP } from './sim/game.js';
+import { MINE_CAP, NO_ROTATE } from './sim/game.js';
 
 const DRAG_PX = 5;
-const EDGE_PX = 12;
+// (players 2026-11-22: "you have to push the mouse right to the edge to scroll") the edge zone is wider and the pan
+// ramps up toward the very edge (EDGE_MIN of full speed at the zone's inner side)
+const EDGE_PX = 18, EDGE_MIN = 0.35;
+const TP_PAN = 0.0028;   // touchpad mode: world tiles per wheel pixel, per tile of camera distance
 const PAN_FAST = 2.5;   // camera pan speed multiplier while Shift is held
 const C_MOVE = 0x7dff7a, C_ATTACK = 0xff4a3d, C_GATHER = 0xffd84a, C_BUILD = 0x6ab8ff, C_RALLY = 0xffffff;
 
@@ -64,7 +67,7 @@ export class Input {
   isEnemyOwner(o) { const g = this.app.game, me = this.me(); if (o == null || o < 0 || o === me) return false; try { const r = g?.isEnemy?.(me, o); if (r !== undefined) return !!r; } catch (err) { /* ignore */ } return !this.isAllyOwner(o); }
 
   reset() {
-    this.placing = null; this.wallStart = null; this.placeDown = false; this.groups = {}; this.keys.clear();
+    this.placing = null; this.wallStart = null; this.placeDown = false; this.groups = {}; this.keys.clear(); this.relocId = null; this.placeRot = 0;
     this.endDrag(); this.rot = null; this.setLineLabel(null);
     try { this.app.renderer.setGhost(null); } catch (err) { /* ignore */ }
   }
@@ -77,6 +80,8 @@ export class Input {
   _trains(id) { const e = this.ent(id); return !!e && !!BUILDINGS[e.type] && (BUILDINGS[e.type].trains || []).length > 0; }
   ownBuildings() { return this.app.selection.filter(id => { const e = this.ent(id); return e && e.kind === 'building' && e.owner === this.me(); }); }
   sfx(name) { try { this.app.audio.ui(name); } catch (err) { /* ignore */ } }
+  // the target an order went to pulses for a moment (renderer.flashTarget), so the player sees which one was taken
+  flash(id, col) { const r = this.app.renderer; try { if (r && typeof r.flashTarget === 'function') r.flashTarget(id, col); } catch (err) { /* ignore */ } }
 
   tileFor(type, g) {
     const size = (BUILDINGS[type] && BUILDINGS[type].size) || 1;
@@ -86,12 +91,46 @@ export class Input {
   // ---------- placement ----------
   startPlacement(type) {
     if (!this.active || !BUILDINGS[type]) return;
+    this.endRelocate();
     this.placing = type; this.wallStart = null; this.placeDown = false; this.shiftPlaced = false;
+    this.placeRot = this.canTurn(type) ? (this.placeRot | 0) & 3 : 0;   // (the last turn is kept for the next building)
+    this.syncGhostRot();
     try { this.app.ui.setPlacement(type); } catch (err) { /* ignore */ }
     this.updateGhost();
   }
+  // "Taşı" on a selected own building: the next click on the ground moves it there (Game.cmdRelocate)
+  startRelocate(id) {
+    const b = this.ent(id);
+    if (!this.active || !b || b.kind !== 'building' || b.owner !== this.me()) return false;
+    const c = this.game.canRelocate ? this.game.canRelocate(this.me(), id) : { ok: false };
+    if (!c.ok) { try { this.app.ui.hint('reloc', '⛔ ' + (c.reason || 'Bu bina taşınamaz'), 'warn', 2.5); } catch (err) { /* ignore */ } return false; }
+    if (this.targeting) this.cancelTargeting();
+    this.placing = b.type; this.wallStart = null; this.placeDown = false; this.shiftPlaced = false;
+    if (this.relocId == null) this.relocRot0 = this.placeRot | 0;   // (the turn of normal placing comes back after the move)
+    this.relocId = id; this.placeRot = (b.rot | 0) & 3;
+    this.syncGhostRot();
+    try { this.app.ui.setPlacement(b.type, 'move'); } catch (err) { /* ignore */ }
+    this.updateGhost();
+    return true;
+  }
+  canTurn(type) { return !!type && !NO_ROTATE.has(type) && !this.isLineTool(type); }
+  syncGhostRot() { const r = this.app.renderer; try { if (r && typeof r.setGhostRot === 'function') r.setGhostRot(this.placeRot | 0); } catch (err) { /* ignore */ } }
+  // R while placing: a quarter turn (moving a building: only the ghost turns, cmdRelocate takes the turn when the move is made)
+  turnPlacement() {
+    if (!this.placing || !this.canTurn(this.placing)) return false;
+    this.placeRot = ((this.placeRot | 0) + 1) & 3;
+    this.syncGhostRot(); this.updateGhost();
+    return true;
+  }
+  // a move ended or was cancelled: the placing turn from before it is back
+  endRelocate() {
+    if (this.relocId == null) return;
+    this.relocId = null; this.placeRot = (this.relocRot0 | 0) & 3; this.relocRot0 = 0;
+    this.syncGhostRot();
+  }
   cancelPlacement() {
     if (!this.placing) return;
+    this.endRelocate();
     this.placing = null; this.wallStart = null; this.placeDown = false;
     try { this.app.renderer.setGhost(null); } catch (err) { /* ignore */ }
     try { this.app.ui.setPlacement(null); } catch (err) { /* ignore */ }
@@ -156,12 +195,25 @@ export class Input {
       this.setLineLabel(plan.length && (this.placeDown || plan.length !== 1) ? plan : null);
       return;
     }
-    const valid = !!this.game.canPlace(this.placing, tx, tz, this.me()) && !!this.game.canAfford(this.me(), BUILDINGS[this.placing].cost);
-    this.app.renderer.setGhost({ type: this.placing, tx, tz, valid });
+    const valid = this.relocId != null ? !!(this.game.canRelocateTo && this.game.canRelocateTo(this.me(), this.relocId, tx, tz))
+      : !!this.game.canPlace(this.placing, tx, tz, this.me()) && !!this.game.canAfford(this.me(), BUILDINGS[this.placing].cost);
+    this.app.renderer.setGhost({ type: this.placing, tx, tz, valid, rot: this.placeRot | 0 });
   }
   placeAt(tx, tz, queue = false) {
-    const id = this.game.placeBuilding(this.me(), this.placing, tx, tz, this.ownVillagers(), queue);
+    const id = this.game.placeBuilding(this.me(), this.placing, tx, tz, this.ownVillagers(), !!queue, this.canTurn(this.placing) ? this.placeRot | 0 : 0);
     return id != null && id !== false;
+  }
+  // the move of a building: the old one goes, a free foundation of it goes up here (the nearest villager is sent)
+  relocateAt(tx, tz) {
+    const rot = this.canTurn(this.placing) ? this.placeRot & 3 : null;
+    const id = this.game.cmdRelocate ? this.game.cmdRelocate(this.me(), this.relocId, tx, tz, this.ownVillagers(), rot) : null;
+    if (id == null || id === false) return false;
+    if (typeof id === 'number') {
+      this.app.select([id], true);
+      const r = this.app.renderer; try { if (r && typeof r.flashTarget === 'function') r.flashTarget(id, C_BUILD); } catch (err) { /* ignore */ }
+    }
+    try { this.app.ui.toast('Yeni temel atıldı: en yakın köylü yola çıktı, istersen başka köylü de gönder', 'info'); } catch (err) { /* ignore */ }
+    return true;
   }
   finishPlacement(e) {
     const type = this.placing;
@@ -182,6 +234,8 @@ export class Input {
         this.updateGhost();
         return; // tool stays active: press again to continue the wall
       }
+    } else if (this.relocId != null) {
+      if (this.relocateAt(end.tx, end.tz)) { this.sfx('place'); this.cancelPlacement(); return; }
     } else if (this.placeAt(end.tx, end.tz, !!e.shiftKey)) placed = 1;
     this.wallStart = null;
     if (placed) {
@@ -192,8 +246,13 @@ export class Input {
       try {
         const ui = this.app.ui, d = BUILDINGS[type];
         if (ui && ui.hint) {
-          if (d && d.cost && !this.game.canAfford(this.me(), d.cost)) ui.hint('afford', '⛔ Yetersiz kaynak: ' + (d.name || 'bina') + ' için kaynağın yetmiyor');
+          if (this.relocId != null) {
+            const c = this.game.relocateCheck ? this.game.relocateCheck(this.me(), this.relocId, end.tx, end.tz) : null;
+            ui.hint('place', '⛔ ' + ((c && c.reason) || 'Buraya taşınamaz: boş ve keşfedilmiş başka bir yer seç'));
+          }
+          else if (d && d.cost && !this.game.canAfford(this.me(), d.cost)) ui.hint('afford', '⛔ Yetersiz kaynak: ' + (d.name || 'bina') + ' için kaynağın yetmiyor');
           else if (type === 'dock') ui.hint('place', '⛔ Kıyıya yerleştir: bir kısmı suda olmalı');
+          else if (type === 'gate') ui.hint('place', '⛔ Kapı bitmiş bir sur parçasına ya da boş bir kareye konur');
           else ui.hint('place', '⛔ Buraya inşa edilemez — boş ve keşfedilmiş bir alan seç');
         }
       } catch (err) { /* ignore */ }
@@ -361,7 +420,15 @@ export class Input {
   onWheel(e) {
     e.preventDefault();
     const r = this.app.renderer, cam = r.cam;
-    const f = Math.pow(1.0015, e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY);
+    // touchpad mode (Settings): two-finger scroll pans, a pinch (the browser sends it as a wheel with ctrlKey) zooms
+    const tp = !!this.app.ui?.settings?.touchpad;
+    if (tp && !e.ctrlKey) {
+      if (!this.active || this.rot) return;
+      const px = e.deltaMode === 1 ? 33 : 1;
+      this.pan(e.deltaX * px, -e.deltaY * px, Math.max(10, cam.dist) * TP_PAN);
+      return;
+    }
+    const f = Math.pow(tp ? 1.01 : 1.0015, e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY);
     const old = cam.dist;
     const nd = Math.max(8, Math.min(110, old * f));
     const k = nd / old;
@@ -409,7 +476,7 @@ export class Input {
     }
     if (target) {
       if (target.owner >= 0 && target.owner !== this.me() && this.isEnemyOwner(target.owner)) {
-        if (game.cmdAttack(units, target.id, queue)) { r.addMarker(target.x, target.z, C_ATTACK); this.sfx('command'); }
+        if (game.cmdAttack(units, target.id, queue)) { r.addMarker(target.x, target.z, C_ATTACK); this.flash(target.id, C_ATTACK); this.sfx('command'); }
         return;
       }
       if (target.kind === 'resource') {
@@ -417,19 +484,19 @@ export class Input {
           game.cmdGather(villagers, target.id, queue);
           const rest = units.filter(id => !villagers.includes(id));
           if (rest.length) game.cmdMove(rest, target.x, target.z, queue);
-          r.addMarker(target.x, target.z, C_GATHER); this.sfx('command');
+          r.addMarker(target.x, target.z, C_GATHER); this.flash(target.id, C_GATHER); this.sfx('command');
           return;
         }
       } else if (target.kind === 'building' && target.owner === this.me() && villagers.length) {
         const rad = (target.size || 0) * 0.71;   // (the ring goes round the footprint, not under the model)
         if (!target.done || target.hp < target.maxHp) {
           game.cmdBuild(villagers, target.id, queue);
-          r.addMarker(target.x, target.z, C_BUILD, rad); this.sfx('command');
+          r.addMarker(target.x, target.z, C_BUILD, rad); this.flash(target.id, C_BUILD); this.sfx('command');
           return;
         }
         if (target.type === 'farm' || target.type === 'pasture') {
           game.cmdGather(villagers, target.id, queue);
-          r.addMarker(target.x, target.z, C_GATHER, rad); this.sfx('command');
+          r.addMarker(target.x, target.z, C_GATHER, rad); this.flash(target.id, C_GATHER); this.sfx('command');
           return;
         }
         // a lumber camp / mine camp: work the nearest tree / stone or gold to it on explored tiles (a mine whose
@@ -440,7 +507,7 @@ export class Input {
             // (the rest of a mixed selection walks to the camp, as with a right click on a resource)
             const rest = units.filter(id => !villagers.includes(id));
             if (rest.length) game.cmdMove(rest, target.x, target.z, queue);
-            r.addMarker(target.x, target.z, C_GATHER, rad); r.addMarker(best.x, best.z, C_GATHER); this.sfx('command'); return;
+            r.addMarker(target.x, target.z, C_GATHER, rad); r.addMarker(best.x, best.z, C_GATHER); this.flash(best.id, C_GATHER); this.sfx('command'); return;
           }
         }
       }
@@ -581,6 +648,8 @@ export class Input {
       return;
     }
     if (k.startsWith('Arrow')) { e.preventDefault(); this.keys.add(code); return; }
+    // R while placing turns the building (the card's R hotkey waits until the placement ends)
+    if (code === 'KeyR' && this.placing) { if (!e.repeat) this.turnPlacement(); return; }
 
     if (k.length === 1 && /[a-zA-ZçğıöşüÇĞİÖŞÜ]/.test(k)) {
       if (!e.repeat) {
@@ -678,26 +747,29 @@ export class Input {
     if (this.mouse.inside && document.hasFocus() && !this.rot && !this.app.paused) {
       const w = window.innerWidth, h = window.innerHeight, m = this.mouse;
       if (m.x >= 0 && m.y >= 0 && m.x <= w && m.y <= h) {
-        if (m.x <= EDGE_PX) mx -= 1; else if (m.x >= w - EDGE_PX) mx += 1;
-        if (m.y <= EDGE_PX) mz += 1; else if (m.y >= h - EDGE_PX) mz -= 1;
+        const ramp = (d) => EDGE_MIN + (1 - EDGE_MIN) * Math.min(1, Math.max(0, 1 - d / EDGE_PX));
+        if (m.x <= EDGE_PX) mx -= ramp(m.x); else if (m.x >= w - EDGE_PX) mx += ramp(w - m.x);
+        if (m.y <= EDGE_PX) mz += ramp(m.y); else if (m.y >= h - EDGE_PX) mz -= ramp(h - m.y);
       }
     }
-    if (mx || mz) {
-      // derive ground-plane basis from the actual camera matrix (independent of yaw convention)
-      const el = r.camera.matrixWorld.elements;
-      let rx = el[0], rz = el[2];
-      let fx = -el[8], fz = -el[10];
-      if (Math.hypot(fx, fz) < 0.05) { fx = el[4]; fz = el[6]; }
-      let l = Math.hypot(fx, fz) || 1; fx /= l; fz /= l;
-      l = Math.hypot(rx, rz) || 1; rx /= l; rz /= l;
-      // Shift held: pan PAN_FAST times faster (keys and screen edge)
-      const sp = Math.max(10, cam.dist * 0.9) * (this.shift ? PAN_FAST : 1) * dt / (Math.hypot(mx, mz) || 1);
-      cam.tx += (rx * mx + fx * mz) * sp;
-      cam.tz += (rz * mx + fz * mz) * sp;
-      const N = this.game.map.size;
-      cam.tx = Math.max(0, Math.min(N, cam.tx));
-      cam.tz = Math.max(0, Math.min(N, cam.tz));
-    }
+    // Shift held: pan PAN_FAST times faster (keys and screen edge); a diagonal is no faster than a straight pan
+    if (mx || mz) this.pan(mx, mz, Math.max(10, cam.dist * 0.9) * (this.shift ? PAN_FAST : 1) * dt / Math.max(1, Math.hypot(mx, mz)));
     if (this.placing) this.updateGhost();
+  }
+  // move the camera target by (mx right, mz forward) * sp on the ground, clamped to the map
+  pan(mx, mz, sp) {
+    const r = this.app.renderer, cam = r.cam;
+    // derive ground-plane basis from the actual camera matrix (independent of yaw convention)
+    const el = r.camera.matrixWorld.elements;
+    let rx = el[0], rz = el[2];
+    let fx = -el[8], fz = -el[10];
+    if (Math.hypot(fx, fz) < 0.05) { fx = el[4]; fz = el[6]; }
+    let l = Math.hypot(fx, fz) || 1; fx /= l; fz /= l;
+    l = Math.hypot(rx, rz) || 1; rx /= l; rz /= l;
+    cam.tx += (rx * mx + fx * mz) * sp;
+    cam.tz += (rz * mx + fz * mz) * sp;
+    const N = this.game.map.size;
+    cam.tx = Math.max(0, Math.min(N, cam.tx));
+    cam.tz = Math.max(0, Math.min(N, cam.tz));
   }
 }

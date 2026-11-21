@@ -1,6 +1,6 @@
 // Aevum UI: main menu, HUD, minimap, tooltips, overlays. DOM only, no three.js.
 import { AGES, UNITS, BUILDINGS, TECHS, PLAYER_COLORS } from '../data.js';
-import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS, MINE_CAP, HEALER_R, HEALER_HP, PROD_B } from '../sim/game.js';
+import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS, MINE_CAP, HEALER_R, HEALER_HP, PROD_B, PASTURE_IDLE_RATE, NO_ROTATE } from '../sim/game.js';
 import { firstLaunch, menuProfile } from './profile-ui.js';
 import { levelOf } from '../rank.js';
 import { menuHud, saveBadge, saveBadgeTitle, confirmDeleteSave, loginScreen, avatarEl, tpText } from './cloud-ui.js';
@@ -44,9 +44,17 @@ const HOTKEYS = 'QERTYFGHJKZXCVB'; // W/A/S/D are camera-only (never a card slot
 const BUILD_CATS = {
   eco: { name: 'Ekonomi', icon: CAT_ICONS.eco, desc: 'Ekonomi binaları: tarla, depo, pazar...', list: ['towncenter', 'farm', 'lumbercamp', 'minecamp', 'storage', 'market', 'temple', 'university', 'bank', 'factory', 'dock', 'pasture'] },
   mil: { name: 'Askeri', icon: CAT_ICONS.mil, desc: 'Askeri binalar: kışla, okçuluk, ahır...', list: ['barracks', 'archery', 'stable', 'blacksmith', 'siege', 'castle', 'academy'] },
-  def: { name: 'Savunma', icon: CAT_ICONS.def, desc: 'Savunma yapıları: kule ve sur. Kapı, sur seçilince "Kapı Aç" ile açılır.', list: ['tower', 'wall'] },
+  def: { name: 'Savunma', icon: CAT_ICONS.def, desc: 'Savunma yapıları: kule, sur ve sur kapısı.', list: ['tower', 'wall', 'gate'] },
   tra: { name: 'Ulaşım', icon: CAT_ICONS.tra, desc: 'Ulaşım: istasyon ve demir yolu (Sanayi Çağı).', list: ['station', 'rail'] },
 };
+// (players 2026-11-22: "I can't put a gate in my walls, couldn't find it") the build page's own words for the wall and the gate
+const BUILD_DESC = {
+  wall: BUILDINGS.wall.desc + ' Kapı için: bitmiş bir sur parçasını seç → Kapı Aç (Q), ya da bu sayfadaki Kapı ile sur parçasına tıkla.',
+  gate: 'Bitmiş bir sur parçasına tıkla: o parça kapı olur (sadece sen ve müttefiklerin geçer). 3 kare geniş kapı için: suru seç → Kapı Aç.',
+};
+// Döndür / Taşı on the building card (no sprite icons for them: Material Design rotate / open_with, Apache 2.0)
+const ROT_ICON = '<svg class="gi" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 4a8 8 0 1 0 7.75 10h-2.1A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35A7.96 7.96 0 0 0 12 4z"/></svg>';
+const MOVE_ICON = '<svg class="gi" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M10 9h4V6h3l-5-5-5 5h3v3zm-1 1H6V7l-5 5 5 5v-3h3v-4zm14 2l-5-5v3h-3v4h3v3l5-5zm-9 3h-4v3H7l5 5 5-5h-3v-3z"/></svg>';
 const CAT_TR = { eco: 'Ekonomi', mil: 'Askeri', def: 'Savunma', tra: 'Ulaşım' };
 const CAT_ICON = CAT_ICONS;
 const TILE_COL = [[79, 125, 58], [91, 74, 46], [201, 183, 122], [74, 163, 199], [31, 95, 150], [119, 115, 108], [47, 90, 44]];
@@ -56,6 +64,10 @@ const CLIMATE_OPTS = [['random', 'Rastgele'], ['temperate', 'Ilıman'], ['spring
 const FLARE_MS = 7000;
 const CARD_GUARD_MS = 350;   // after the command card switches page, clicks / hover on it wait this long
 const ATTACK_TEXT = 'Saldırı altındasın!';   // the sim's notify text for underAttack (the attack banner shows it instead of a toast)
+// food rates the selection panel shows (mirror src/sim/game.js): a farmer's food / s while his plot is ripe (FARM_RATE),
+// the ripe share of a plot's 30 s cycle less the walks to the granary (measured 2026-11-22: 8 farmers ~160 food/min),
+// and the herders' shares in a pasture (_pasGather)
+const FARM_RATE_UI = 16 / 9 * 0.85, FARM_RIPE_SHARE = 0.22, PASTURE_HERD_C = [1, 0.7, 0.5, 0.4, 0.3, 0.25];
 const ATTACK_MS = 4000;  // how long the attack banner stays
 const DIR_TR = ['doğusunda', 'güneydoğusunda', 'güneyinde', 'güneybatısında', 'batısında', 'kuzeybatısında', 'kuzeyinde', 'kuzeydoğusunda'];   // how long a map flare stays on the minimap
 // map types (must match the generator's cfg.mapType values; 'random' is resolved by the simulation)
@@ -142,8 +154,8 @@ export class UI {
     this.topPanel.append(top);
     this.resEls = {};
     for (const r of RES_LIST) {
-      const d = el('div', 'res', `<span class="i">${RES_ICON[r]}</span><b>0</b><small class="rate"></small>`);
-      this._tip(d, () => ({ name: RES_NAME[r], desc: 'Mevcut ' + RES_NAME[r].toLowerCase() + ' stoğu. Küçük sayı: son 30 saniyeye göre dakikalık gelir.' }));
+      const d = el('div', 'res', `<span class="i">${RES_ICON[r]}</span><b>0</b><small class="rate"></small><small class="wk"></small>`);
+      this._tip(d, () => ({ name: RES_NAME[r], desc: 'Mevcut ' + RES_NAME[r].toLowerCase() + ' stoğu. Yeşil sayı: son 30 saniyeye göre dakikalık gelir. ' + ico('u-villager') + ' sayısı: bu kaynağı toplayan işçin.' }));
       this.resEls[r] = d; top.append(d);
     }
     this.popEl = el('div', 'res', `<span class="i">${ico('x-pop')}</span><b>0/0</b>`);
@@ -218,9 +230,25 @@ export class UI {
   _error() { safe(() => this.app.audio?.ui('error')); }
 
   // ------------------------------------------------------------------ tooltip
+  // (players 2026-11-22: "the card tooltip stays a second and goes, I can't read it") a selection change hid it and a
+  // re-render replaced the hovered button (a selected unit dying in a fight does both every few moments). The hovered
+  // node is remembered; _tipKeep finds the button now under the mouse and shows its tooltip again.
   _tip(node, specFn) {
-    node.addEventListener('mouseenter', () => { if (performance.now() < (this._cardGuardT || 0) && this.cardEl.contains(node)) return; this._showTip(node, specFn()); });
-    node.addEventListener('mouseleave', () => this.tipEl.classList.add('hidden'));
+    node._tipSpec = specFn;
+    node.addEventListener('mouseenter', () => { this._tipNode = node; if (performance.now() < (this._cardGuardT || 0) && this.cardEl.contains(node)) return; this._showTip(node, specFn()); });
+    node.addEventListener('mouseleave', () => { if (this._tipNode === node) this._tipNode = null; this.tipEl.classList.add('hidden'); });
+  }
+  // a tooltip hidden on purpose (a click, a page switch): it comes back only on the next mouseenter
+  _hideTip() { this._tipNode = null; this.tipEl.classList.add('hidden'); }
+  _tipKeep() {
+    const n = this._tipNode, m = this.app.input?.mouse;
+    if (!n || !m || (n.isConnected && !this.tipEl.classList.contains('hidden'))) return;
+    let c = typeof document.elementFromPoint === 'function' ? document.elementFromPoint(m.x, m.y) : null;
+    while (c && !c._tipSpec) c = c.parentElement;
+    if (!c) { this._hideTip(); return; }
+    this._tipNode = c;
+    if (performance.now() < (this._cardGuardT || 0) && this.cardEl.contains(c)) return;
+    this._showTip(c, safe(c._tipSpec, null));
   }
   _costHtml(cost) {
     if (!cost) return '';
@@ -255,7 +283,7 @@ export class UI {
     this.mode = 'menu';
     this.menuEl.classList.remove('hidden');
     this.hudEl.classList.add('hidden');
-    this.tipEl.classList.add('hidden');
+    this._hideTip();
     this._menuMain();
   }
   showHUD() {
@@ -419,7 +447,7 @@ export class UI {
       r.append(g); right.append(r);
     };
     const redraw = () => { drawBig(); drawCards(); };
-    row('Harita Boyutu', 'mapSize', [[256, 'Küçük'], [320, 'Orta'], [384, 'Büyük'], [448, 'Çok Büyük'], [512, 'Dev']]);
+    row('Harita Boyutu', 'mapSize', [[192, 'Minik'], [256, 'Küçük'], [320, 'Orta'], [384, 'Büyük'], [448, 'Çok Büyük'], [512, 'Dev']]);
     row('İklim', 'climate', CLIMATE_OPTS, redraw);
     row('Düşman Sayısı', 'enemies', [[1, '1'], [2, '2'], [3, '3']], redraw);
     row('Zorluk', 'difficulty', [['easy', 'Kolay'], ['normal', 'Normal'], ['hard', 'Zor']]);
@@ -515,12 +543,13 @@ export class UI {
   }
   _menuHowto() {
     const box = this._menuBox(`<h2>Nasıl Oynanır</h2><div class="howto">
-      <b>Seçim:</b> Sol tık ile seç, sürükleyerek çoklu seç.<br>
+      <b>Seçim:</b> Sol tık ile seç, sürükleyerek çoklu seç. Çoklu seçimde alt paneldeki tür düğmeleri: tık = yalnızca o türü seç, <kbd>Shift</kbd>+tık = o türü çıkar, <kbd>Ctrl</kbd>+tık = ekrandaki o türün hepsini seç.<br>
       <b>Komut:</b> Sağ tık — yürü, topla, saldır, inşa et / onar. <kbd>Shift</kbd> basılıyken verilen emirler sıraya eklenir (köylü önce mevcut işini bitirir). Düz sağ tıkla yürüyen birlikler yoldaki düşmanlara aldırmaz; yolda savaşmaları için <kbd>K</kbd> (Saldırarak Yürü) ya da <kbd>V</kbd> (Devriye) tuşuna basıp yere sol tıkla. Kendi oduncu ya da maden kampına sağ tık, köylüleri en yakın kaynağa gönderir.<br>
-      <b>Kamera:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / ok tuşları veya ekran kenarı ile kaydır (WASD yalnızca kamerayı oynatır), tekerlek ile yakınlaş, orta tuş ya da <kbd>Boşluk</kbd> basılıyken fareyle döndür, <kbd>Home</kbd> / <kbd>Backspace</kbd> Şehir Merkezine dön.<br>
+      <b>Kamera:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / ok tuşları veya ekran kenarı ile kaydır (WASD yalnızca kamerayı oynatır), tekerlek ile yakınlaş, orta tuş ya da <kbd>Boşluk</kbd> basılıyken fareyle döndür, <kbd>Home</kbd> / <kbd>Backspace</kbd> Şehir Merkezine dön. Touchpad ile mi oynuyorsun? Ayarlar → <b>Touchpad modu</b>: iki parmakla kaydır, parmakları açıp kapatarak yakınlaş.<br>
       <b>Komut kartı:</b> Sağ alttaki düğmeler; kısayollar <kbd>Q</kbd><kbd>E</kbd><kbd>R</kbd><kbd>T</kbd><kbd>Y</kbd> / <kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd> / <kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd><kbd>B</kbd> ızgara sırasıyla.<br>
-      <b>Binalar:</b> <kbd>Shift</kbd>+tık ile aynı türden birden çok bina seç, çift tık ekrandaki tümünü seçer; üretim her binada aynı anda başlar. <kbd>Shift</kbd>+üret: 5 adet sıraya ekler. <kbd>Shift</kbd> basılıyken bina yerleştirmek araç açık kalır, birden çok temel atarsın.<br>
-      <b>Ekonomi:</b> Köylülerle yiyecek, odun, taş ve altın topla; tarla ek (nüfus sınırı sabit 1000, ev gerekmez).<br>
+      <b>Binalar:</b> <kbd>Shift</kbd>+tık ile aynı türden birden çok bina seç, çift tık ekrandaki tümünü seçer; üretim her binada aynı anda başlar. <kbd>Shift</kbd>+üret: 5 adet sıraya ekler. <kbd>Shift</kbd> basılıyken bina yerleştirmek araç açık kalır, birden çok temel atarsın. Yerleştirirken <kbd>R</kbd> binayı çevirir. Kendi binanı seçince <b>Döndür</b> ve <b>Taşı</b> düğmeleri çıkar (en fazla 30 kare öteye; taşınan bina ücretsiz, kule hariç yarı sürede yeniden kurulur).<br>
+      <b>Sur kapısı:</b> Bitmiş bir sur parçasını seç, <b>Kapı Aç</b> (<kbd>Q</kbd>) ile 3 kare genişliğinde kapı yap. Ya da Savunma sayfasındaki <b>Kapı</b> ile bir sur parçasına tıkla. Kapıdan yalnızca sen ve müttefiklerin geçer.<br>
+      <b>Ekonomi:</b> Köylülerle yiyecek, odun, taş ve altın topla; Taş Devri'nde ağıl, Tunç Devri'nden itibaren tarla kur (nüfus sınırı sabit 1000, ev gerekmez).<br>
       <b>Büyücü:</b> Tapınakta (Taş Devri'nden itibaren) üretilir. Saldırmaz; çevresindeki (5 kare) yaralı dost birlikleri savaş sırasında da saniyede 2 can iyileştirir, tapınak araştırmaları bunu artırır. Bir birliği aynı anda yalnızca bir büyücü iyileştirir.<br>
       <b>Çağ atlama:</b> Şehir Merkezinden yeterli kaynak ve bina ile sonraki çağa geç; yeni birimler ve binalar açılır.<br>
       <b>Zafer:</b> Rakiplerin birim üreten bütün binalarını yık: şehir merkezi, kışla, okçuluk alanı, ahır, kuşatma atölyesi, fabrika ve liman (inşaatına başlanmış temeller de sayılır). Geriye kalan askerler ve köylüler oyunu sürdürmez. Bir rakibin bu binalarından 1-2 tane kalınca mini haritada yanıp söner.<br>
@@ -554,6 +583,16 @@ export class UI {
       seg.append(b);
     }
     row.append(seg); parent.append(row);
+    // (players 2026-11-22: "make it playable with a touchpad") two-finger scroll pans the camera, a pinch zooms (src/input.js onWheel)
+    const trow = el('div', 'frow', '<label>Touchpad modu</label>');
+    const tseg = el('div', 'seg');
+    for (const [v, t] of [[false, 'Kapalı'], [true, 'Açık']]) {
+      const b = el('button', !!this.settings.touchpad === v ? 'on' : '', t);
+      b.title = 'Açık: iki parmakla kaydırınca kamera kayar, parmakları açıp kapatınca yakınlaşır.';
+      b.onclick = () => { this._click(); this.settings.touchpad = v; tseg.querySelectorAll('button').forEach((x) => x.classList.remove('on')); b.classList.add('on'); this._saveSettings(); };
+      tseg.append(b);
+    }
+    trow.append(tseg); parent.append(trow);
   }
   _menuSettings() {
     const box = this._menuBox('<h2>Ayarlar</h2>');
@@ -561,7 +600,7 @@ export class UI {
     this._mbtn(box, 'Geri', () => this._menuMain());
   }
   _loadSettings() {
-    const def = { vol: { master: 0.8, sfx: 0.8, ambient: 0.5, ui: 0.6 }, quality: 'high' };
+    const def = { vol: { master: 0.8, sfx: 0.8, ambient: 0.5, ui: 0.6 }, quality: 'high', touchpad: false };
     try { const o = JSON.parse(localStorage.getItem('aevum.settings')); if (o && o.vol) return { ...def, ...o, vol: { ...def.vol, ...o.vol } }; } catch (e) { /* ignore */ }
     return def;
   }
@@ -676,7 +715,7 @@ export class UI {
     const fail = () => this.hint('fs', 'Tam ekran açılamadı.', 'warn', 3);
     b.onclick = () => {
       this._click();
-      this.tipEl.classList.add('hidden');
+      this._hideTip();
       try {
         if (fsEl()) { const ex = d.exitFullscreen || d.webkitExitFullscreen; if (ex) { const p = ex.call(d); if (p && p.catch) p.catch(() => {}); } }
         else if (r.requestFullscreen) { const p = r.requestFullscreen({ navigationUI: 'hide' }); if (p && p.catch) p.catch(fail); }
@@ -700,10 +739,11 @@ export class UI {
     if (this.mode === 'hud' && this.game) { this._refreshSel(); this._refreshCard(); }
   }
 
-  setPlacement(type) {
+  setPlacement(type, mode) {
     if (!type) { this.placeEl.classList.add('hidden'); return; }
     const b = BUILDINGS[type]; if (!b) return;
-    this.placeEl.innerHTML = `<span>${b.icon || ico('x-build')} <b>${esc(b.name)}</b> yerleştir</span><span class="tooltip-inline tc" style="display:flex;gap:8px">${this._costHtml(b.cost)}</span><span style="color:var(--dim)">${type === 'wall' ? 'Basılı tutup sürükle: sur hattı · Bırak: yerleştir' : type === 'rail' ? 'Basılı tutup sürükle: ray hattı · Bırak: yerleştir' : type === 'dock' ? 'Kıyıya yerleştir: bir kısmı suda olmalı · Sol tık: yerleştir' : 'Sol tık: yerleştir · Shift+tık: birden çok, köylüler sırayla yapar'} · Sağ tık / Esc: iptal</span>`;
+    const mv = mode === 'move', turn = !NO_ROTATE.has(type) && !['wall', 'gate', 'rail'].includes(type);   // (R turns it, src/input.js)
+    this.placeEl.innerHTML = `<span>${b.icon || ico('x-build')} <b>${esc(b.name)}</b> ${mv ? 'taşı' : 'yerleştir'}</span>${mv ? (b.type === 'tower' ? '<span>Ücretsiz · en fazla 30 kare</span>' : '<span>Ücretsiz · yarı sürede kurulur · en fazla 30 kare</span>') : `<span class="tooltip-inline tc" style="display:flex;gap:8px">${this._costHtml(b.cost)}</span>`}<span style="color:var(--dim)">${type === 'wall' ? 'Basılı tutup sürükle: sur hattı · Bırak: yerleştir' : type === 'gate' ? 'Bitmiş bir sur parçasına tıkla: kapı olur' : type === 'rail' ? 'Basılı tutup sürükle: ray hattı · Bırak: yerleştir' : type === 'dock' ? 'Kıyıya yerleştir: bir kısmı suda olmalı · Sol tık: yerleştir' : (mv ? 'Sol tık: yeni yer' : 'Sol tık: yerleştir · Shift+tık: birden çok, köylüler sırayla yapar')}${turn ? ' · R: döndür' : ''} · Sağ tık / Esc: iptal</span>`;
     this.placeEl.classList.remove('hidden');
   }
 
@@ -764,6 +804,19 @@ export class UI {
       if (u.state === 'build' && u.order && u.order.targetId != null) building.add(u.order.targetId);
     }
     const ib = this.idleEl.querySelector('b'); if (ib.textContent !== String(idle)) ib.textContent = idle;
+    // (players 2026-11-22) how many workers gather each resource (villagers and fishing boats; one walking a load home counts too)
+    const wk = { food: 0, wood: 0, stone: 0, gold: 0 };
+    for (const u of units) {
+      if (u.dead || (u.type !== 'villager' && u.type !== 'fishboat')) continue;
+      let o = u.order; if (o && o.type === 'return') o = o.resume;
+      if (o && (o.type === 'gather' || o.type === 'fish') && wk[o.res] !== undefined) wk[o.res]++;
+      else if (u.type === 'fishboat' && o && o.type === 'fish') wk.food++;
+    }
+    for (const r of RES_LIST) {
+      const n = this.resEls[r].querySelector('.wk'); if (!n) continue;
+      const h = wk[r] ? ico('u-villager') + wk[r] : '';
+      if (n._h !== h) { n._h = h; n.innerHTML = h; }
+    }
     this.idleEl.classList.toggle('has', idle > 0);
     const demo = !!this.app.demo;
     // hints
@@ -787,13 +840,14 @@ export class UI {
     this.objEl.classList.remove('hidden');
     const has = (t) => blds.some((b) => b.type === t && !b.dead);
     const ga = p.stats?.gathered || {};
+    // (players 2026-11-22: it asked for a farm in the Stone Age, the farm opens in the Bronze Age) a step that names a
+    // building shows only once that building is open in the player's age
     const steps = [
       ['Yiyecek ve odun topla', (ga.food || 0) + (ga.wood || 0) >= 150],
-
-      ['Tarla kur', has('farm')],
-      ['Kışla kur', has('barracks')],
+      ['Ağıl kur', has('pasture'), 'pasture'],
+      ['Kışla kur', has('barracks'), 'barracks'],
       [next.name + "'ne geç", false],
-    ];
+    ].filter((s) => !s[2] || (BUILDINGS[s[2]]?.age | 0) <= (p.age | 0));
     if (p.age > 0) steps.length = 0;
     let cur = steps.findIndex((s) => !s[1]);
     if (p.age === 0 && cur === steps.length - 1 && (g.time || 0) > 600) steps.length = 0;
@@ -930,6 +984,7 @@ export class UI {
       safe(() => this._refreshSel());
       safe(() => this._refreshCard());
       safe(() => this._refreshGroups());
+      safe(() => this._tipKeep());
       if (this.tut) safe(() => this.tut.tick());
       if (this.techTiles && (this.techT = (this.techT || 0) + 1) % 2 === 0) safe(() => this._refreshTech());
       const paused = this.gameMenuVisible();
@@ -1057,8 +1112,19 @@ export class UI {
     if (!g?.entities) return out;
     const all = [...g.entities.values()];
     const workers = () => all.filter((u) => u.kind === 'unit' && !u.dead && u.owner === e.owner && u.order && u.order.type === 'gather' && u.order.targetId === e.id).length;
-    if (e.type === 'farm') out.push(`<span>${ico('u-villager')} <b>${Math.min(8, workers())}/8</b> işçi</span>`);
-    if (e.type === 'pasture') out.push(`<span>${ico('b-pasture')} <b>${e.pasture?.sheep ?? 3}</b> koyun · <b>${Math.min(6, workers())}/6</b> işçi</span>`);
+    // (players 2026-11-22: "how much food a minute do the pasture and the farm give") the sim's own rates, see
+    // Game._farmGather / _pasGather and the pasture's idle flock in _updateBuilding
+    const mods = g.players?.[e.owner]?.mods || {};
+    if (e.type === 'farm') {
+      const n = Math.min(8, workers()), per = Math.round(FARM_RATE_UI * FARM_RIPE_SHARE * (1 + (mods.farm || 0)) * 60);
+      out.push(`<span>${ico('u-villager')} <b>${n}/8</b> işçi</span>`, `<span>${RES_ICON.food} <b>~${per * n}</b>/dk · işçi başına ~${per}/dk</span>`);
+    }
+    if (e.type === 'pasture') {
+      const n = Math.min(6, workers()), sh = e.pasture?.sheep ?? 3, pm = mods.pasture || 0;
+      const idle = PASTURE_IDLE_RATE * sh * (1 + pm * 0.5) * 60;
+      let herd = 0; for (let i = 0; i < n; i++) herd += PASTURE_HERD_C[i] * 0.5 * (sh / 5) * (1 + pm) * 60;
+      out.push(`<span>${ico('b-pasture')} <b>${sh}</b> koyun · <b>${n}/6</b> işçi</span>`, `<span>${RES_ICON.food} <b>~${Math.round(idle + herd)}</b>/dk${n ? ` · işçisiz ~${Math.round(idle)}/dk` : ''}</span>`);
+    }
     if (e.type === 'station') {
       const tr = all.find((t) => t.train && !t.dead && (t.train.a === e.id || t.train.b === e.id));
       if (tr) out.push(`<span style="color:var(--good,#9be37a)">Bağlı: tren çalışıyor (+${Math.round(25 + (tr.train.path?.length || 0) * 1.2)} altın/sefer)</span>`);
@@ -1095,7 +1161,7 @@ export class UI {
             let ok = false;
             for (const j of idx) if (safe(() => this.game.cancelQueue(e.id, j, it.id), false)) ok = true;
             if (ok) this._click(); else this._error();
-            this.selSig = null; this.cardSig = null; this.tipEl.classList.add('hidden');
+            this.selSig = null; this.cardSig = null; this._hideTip();
           };
           q.append(b);
         });
@@ -1114,13 +1180,38 @@ export class UI {
         host = el('div', 'selinfo', `<div class="selname">${same ? `${ents.length} × ${esc(d0.name)}` : `${ents.length} bina seçili`}</div>` +
           (same && tot ? `<div class="stats">Kuyruk: ${parts.join(' ')} <span class="mbq">· sıradaki: <b>%0</b></span></div><div class="hpbar mbqbar"><i></i></div>` : ''));
         p.append(host);
+      } else {
+        // (players 2026-11-22: "how many archers / spearmen do I have", "select only the riders") one chip per type
+        // with its count: click = only that type, Shift+click = drop that type, Ctrl+click = that type on the whole screen
+        host = el('div', 'selinfo msel');
+        const by = new Map(); for (const x of ents) by.set(x.type, (by.get(x.type) || 0) + 1);
+        const row = el('div', 'mgrp', `<b>${ents.length} birim</b>`);
+        for (const [t, n] of [...by].sort((a, b) => b[1] - a[1])) {
+          const d = this._def({ kind: ents.find((x) => x.type === t).kind, type: t });
+          const c = el('button', 'mg', `${d.icon || ico('x-unknown')}<b>×${n}</b>`);
+          this._tip(c, () => ({ name: `${n} × ${d.name}`, desc: 'Tıkla: yalnızca bunları seç. Shift + tık: seçimden çıkar. Ctrl + tık: ekrandaki bütün ' + d.name + ' birimlerini seç.' }));
+          c.onclick = (ev) => {
+            this._click(); this._hideTip();
+            const cur = this.app.selection || this.sel, typeOf = (id) => safe(() => this.game.getEntity(id)?.type, null);
+            if (ev.shiftKey) { this.app.select?.(cur.filter((id) => typeOf(id) !== t)); return; }
+            if (ev.ctrlKey || ev.metaKey) {
+              const me = this._me(), R = this.app.renderer;
+              const on = (safe(() => R.unitsInRect(0, 0, window.innerWidth, window.innerHeight), []) || []).filter((id) => { const u = safe(() => this.game.getEntity(id), null); return u && !u.dead && u.owner === me && u.type === t; });
+              if (on.length) { this.app.select?.(on); return; }
+            }
+            this.app.select?.(cur.filter((id) => typeOf(id) === t));
+          };
+          row.append(c);
+        }
+        host.append(row);
+        p.append(host);
       }
       const grid = el('div', 'multi');
       ents.slice(0, 40).forEach((e) => {
         const d = this._def(e);
         const m = el('div', 'mu', `${d.icon || ico('x-unknown')}<i></i>`);
         this._tip(m, () => ({ name: d.name, desc: 'Tıkla: yalnızca bunu seç. Shift + tık ya da sağ tık: seçimden çıkar.' }));
-        const drop = () => { this._click(); this.tipEl.classList.add('hidden'); this.app.select?.((this.app.selection || this.sel).filter((id) => id !== e.id)); };
+        const drop = () => { this._click(); this._hideTip(); this.app.select?.((this.app.selection || this.sel).filter((id) => id !== e.id)); };
         m.onclick = (ev) => { if (ev.shiftKey) { drop(); return; } this._click(); this.app.select?.([e.id]); };
         m.oncontextmenu = (ev) => { ev.preventDefault(); drop(); };
         grid.append(m);
@@ -1169,7 +1260,7 @@ export class UI {
           const b = BUILDINGS[bid]; if (!b) continue;
           if (later(b.age)) { put(false); continue; }
           put({
-            icon: b.icon || ico('b-house'), name: b.name, cost: b.cost, time: b.time * BUILD_TIME_MUL / sb, desc: b.desc,
+            icon: b.icon || ico('b-house'), name: b.name, cost: b.cost, time: b.time * BUILD_TIME_MUL / sb, desc: BUILD_DESC[bid] || b.desc,
             check: () => {
               if (!safe(() => g.isUnlocked(this._me(), 'building', bid), true)) return { ok: false, locked: true, reason: 'Gerekli çağ: ' + (AGES[b.age]?.name || b.age) };
               if (!afford(b.cost)) return { ok: false, reason: 'Yetersiz kaynak' };
@@ -1228,7 +1319,20 @@ export class UI {
     const pool = ents.length > 1 ? ents.filter((x) => x.done) : [first];
     const e = pool[0] || first, bd = BUILDINGS[e.type] || {};
     const many = () => (this.app.input?.shift ? 5 : 1); // Shift+click / Shift+hotkey: 5 per building
-    if (!e.done) { put({ ...del, name: 'İnşaatı İptal Et', desc: 'Temeli kaldır.' }, 14); return slots; }
+    // (players 2026-11-22: "let us move and turn buildings") Döndür / Taşı on the two last free places of one own building
+    const moveBtns = () => {
+      if (ents.length !== 1 || e.owner !== this._me()) return;
+      if (!NO_ROTATE.has(e.type) && slots[12] == null) put({ icon: ROT_ICON, name: 'Döndür', desc: 'Binayı çeyrek tur çevirir. Sadece görünüşü değişir. Yerleştirirken R tuşu da çevirir.', run: () => safe(() => g.cmdRotateBuilding(this._me(), e.id), false) !== false }, 12);
+      if (e.done && slots[13] == null && safe(() => g.canRelocate, null)) {
+        const why = safe(() => g.canRelocate(this._me(), e.id), { ok: false });
+        if (why.ok || why.reason !== 'Bu bina taşınamaz') put({
+          icon: MOVE_ICON, name: 'Taşı', desc: 'Binayı başka yere taşı: yeni yere tıkla. Eskisi kalkar, yenisi ücretsiz yeniden kurulur (kule hariç yarı sürede). En fazla 30 kare öteye; kuyruk boş olmalı, saldırı altındaki bina taşınamaz.',
+          check: () => { const c = safe(() => g.canRelocate(this._me(), e.id), { ok: false, reason: '' }); return c.ok ? { ok: true } : { ok: false, reason: c.reason }; },
+          run: () => !!safe(() => this.app.input?.startRelocate?.(e.id), false),
+        }, 13);
+      }
+    };
+    if (!e.done) { moveBtns(); put({ ...del, name: 'İnşaatı İptal Et', desc: 'Temeli kaldır.' }, 14); return slots; }
     if (e.type === 'market' && this.page === 'barter') {
       // one row per resource given: food, wood, stone -> the other two (Shift: 5 times)
       for (const a of BARTER_RES) {
@@ -1324,6 +1428,7 @@ export class UI {
         run: () => { this.page = 'barter'; return true; },
       });
     }
+    moveBtns();
     put(del, 14);
     return slots;
   }
@@ -1363,7 +1468,7 @@ export class UI {
     const r = safe(() => b.spec.run(), false);
     if (r === false || r == null) this._error(); else this._click();
     this.cardSig = null; this.selSig = null;
-    this.tipEl.classList.add('hidden');
+    this._hideTip();
     safe(() => { this._refreshSel(); this._refreshCard(); });
   }
   // Called by input: triggers the visible command button bound to the key. Returns true if handled.
@@ -1381,7 +1486,7 @@ export class UI {
   cardBack() {
     if (this.page === 'root') return false;
     this.page = 'root'; this.cardSig = null;
-    this.tipEl.classList.add('hidden');
+    this._hideTip();
     safe(() => this._refreshCard());
     return true;
   }
@@ -1420,6 +1525,25 @@ export class UI {
     window.addEventListener('mousemove', (ev) => { if (drag && this.game) { const p = pos(ev); this.app.focus?.(p.x, p.z); } });
     window.addEventListener('mouseup', () => { drag = false; });
     this.mm.addEventListener('contextmenu', (ev) => ev.preventDefault());
+  }
+  // (players 2026-11-22) the 4 screen corners cast onto the ground plane at the camera target's height; a corner above
+  // the horizon is taken far out along its direction. Only the camera's matrices (no three.js here).
+  _camQuad(N) {
+    const R = this.app.renderer, c = R?.camera, cam = R?.cam;
+    if (!c || !c.matrixWorld || !c.projectionMatrixInverse || !cam) return null;
+    const pi = c.projectionMatrixInverse.elements, mw = c.matrixWorld.elements, ox = mw[12], oy = mw[13], oz = mw[14];
+    const gy = safe(() => R.groundY(cam.tx, cam.tz), 0) || 0, far = N * 1.5;
+    const corner = (nx, ny) => {
+      const w = pi[3] * nx + pi[7] * ny + pi[11] * 0.5 + pi[15];
+      const vx = (pi[0] * nx + pi[4] * ny + pi[8] * 0.5 + pi[12]) / w, vy = (pi[1] * nx + pi[5] * ny + pi[9] * 0.5 + pi[13]) / w, vz = (pi[2] * nx + pi[6] * ny + pi[10] * 0.5 + pi[14]) / w;
+      const dx = mw[0] * vx + mw[4] * vy + mw[8] * vz, dy = mw[1] * vx + mw[5] * vy + mw[9] * vz, dz = mw[2] * vx + mw[6] * vy + mw[10] * vz;
+      const hl = Math.hypot(dx, dz) || 1;
+      let t = dy < -1e-6 ? (oy - gy) / -dy : Infinity;
+      if (!(t * hl <= far)) t = far / hl;
+      return [ox + dx * t, oz + dz * t];
+    };
+    const q = [corner(-1, 1), corner(1, 1), corner(1, -1), corner(-1, -1)];
+    return q.every(([x, z]) => Number.isFinite(x) && Number.isFinite(z)) ? q : null;
   }
   _drawMinimap() {
     const g = this.game, map = g.map; if (!map) return;
@@ -1512,9 +1636,13 @@ export class UI {
     // selection highlight
     ctx.fillStyle = '#fff';
     for (const e of this._ents()) if (e.owner === this._me() && e.kind === 'unit') ctx.fillRect(e.x * k - 1, e.z * k - 1, 2, 2);
-    // camera marker
-    const cam = this.app.renderer?.cam;
-    if (cam) {
+    // camera marker: the ground the screen really shows (a trapezoid under the tilted camera), the canvas clips it to the map
+    const cam = this.app.renderer?.cam, quad = safe(() => this._camQuad(N), null);
+    if (quad) {
+      ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 1.3; ctx.beginPath();
+      quad.forEach(([x, z], i) => (i ? ctx.lineTo(x * k, z * k) : ctx.moveTo(x * k, z * k)));
+      ctx.closePath(); ctx.stroke();
+    } else if (cam) {
       const w = Math.max(6, (cam.dist || 30) * 1.5 * k), h = w * 0.62;
       ctx.save(); ctx.translate(cam.tx * k, cam.tz * k); ctx.rotate(-(cam.yaw || 0));
       ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 1.3; ctx.strokeRect(-w / 2, -h / 2, w, h);
@@ -1636,6 +1764,10 @@ export class UI {
     let h = '<table class="st"><tr><th></th>' + ps.map((p) => `<th><span class="dot" style="background:${hex(PLAYER_COLORS[p.id] ?? 0xffffff)}"></span>${p.id === this._me() ? 'Sen' : this.game?.mp ? esc(this._pname(p.id)) + ` <small>T${this._teamOf(p.id)}</small>` : 'Rakip ' + p.id}${p.defeated ? ' ☠' : ''}</th>`).join('') + '</tr>';
     h += row('Skor', (p) => `<b style="color:var(--gold)">${this._score(p)}</b>`);
     h += row('Çağ', (p) => AGES[p.age]?.name || p.age);
+    // (players 2026-11-22) what each side has right now: soldiers (ships included) and villagers
+    const now = this._armyNow();
+    h += row('Ordu (şu an)', (p) => now.army[p.id] || 0);
+    h += row('Köylü (şu an)', (p) => now.vil[p.id] || 0);
     for (const r of RES_LIST) h += row(`${RES_ICON[r]} Toplanan ${RES_NAME[r]}`, (p) => Math.floor(st(p).gathered?.[r] || 0));
     h += row('Eğitilen Birim', (p) => st(p).unitsTrained || 0);
     h += row('Kaybedilen Birim', (p) => st(p).unitsLost || 0);
@@ -1645,6 +1777,16 @@ export class UI {
     h += row('Yıkılan Düşman Binası', (p) => st(p).razed || 0);
     h += row('Araştırma', (p) => (typeof st(p).techs === 'number' ? st(p).techs : p.techs?.size || 0));
     return h + '</table>';
+  }
+  _armyNow() {
+    const army = {}, vil = {};
+    for (const u of this.game.units || []) {
+      if (u.dead || u.train || !(u.owner >= 0)) continue;
+      const d = UNITS[u.type]; if (!d) continue;
+      if (u.type === 'villager') vil[u.owner] = (vil[u.owner] || 0) + 1;
+      else if (d.cls !== 'civil' && d.atk > 0) army[u.owner] = (army[u.owner] || 0) + 1;
+    }
+    return { army, vil };
   }
   _enemyKnown(p) {
     const g = this.game;
@@ -2009,7 +2151,7 @@ export class UI {
         const sets = st.settings || {}, sg = el('div', 'lb-settings');
         body.append(this._lobbyMap(sets, slots.length, (t) => call('setSettings', { mapType: t })));
         const srow = (lab, node) => { const r = el('div', 'frow', `<label>${lab}</label>`); r.append(node); sg.append(r); };
-        srow('Harita Boyutu', sel([[256, 'Küçük'], [320, 'Orta'], [384, 'Büyük'], [448, 'Çok Büyük'], [512, 'Dev']], sets.mapSize ?? 320, (v) => call('setSettings', { mapSize: +v })));
+        srow('Harita Boyutu', sel([[192, 'Minik'], [256, 'Küçük'], [320, 'Orta'], [384, 'Büyük'], [448, 'Çok Büyük'], [512, 'Dev']], sets.mapSize ?? 320, (v) => call('setSettings', { mapSize: +v })));
         srow('İklim', sel(CLIMATE_OPTS, sets.climate ?? 'random', (v) => call('setSettings', { climate: v })));
         srow('Başlangıç Kaynakları', sel([['low', 'Düşük'], ['normal', 'Normal'], ['high', 'Yüksek']], sets.startRes ?? 'normal', (v) => call('setSettings', { startRes: v })));
         srow('Başlangıç Çağı', sel(AGES.map((a, j) => [j, a.name]), sets.startAge ?? 0, (v) => call('setSettings', { startAge: +v })));
@@ -2018,7 +2160,7 @@ export class UI {
       } else {
         const sets = st.settings || {};
         body.append(this._lobbyMap(sets, slots.length, null));
-        body.append(el('div', 'lb-hint', `Harita: ${esc(({ 256: 'Küçük', 320: 'Orta', 384: 'Büyük', 448: 'Çok Büyük', 512: 'Dev' })[sets.mapSize] || sets.mapSize || '-')} · Tür: ${MAP_TYPE_TR[sets.mapType || 'river'] || '-'} · İklim: ${(CLIMATE_OPTS.find((c) => c[0] === (sets.climate || 'random')) || CLIMATE_OPTS[0])[1]} · Kaynak: ${({ low: 'Düşük', normal: 'Normal', high: 'Yüksek' })[sets.startRes] || '-'} · Çağ: ${AGES[sets.startAge ?? 0]?.name || '-'}`));
+        body.append(el('div', 'lb-hint', `Harita: ${esc(({ 192: 'Minik', 256: 'Küçük', 320: 'Orta', 384: 'Büyük', 448: 'Çok Büyük', 512: 'Dev' })[sets.mapSize] || sets.mapSize || '-')} · Tür: ${MAP_TYPE_TR[sets.mapType || 'river'] || '-'} · İklim: ${(CLIMATE_OPTS.find((c) => c[0] === (sets.climate || 'random')) || CLIMATE_OPTS[0])[1]} · Kaynak: ${({ low: 'Düşük', normal: 'Normal', high: 'Yüksek' })[sets.startRes] || '-'} · Çağ: ${AGES[sets.startAge ?? 0]?.name || '-'}`));
       }
       foot.innerHTML = '';
       const mySlot = slots.find((s) => s.kind === 'human' && s.peer === me);

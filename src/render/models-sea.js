@@ -82,6 +82,16 @@ export function dockWaterDir(map, tx, tz, size) {
   } catch (err) { return 2; }
 }
 function maskDir(mask) { const m = mask & 15; for (let d = 0; d < 4; d++) if (m === 1 << d) return d; return 2; }
+// height the dock model stands at: the ground under its land platform (the half away from the water), never below
+// the water surface (y 0) - the footprint's centre often lies on the waterline or in the water and sank the deck -
+// and capped so a dock on a high bank still reaches down to the water with its piles
+export function dockY(map, x, z, tx, tz, size) {
+  try {
+    const s = size || 3, d = SEA_DIR[dockWaterDir(map, tx, tz, s)];
+    const h = map.heightAt(x - d[0] * s * .3, z - d[1] * s * .3);
+    return Math.max(.06, Math.min(.6, h));
+  } catch (err) { return .06; }
+}
 
 // link mask for rail (rail + station tiles of the same owner) and dock (water side), cached per frame
 const RAIL_LINK = { rail: 1, station: 1 };

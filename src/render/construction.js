@@ -398,7 +398,8 @@ export function updateConstruction(v, e, p, dt, y, vis, ctx) {
       const px = F.position.x + lx * cr + lz * sr, pz = F.position.z - lx * sr + lz * cr;
       const era = rig.era;
       const kind = era <= 1 ? 'chips' : era === 2 ? (Math.random() < .5 ? 'sdust' : 'chips') : era === 3 ? 'sdust' : (Math.random() < .5 ? 'bspark' : 'sdust');
-      try { fx.burst(kind, e.x + px * vk, y + top * vk, e.z + pz * vk); } catch (err) { /* fx optional */ }
+      const ry = v.root.rotation.y, rc = Math.cos(ry), rs = Math.sin(ry);   // (the rig turns with the building's quarter turn)
+      try { fx.burst(kind, e.x + (px * rc + pz * rs) * vk, y + top * vk, e.z + (pz * rc - px * rs) * vk); } catch (err) { /* fx optional */ }
     }
   }
   rig.lastP = p;
