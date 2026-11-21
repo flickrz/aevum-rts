@@ -1069,7 +1069,7 @@ export class UI {
       const v = Math.floor(p.res[r] || 0), d = this.resEls[r];
       if (this.lastRes[r] !== v) {
         d.querySelector('b').textContent = v;
-        if (this.lastRes[r] != null && v > this.lastRes[r]) { d.classList.remove('pulse'); void d.offsetWidth; d.classList.add('pulse'); }
+        /* (owner 2026-11-22: the rows 'göz kırpıyor') no flash when a resource comes in: the number moving is enough */
         this.lastRes[r] = v;
       }
     }
