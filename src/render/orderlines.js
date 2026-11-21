@@ -135,8 +135,11 @@ export class OrderLines {
       const e = game.getEntity(id);
       if (!e || e.dead) continue;
       if (e.kind === 'building' && nr < MAX_RALLY && (e.owner === me || (game.isAlly && game.isAlly(e.owner, me))) && this._range(game, e, hf)) nr++;
-      if (e.kind === 'unit' && e.type === 'healer' && nh < MAX_HEAL && (e.owner === me || (game.isAlly && game.isAlly(e.owner, me)))) {
-        const pts = []; for (let i = 0; i < 48; i++) { const a = i / 48 * Math.PI * 2; pts.push([e.x + Math.cos(a) * HEALER_R, e.z + Math.sin(a) * HEALER_R]); }
+      /* (owner 2026-11-22: the circles 'titriyor') only for ONE selected healer: overlapping dashed circles of a group
+         flickered, and the centre is held while she shifts a little so the dashes do not crawl */
+      if (e.kind === 'unit' && e.type === 'healer' && selected.size === 1 && nh < MAX_HEAL && (e.owner === me || (game.isAlly && game.isAlly(e.owner, me)))) {
+        const hc = this._hc && this._hc.id === e.id && (e.x - this._hc.x) ** 2 + (e.z - this._hc.z) ** 2 < 0.36 ? this._hc : (this._hc = { id: e.id, x: e.x, z: e.z });
+        const pts = []; for (let i = 0; i < 48; i++) { const a = i / 48 * Math.PI * 2; pts.push([hc.x + Math.cos(a) * HEALER_R, hc.z + Math.sin(a) * HEALER_R]); }
         this._loop(this.rHeal, pts, hf); nh++;
       }
       if (e.owner !== me) continue;
