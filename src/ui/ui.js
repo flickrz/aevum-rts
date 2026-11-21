@@ -907,6 +907,9 @@ export class UI {
     this.objEl.querySelector('.acost').innerHTML = cost;
     /* (owner 2026-11-22) no 'Eksik: …' line: the cost chips show what is short and the age button's tooltip lists the rest */
     const om = this.objEl.querySelector('.om'); om.innerHTML = ''; om.classList.remove('ready'); void mtxt;
+    // what is missing besides resources (building types, named buildings, the minimum stay) for the age button's tooltip
+    const resIc = Object.values(RES_ICON);
+    this._ageMiss = miss.filter((m) => !resIc.some((ic) => m.startsWith(ic))).map((m) => stripIcons(m).trim()).filter(Boolean).join(' · ');
   }
 
   // the age-up button of the next age box: the town center's own age-up action (same check / run as the card button)
@@ -921,7 +924,7 @@ export class UI {
       check: () => {
         if (!tcs().length) return { ok: false, reason: 'Şehir Merkezi yok' };
         const r = safe(() => g.canAgeUp(me), { ok: false, reason: '' }) || { ok: false };
-        return { ok: !!r.ok, reason: r.reason };
+        return { ok: !!r.ok, reason: !r.ok && this._ageMiss ? 'Gerekli: ' + this._ageMiss : r.reason };
       },
       run: () => tcs().some((b) => safe(() => g.ageUp(b.id), false)),
     };
