@@ -20,7 +20,7 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 {
   const h = UNITS.healer;
   ok(BUILDINGS.temple.age === 0 && BUILDINGS.temple.trains.includes('healer'), 'temple: age 0, trains the healer');
-  ok(h && h.name === 'Büyücü' && h.age === 0 && h.atk === 0 && h.hp === 40 && h.speed === 2.2 && h.los === 7 && h.pop === 1 && h.time === 28 && h.cost.food === 60 && h.cost.gold === 40, 'healer data (Büyücü, 60 food 40 gold, 28 s, 40 hp, atk 0)');
+  ok(h && h.name === 'Büyücü' && h.age === 0 && h.atk === 0 && h.hp === 40 && h.speed === 2.2 && h.los === 11 && h.pop === 1 && h.time === 28 && h.cost.food === 60 && h.cost.gold === 40, 'healer data (Büyücü, 60 food 40 gold, 28 s, 40 hp, atk 0)');
   const g = mk(); const p = g.players[0]; p.res.wood = p.res.stone = p.res.food = p.res.gold = 1000;
   ok(g.isUnlocked(0, 'building', 'temple') && g.isUnlocked(0, 'unit', 'healer'), 'temple and healer unlocked in the Stone Age');
   let t = null; for (let r = 0; r < 10 && !t; r++) for (let dz = -r; dz <= r && !t; dz++) for (let dx = -r; dx <= r && !t; dx++) if (g.canPlace('temple', CX - 4 + dx, CZ - 4 + dz, 0)) { const id = g.placeBuilding(0, 'temple', CX - 4 + dx, CZ - 4 + dz, []); if (id != null) t = g.getEntity(id); }
@@ -89,7 +89,7 @@ const duel = (withHealer) => {
 
 // 6) idle, she walks to a wounded friend she sees (beyond her heal radius) and heals him
 {
-  const g = mk(); const h = g._addUnit('healer', 0, CX, CZ), s = g._addUnit('spearman', 0, CX + 6.5, CZ);
+  const g = mk(); const h = g._addUnit('healer', 0, CX, CZ), s = g._addUnit('spearman', 0, CX + HEALER_R + 2.5, CZ);
   s.hp = 10; s.stance = 'hold';
   const d0 = dist(h, s);
   step(g, 6);
@@ -145,9 +145,9 @@ const script = (saveAt) => {
 
 // 10) she gives seeking up for 10 s when the wounded friend she walked to cannot be reached (deep water round him)
 {
-  const g = mk(); const N = g.map.size, TX = CX + 6.5, TZ = CZ + 0.5;
-  for (let z = CZ - 7; z <= CZ + 7; z++) for (let x = CX; x <= CX + 14; x++) { const dx = x + 0.5 - TX, dz = z + 0.5 - TZ, d = dx * dx + dz * dz; if (d >= 2 * 2 && d <= 5.6 * 5.6) g.map.tiles[z * N + x] = 4; }
-  g._blkMark(CX, CZ - 7, 15, 15);
+  const g = mk(); const N = g.map.size, TX = CX + 0.3 + HEALER_R + 2.5, TZ = CZ + 0.5, RO = HEALER_R + 1.6;
+  for (let z = CZ - 12; z <= CZ + 12; z++) for (let x = CX; x <= CX + 24; x++) { const dx = x + 0.5 - TX, dz = z + 0.5 - TZ, d = dx * dx + dz * dz; if (d >= 2 * 2 && d <= RO * RO) g.map.tiles[z * N + x] = 4; }
+  g._blkMark(CX, CZ - 12, 25, 25);
   const h = g._addUnit('healer', 0, CX + 0.3, TZ), s = g._addUnit('spearman', 0, TX, TZ);
   s.hp = 10; s.stance = 'hold'; g.cmdStop([s.id]);
   let seeks = 0, was = false;

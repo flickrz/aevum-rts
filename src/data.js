@@ -36,7 +36,7 @@ export const UNITS = {
   artillery: U('artillery', 'Sahra Topu', 'siege', 4, { wood: 220, gold: 250, stone: 120 }, 50, 120, 48, 1, 1.2, 11, 6, 12, 3, { building: 5.8, cavalry: 0.6 }, 'cannonball', '🧨', 'En uzun menzilli kuşatma silahı.'),
   // (owner 2026-11-21) the healer: a hooded woman trained at the temple; never attacks, heals the friendly living
   // units around her every second, in combat too (see Game._healTick, HEALER_R / HEALER_HP in game.js)
-  healer: U('healer', 'Büyücü', 'support', 0, { food: 60, gold: 40 }, 28, 40, 0, 0, 2.2, 0, 1, 7, 1, {}, null, '🧙‍♀️', 'Çevresindeki dost birlikleri savaş sırasında da iyileştirir (5 kare, 2 can/sn). Saldırmaz.'),
+  healer: U('healer', 'Büyücü', 'support', 0, { food: 60, gold: 40 }, 28, 40, 0, 0, 2.2, 0, 1, 11, 1, {}, null, '🧙‍♀️', 'Çevresindeki dost birlikleri savaş sırasında da iyileştirir (8 kare, 2 can/sn). Saldırmaz.'),
   // --- naval (ships: naval:true, cls 'ship', live only on water tiles 3/4) ---
   fishboat: Object.assign(U('fishboat', 'Balıkçı Teknesi', 'ship', 0, { wood: 60 }, 22, 60, 0, 0, 2.6, 0, 2, 7, 1, {}, null, '🎣', 'Balık sürülerinden yiyecek toplar ve en yakın iskeleye taşır.'), { naval: true }),
   transport: Object.assign(U('transport', 'Nakliye Gemisi', 'ship', 1, { wood: 120 }, 30, 160, 0, 2, 2.8, 0, 2, 7, 1, {}, null, '⛵', 'Silahsız. 10 kara birliğini kıyıdan kıyıya taşır.'), { naval: true }),

@@ -78,7 +78,7 @@ export const TEMPLE_HEAL_R = 7;
 // the healer (Büyücü, owner 2026-11-21): once a second each one heals every wounded friendly living unit within
 // HEALER_R tiles (centre distance) by HEALER_HP x (1 + the temple heal techs), in combat too; a unit gets at most one
 // healer's heal per second (no stacking). An idle healer walks to a wounded friend she sees and stops HEALER_STOP off.
-export const HEALER_R = 5, HEALER_HP = 2, HEALER_STOP = 3;
+export const HEALER_R = 8, HEALER_HP = 2, HEALER_STOP = 5;   /* (owner 2026-11-22: 5 was "çok dar") */
 // the castle shoots a volley at up to this many targets every 2 s, its attack +4 per age (2026-11-17 playtest)
 export const CASTLE_VOLLEY = 3, CASTLE_AGE_ATK = 4;
 // from the Gunpowder Age on, towers fire cannonballs (with their splash) instead of arrows
