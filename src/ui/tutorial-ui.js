@@ -82,6 +82,7 @@ export class TutorialUI {
       if (a === 'idle') add(this.ui.idleEl);
       else if (a === 'grp') add(this.ui.grpEl);
       else {
+        if (a === 'age') add(this.ui.ageBtn);   // (the age-up button of the next age box, bottom left)
         const name = a === 'cat' ? CAT_NAMES[b] : a === 'b' ? BUILDINGS[b]?.name : a === 'u' ? UNITS[b]?.name : a === 'st' ? STANCE_NAMES[b] : null;
         for (const btn of this.ui.buttons || []) {
           if (!btn || !btn.spec) continue;
@@ -146,6 +147,7 @@ export class TutorialUI {
     if (!o) { objEl.classList.add('hidden'); return; }
     objEl.classList.remove('hidden');
     const steps = objEl.querySelector('.osteps'), ot = objEl.querySelector('.ot'), om = objEl.querySelector('.om'), bar = objEl.querySelector('.obar i');
+    const cost = objEl.querySelector('.acost'); if (cost && cost.innerHTML) cost.innerHTML = '';   // (no age cost in the chapter line)
     const head = 'Öğretici · Bölüm ' + o.n + '/' + o.of + ' · ' + o.title, txt = o.done ? '✔ ' + o.text : o.text, prog = o.done ? 'Tamamlandı' : o.progress;
     if (steps.textContent !== head) steps.textContent = head;
     if (ot.textContent !== txt) ot.textContent = txt;
