@@ -67,7 +67,7 @@ export class Input {
   isEnemyOwner(o) { const g = this.app.game, me = this.me(); if (o == null || o < 0 || o === me) return false; try { const r = g?.isEnemy?.(me, o); if (r !== undefined) return !!r; } catch (err) { /* ignore */ } return !this.isAllyOwner(o); }
 
   reset() {
-    this.placing = null; this.wallStart = null; this.placeDown = false; this.groups = {}; this.keys.clear(); this.relocId = null; this.placeRot = 0;
+    this.placing = null; this.wallStart = null; this.placeDown = false; this.groups = {}; this.keys.clear(); this.placeRot = 0;
     this.endDrag(); this.rot = null; this.setLineLabel(null);
     try { this.app.renderer.setGhost(null); } catch (err) { /* ignore */ }
   }
@@ -91,46 +91,23 @@ export class Input {
   // ---------- placement ----------
   startPlacement(type) {
     if (!this.active || !BUILDINGS[type]) return;
-    this.endRelocate();
     this.placing = type; this.wallStart = null; this.placeDown = false; this.shiftPlaced = false;
     this.placeRot = this.canTurn(type) ? (this.placeRot | 0) & 3 : 0;   // (the last turn is kept for the next building)
     this.syncGhostRot();
     try { this.app.ui.setPlacement(type); } catch (err) { /* ignore */ }
     this.updateGhost();
   }
-  // "Taşı" on a selected own building: the next click on the ground moves it there (Game.cmdRelocate)
-  startRelocate(id) {
-    const b = this.ent(id);
-    if (!this.active || !b || b.kind !== 'building' || b.owner !== this.me()) return false;
-    const c = this.game.canRelocate ? this.game.canRelocate(this.me(), id) : { ok: false };
-    if (!c.ok) { try { this.app.ui.hint('reloc', '⛔ ' + (c.reason || 'Bu bina taşınamaz'), 'warn', 2.5); } catch (err) { /* ignore */ } return false; }
-    if (this.targeting) this.cancelTargeting();
-    this.placing = b.type; this.wallStart = null; this.placeDown = false; this.shiftPlaced = false;
-    if (this.relocId == null) this.relocRot0 = this.placeRot | 0;   // (the turn of normal placing comes back after the move)
-    this.relocId = id; this.placeRot = (b.rot | 0) & 3;
-    this.syncGhostRot();
-    try { this.app.ui.setPlacement(b.type, 'move'); } catch (err) { /* ignore */ }
-    this.updateGhost();
-    return true;
-  }
   canTurn(type) { return !!type && !NO_ROTATE.has(type) && !this.isLineTool(type); }
   syncGhostRot() { const r = this.app.renderer; try { if (r && typeof r.setGhostRot === 'function') r.setGhostRot(this.placeRot | 0); } catch (err) { /* ignore */ } }
-  // R while placing: a quarter turn (moving a building: only the ghost turns, cmdRelocate takes the turn when the move is made)
+  // R while placing: a quarter turn
   turnPlacement() {
     if (!this.placing || !this.canTurn(this.placing)) return false;
     this.placeRot = ((this.placeRot | 0) + 1) & 3;
     this.syncGhostRot(); this.updateGhost();
     return true;
   }
-  // a move ended or was cancelled: the placing turn from before it is back
-  endRelocate() {
-    if (this.relocId == null) return;
-    this.relocId = null; this.placeRot = (this.relocRot0 | 0) & 3; this.relocRot0 = 0;
-    this.syncGhostRot();
-  }
   cancelPlacement() {
     if (!this.placing) return;
-    this.endRelocate();
     this.placing = null; this.wallStart = null; this.placeDown = false;
     try { this.app.renderer.setGhost(null); } catch (err) { /* ignore */ }
     try { this.app.ui.setPlacement(null); } catch (err) { /* ignore */ }
@@ -195,25 +172,12 @@ export class Input {
       this.setLineLabel(plan.length && (this.placeDown || plan.length !== 1) ? plan : null);
       return;
     }
-    const valid = this.relocId != null ? !!(this.game.canRelocateTo && this.game.canRelocateTo(this.me(), this.relocId, tx, tz))
-      : !!this.game.canPlace(this.placing, tx, tz, this.me()) && !!this.game.canAfford(this.me(), BUILDINGS[this.placing].cost);
+    const valid = !!this.game.canPlace(this.placing, tx, tz, this.me()) && !!this.game.canAfford(this.me(), BUILDINGS[this.placing].cost);
     this.app.renderer.setGhost({ type: this.placing, tx, tz, valid, rot: this.placeRot | 0 });
   }
   placeAt(tx, tz, queue = false) {
     const id = this.game.placeBuilding(this.me(), this.placing, tx, tz, this.ownVillagers(), !!queue, this.canTurn(this.placing) ? this.placeRot | 0 : 0);
     return id != null && id !== false;
-  }
-  // the move of a building: the old one goes, a free foundation of it goes up here (the nearest villager is sent)
-  relocateAt(tx, tz) {
-    const rot = this.canTurn(this.placing) ? this.placeRot & 3 : null;
-    const id = this.game.cmdRelocate ? this.game.cmdRelocate(this.me(), this.relocId, tx, tz, this.ownVillagers(), rot) : null;
-    if (id == null || id === false) return false;
-    if (typeof id === 'number') {
-      this.app.select([id], true);
-      const r = this.app.renderer; try { if (r && typeof r.flashTarget === 'function') r.flashTarget(id, C_BUILD); } catch (err) { /* ignore */ }
-    }
-    try { this.app.ui.toast('Yeni temel atıldı: en yakın köylü yola çıktı, istersen başka köylü de gönder', 'info'); } catch (err) { /* ignore */ }
-    return true;
   }
   finishPlacement(e) {
     const type = this.placing;
@@ -234,8 +198,6 @@ export class Input {
         this.updateGhost();
         return; // tool stays active: press again to continue the wall
       }
-    } else if (this.relocId != null) {
-      if (this.relocateAt(end.tx, end.tz)) { this.sfx('place'); this.cancelPlacement(); return; }
     } else if (this.placeAt(end.tx, end.tz, !!e.shiftKey)) placed = 1;
     this.wallStart = null;
     if (placed) {
@@ -246,11 +208,7 @@ export class Input {
       try {
         const ui = this.app.ui, d = BUILDINGS[type];
         if (ui && ui.hint) {
-          if (this.relocId != null) {
-            const c = this.game.relocateCheck ? this.game.relocateCheck(this.me(), this.relocId, end.tx, end.tz) : null;
-            ui.hint('place', '⛔ ' + ((c && c.reason) || 'Buraya taşınamaz: boş ve keşfedilmiş başka bir yer seç'));
-          }
-          else if (d && d.cost && !this.game.canAfford(this.me(), d.cost)) ui.hint('afford', '⛔ Yetersiz kaynak: ' + (d.name || 'bina') + ' için kaynağın yetmiyor');
+          if (d && d.cost && !this.game.canAfford(this.me(), d.cost)) ui.hint('afford', '⛔ Yetersiz kaynak: ' + (d.name || 'bina') + ' için kaynağın yetmiyor');
           else if (type === 'dock') ui.hint('place', '⛔ Kıyıya yerleştir: bir kısmı suda olmalı');
           else if (type === 'gate') ui.hint('place', '⛔ Kapı bitmiş bir sur parçasına ya da boş bir kareye konur');
           else ui.hint('place', '⛔ Buraya inşa edilemez — boş ve keşfedilmiş bir alan seç');

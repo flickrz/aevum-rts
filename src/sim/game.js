@@ -91,12 +91,10 @@ export const TREE_WOOD = 800;
 export const TOWER_AGE_RANGE = 1;
 export const towerAgeBonus = (type, age) => (type === 'tower' ? Math.max(0, (age | 0) - 1) * TOWER_AGE_RANGE : 0);
 // commands a client may send over the network (Game.execCommand); the app may wrap these on the instance
-export const CMD_METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload', 'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol', 'cmdRotateBuilding', 'cmdRelocate'];
+export const CMD_METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload', 'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol', 'cmdRotateBuilding'];
 const CMD_SET = new Set(CMD_METHODS);
-// buildings turn in quarter turns (b.rot 0..3, view only: footprints are square) and can be moved, except these
+// buildings turn in quarter turns (b.rot 0..3, view only: footprints are square), except these
 export const NO_ROTATE = new Set(['wall', 'gate', 'farm', 'rail', 'tower', 'dock']);   // (the renderer never turns a tower or a dock)
-export const RELOC_MAX = 30;   // a building moves at most this many tiles (from its old corner tile)
-export const NO_RELOCATE = new Set(['towncenter', 'castle', 'wall', 'gate', 'farm', 'dock', 'rail']);
 const rotQ = v => (Number.isInteger(v) ? v & 3 : 0);
 const _strH = new Map();
 function strHash(s) { let h = _strH.get(s); if (h !== undefined) return h; h = 2166136261; const t = String(s); for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 16777619); h >>>= 0; _strH.set(s, h); return h; }
@@ -300,7 +298,6 @@ export class Game {
       case 'trade': a[0] = pid; if (!key(TRADE_VAL, a[1]) || !key(TRADE_VAL, a[2])) return false; break;
       case 'cmdTribute': case 'cmdGroup': a[0] = pid; break;
       case 'cmdRotateBuilding': a[0] = pid; if (!own(a[1])) return false; a.length = 2; break;
-      case 'cmdRelocate': a[0] = pid; if (!own(a[1]) || !fin(a[2]) || !fin(a[3])) return false; a[4] = ids(a[4] || []); a[5] = Number.isInteger(a[5]) ? rotQ(a[5]) : null; a.length = 6; break;
     }
     try { return this._sim(() => Game.prototype[method].apply(this, a)); } catch (err) { console.error('[execCommand ' + method + ']', err); return false; }
   }
@@ -985,10 +982,6 @@ export class Game {
     if (!NO_ROTATE.has(type)) b.rot = rotQ(rot);
     // (the foundation blocks nobody yet: units walk through it; _complete pushes them out and re-plans routes across it)
     this.events.emit('buildStart', { e: b });
-    this._sendBuilders(owner, b, builderIds, queue);
-    return b.id;
-  }
-  _sendBuilders(owner, b, builderIds, queue) {
     if (builderIds && builderIds.length) this.cmdBuild(builderIds, b.id, queue);
     else {
       // no builder given: nearest idle villager, else nearest villager
@@ -996,8 +989,9 @@ export class Game {
       for (const u of this.units) { if (u.dead || u.owner !== owner || u.type !== 'villager') continue; const idle = !u.order, dd = (u.x - b.x) ** 2 + (u.z - b.z) ** 2; if ((idle && !bi) || (idle === bi && dd < bd)) { best = u; bd = dd; bi = idle; } }
       if (best) this.cmdBuild([best.id], b.id);
     }
+    return b.id;
   }
-  // ---- turning and moving a building (players asked for both). Turning is view only (b.rot, quarter turns).
+  // ---- turning a building (players asked for it). Turning is view only (b.rot, quarter turns).
   canRotate(owner, id) {
     const b = this.entities.get(id);
     return !!b && b.kind === 'building' && !b.dead && b.owner === owner && !NO_ROTATE.has(b.type);
@@ -1007,60 +1001,6 @@ export class Game {
     const b = this.entities.get(id); b.rot = ((b.rot | 0) + 1) & 3;
     this.events.emit('buildingRot', { e: b });
     return true;
-  }
-  // moving: a finished building with nothing queued is taken down (no refund, no loss) and a free foundation of the
-  // same type goes up at the new spot, built in half the time and keeping the old hp share
-  canRelocate(owner, id) {
-    const b = this.entities.get(id);
-    if (!b || b.kind !== 'building' || b.dead || b.owner !== owner) return { ok: false, reason: 'Bina seç' };
-    if (NO_RELOCATE.has(b.type)) return { ok: false, reason: 'Bu bina taşınamaz' };
-    if (!b.done) return { ok: false, reason: 'Bina daha bitmedi' };
-    if (b.queue.length) return { ok: false, reason: 'Önce üretimi bitir ya da iptal et' };
-    if (b.hitT !== undefined && this.time - b.hitT < 10) return { ok: false, reason: 'Saldırı altındaki bina taşınamaz' };
-    // (the new foundation has progress 0, so prodLeft would not count it: moving the last one lost the game at once)
-    if (PROD_B.has(b.type) && this.prodLeft(owner) <= 1) return { ok: false, reason: 'Son üretim binanı taşıyamazsın' };
-    return { ok: true };
-  }
-  // can b's type stand at tx,tz if b itself were gone (its own footprint counts as free)
-  canRelocateTo(owner, id, tx, tz) { return this.relocateCheck(owner, id, tx, tz).ok; }
-  // the same with the reason shown to the player when the spot is refused
-  relocateCheck(owner, id, tx, tz) {
-    const c = this.canRelocate(owner, id); if (!c.ok) return c;
-    const b = this.entities.get(id), N = this.map.size, B = this.map.blocked, keep = [];
-    tx |= 0; tz |= 0;
-    if (tx === b.tx && tz === b.tz) return { ok: false, reason: 'Bina zaten burada' };
-    if ((tx - b.tx) ** 2 + (tz - b.tz) ** 2 > RELOC_MAX * RELOC_MAX) return { ok: false, reason: 'Çok uzak (en fazla ' + RELOC_MAX + ' kare)' };
-    for (let j = 0; j < b.size; j++) for (let i = 0; i < b.size; i++) { const k = (b.tz + j) * N + b.tx + i; keep.push(B[k]); B[k] = 0; }
-    let ok = false;
-    try { ok = this.canPlace(b.type, tx, tz, owner); } finally {
-      let n = 0; for (let j = 0; j < b.size; j++) for (let i = 0; i < b.size; i++) B[(b.tz + j) * N + b.tx + i] = keep[n++];
-    }
-    return ok ? { ok: true } : { ok: false, reason: 'Buraya taşınamaz: boş ve keşfedilmiş başka bir yer seç' };
-  }
-  // rot (optional): the quarter turn the moved building takes (R while moving); otherwise it keeps its own
-  cmdRelocate(owner, id, tx, tz, builderIds = [], rot = null) {
-    if (!this.players[owner] || !this.canRelocateTo(owner, id, tx, tz)) return null;
-    tx |= 0; tz |= 0;
-    const b = this.entities.get(id), type = b.type;
-    rot = NO_ROTATE.has(type) ? 0 : Number.isInteger(rot) ? rotQ(rot) : rotQ(b.rot | 0);
-    // what the building carries goes along: the flock of a pasture and the rally flag
-    const pas = b.pasture ? { sheep: b.pasture.sheep, g: b.pasture.g || 0 } : null, rally = b.rally ? Object.assign({}, b.rally) : null;
-    const hp = b.maxHp > 0 ? Math.max(0.01, Math.min(1, b.hp / b.maxHp)) : 1;
-    // whoever works at / repairs it is let go (a pasture's herders, builders)
-    for (const u of this.units) {
-      if (u.dead || u.owner !== owner) continue;
-      if (u.queue.length) u.queue = u.queue.filter(q => !q || q.targetId !== id);
-      if (u.order && u.order.targetId === id) { if (u.order.type === 'gather') this._unhunt(u.order); u.order = null; u.targetId = null; u.path = null; u.pk = null; u.state = 'idle'; u.anim = 'idle'; }
-    }
-    this._dropBuilding(b);
-    if (type === 'station') this._railDirty = true;
-    const nb = this._addBuilding(type, owner, tx, tz, false);
-    nb.rot = rot; nb.reloc = 1; nb.relocHp = hp;
-    if (pas && nb.pasture) Object.assign(nb.pasture, pas);
-    if (rally) nb.rally = rally;
-    this.events.emit('buildStart', { e: nb });
-    this._sendBuilders(owner, nb, builderIds, false);
-    return nb.id;
   }
   _live(ids) { const out = []; for (const id of ids || []) { const u = this.entities.get(id); if (u && u.kind === 'unit' && !u.dead && !u.aboard && !u.train) out.push(u); } return out; }
   // Explore: units wander toward unexplored tiles until they get any other order.
@@ -2109,7 +2049,7 @@ export class Game {
     o.tick = (o.tick || 0) + dt; if (o.tick >= 1) { o.tick = 0; this.events.emit('buildTick', { unit: u, building: b }); } // view only (hammer sound)
     if (!b.done) {
       if (!b.started && (b.type === 'wall' || b.type === 'tower' || b.type === 'gate')) { b.started = true; this._block(b, this._solidV(b)); this._repathAround(b); this._pushOut(b); }   // (work begun: solid, see _addBuilding)
-      const dp = dt / (d.time * BUILD_TIME_MUL) * c * (this.cfg.sandbox && b.owner === 0 ? 2 : 1) * (b.reloc && b.type !== 'tower' ? 2 : 1); b.progress += dp; b.hp = Math.min(b.maxHp, b.hp + b.maxHp * dp);
+      const dp = dt / (d.time * BUILD_TIME_MUL) * c * (this.cfg.sandbox && b.owner === 0 ? 2 : 1); b.progress += dp; b.hp = Math.min(b.maxHp, b.hp + b.maxHp * dp);
       if (b.progress >= 1) this._complete(b);
     } else b.hp = Math.min(b.maxHp, b.hp + b.maxHp * dt / d.time * 0.6 * c);
   }
@@ -2118,9 +2058,7 @@ export class Game {
     // the foundation becomes solid now (flow fields go stale through _blkMark); units inside step out, routes across it are planned again
     const v = this._solidV(b);
     if (v !== 3) { if (b.type === 'dock') this._navBlockDock(b, v); else this._block(b, v); this._repathAround(b); this._pushOut(b); }
-    // (a moved building ends with the hp share it had and is not counted as a new one)
-    if (b.reloc) { b.hp = Math.max(1, Math.min(b.hp, Math.round(b.maxHp * (b.relocHp || 1)))); delete b.reloc; delete b.relocHp; } else p.stats.buildingsBuilt++;
-    this._popCap(p);
+    p.stats.buildingsBuilt++; this._popCap(p);
     if (b.type === 'rail' || b.type === 'station') this._railDirty = true;
     this.events.emit('buildComplete', { e: b });
     if (b.owner === this.me) this.events.emit('notify', { text: BUILDINGS[b.type].name + ' tamamlandı', type: 'good', x: b.x, z: b.z });

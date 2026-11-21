@@ -52,9 +52,8 @@ const BUILD_DESC = {
   wall: BUILDINGS.wall.desc + ' Kapı için: bitmiş bir sur parçasını seç → Kapı Aç (Q), ya da bu sayfadaki Kapı ile sur parçasına tıkla.',
   gate: 'Bitmiş bir sur parçasına tıkla: o parça kapı olur (sadece sen ve müttefiklerin geçer). 3 kare geniş kapı için: suru seç → Kapı Aç.',
 };
-// Döndür / Taşı on the building card (no sprite icons for them: Material Design rotate / open_with, Apache 2.0)
+// Döndür on the building card (no sprite icon for it: Material Design rotate, Apache 2.0)
 const ROT_ICON = '<svg class="gi" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 4a8 8 0 1 0 7.75 10h-2.1A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35A7.96 7.96 0 0 0 12 4z"/></svg>';
-const MOVE_ICON = '<svg class="gi" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M10 9h4V6h3l-5-5-5 5h3v3zm-1 1H6V7l-5 5 5 5v-3h3v-4zm14 2l-5-5v3h-3v4h3v3l5-5zm-9 3h-4v3H7l5 5 5-5h-3v-3z"/></svg>';
 const CAT_TR = { eco: 'Ekonomi', mil: 'Askeri', def: 'Savunma', tra: 'Ulaşım' };
 const CAT_ICON = CAT_ICONS;
 const TILE_COL = [[79, 125, 58], [91, 74, 46], [201, 183, 122], [74, 163, 199], [31, 95, 150], [119, 115, 108], [47, 90, 44]];
@@ -547,12 +546,12 @@ export class UI {
       <b>Komut:</b> Sağ tık — yürü, topla, saldır, inşa et / onar. <kbd>Shift</kbd> basılıyken verilen emirler sıraya eklenir (köylü önce mevcut işini bitirir). Düz sağ tıkla yürüyen birlikler yoldaki düşmanlara aldırmaz; yolda savaşmaları için <kbd>K</kbd> (Saldırarak Yürü) ya da <kbd>V</kbd> (Devriye) tuşuna basıp yere sol tıkla. Kendi oduncu ya da maden kampına sağ tık, köylüleri en yakın kaynağa gönderir.<br>
       <b>Kamera:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / ok tuşları veya ekran kenarı ile kaydır (WASD yalnızca kamerayı oynatır), tekerlek ile yakınlaş, orta tuş ya da <kbd>Boşluk</kbd> basılıyken fareyle döndür, <kbd>Home</kbd> / <kbd>Backspace</kbd> Şehir Merkezine dön. Touchpad ile mi oynuyorsun? Ayarlar → <b>Touchpad modu</b>: iki parmakla kaydır, parmakları açıp kapatarak yakınlaş.<br>
       <b>Komut kartı:</b> Sağ alttaki düğmeler; kısayollar <kbd>Q</kbd><kbd>E</kbd><kbd>R</kbd><kbd>T</kbd><kbd>Y</kbd> / <kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd> / <kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd><kbd>B</kbd> ızgara sırasıyla.<br>
-      <b>Binalar:</b> <kbd>Shift</kbd>+tık ile aynı türden birden çok bina seç, çift tık ekrandaki tümünü seçer; üretim her binada aynı anda başlar. <kbd>Shift</kbd>+üret: 5 adet sıraya ekler. <kbd>Shift</kbd> basılıyken bina yerleştirmek araç açık kalır, birden çok temel atarsın. Yerleştirirken <kbd>R</kbd> binayı çevirir. Kendi binanı seçince <b>Döndür</b> ve <b>Taşı</b> düğmeleri çıkar (en fazla 30 kare öteye; taşınan bina ücretsiz, kule hariç yarı sürede yeniden kurulur).<br>
+      <b>Binalar:</b> <kbd>Shift</kbd>+tık ile aynı türden birden çok bina seç, çift tık ekrandaki tümünü seçer; üretim her binada aynı anda başlar. <kbd>Shift</kbd>+üret: 5 adet sıraya ekler. <kbd>Shift</kbd> basılıyken bina yerleştirmek araç açık kalır, birden çok temel atarsın. Yerleştirirken <kbd>R</kbd> binayı çevirir. Kendi binanı seçince <b>Döndür</b> düğmesi de çıkar.<br>
       <b>Sur kapısı:</b> Bitmiş bir sur parçasını seç, <b>Kapı Aç</b> (<kbd>Q</kbd>) ile 3 kare genişliğinde kapı yap. Ya da Savunma sayfasındaki <b>Kapı</b> ile bir sur parçasına tıkla. Kapıdan yalnızca sen ve müttefiklerin geçer.<br>
       <b>Ekonomi:</b> Köylülerle yiyecek, odun, taş ve altın topla; Taş Devri'nde ağıl, Tunç Devri'nden itibaren tarla kur (nüfus sınırı sabit 1000, ev gerekmez).<br>
       <b>Büyücü:</b> Tapınakta (Taş Devri'nden itibaren) üretilir. Saldırmaz; çevresindeki (5 kare) yaralı dost birlikleri savaş sırasında da saniyede 2 can iyileştirir, tapınak araştırmaları bunu artırır. Bir birliği aynı anda yalnızca bir büyücü iyileştirir.<br>
       <b>Çağ atlama:</b> Şehir Merkezinden yeterli kaynak ve bina ile sonraki çağa geç; yeni birimler ve binalar açılır.<br>
-      <b>Zafer:</b> Rakiplerin birim üreten bütün binalarını yık: şehir merkezi, kışla, okçuluk alanı, ahır, kuşatma atölyesi, fabrika ve liman (inşaatına başlanmış temeller de sayılır). Geriye kalan askerler ve köylüler oyunu sürdürmez. Bir rakibin bu binalarından 1-2 tane kalınca mini haritada yanıp söner.<br>
+      <b>Zafer:</b> Rakiplerin birim üreten bütün binalarını yık: şehir merkezi, kışla, okçuluk alanı, ahır, kuşatma atölyesi, fabrika ve liman (inşaatına başlanmış temeller de sayılır). Geriye kalan askerler ve köylüler oyunu sürdürmez. Daha fazla binası olan bir rakibin elinde bunlardan 1-2 tane kalınca mini haritada yanıp söner.<br>
       <b>Diğer:</b> <kbd>Esc</kbd> iptal / duraklat, mini haritaya tıklayarak kamerayı taşı, sağ tıkla birimleri gönder.
       </div>`);
     // the tutorial battle (sim/tutorial.js): a story with Bilge Ayaz that teaches the mechanics step by step
@@ -739,11 +738,11 @@ export class UI {
     if (this.mode === 'hud' && this.game) { this._refreshSel(); this._refreshCard(); }
   }
 
-  setPlacement(type, mode) {
+  setPlacement(type) {
     if (!type) { this.placeEl.classList.add('hidden'); return; }
     const b = BUILDINGS[type]; if (!b) return;
-    const mv = mode === 'move', turn = !NO_ROTATE.has(type) && !['wall', 'gate', 'rail'].includes(type);   // (R turns it, src/input.js)
-    this.placeEl.innerHTML = `<span>${b.icon || ico('x-build')} <b>${esc(b.name)}</b> ${mv ? 'taşı' : 'yerleştir'}</span>${mv ? (b.type === 'tower' ? '<span>Ücretsiz · en fazla 30 kare</span>' : '<span>Ücretsiz · yarı sürede kurulur · en fazla 30 kare</span>') : `<span class="tooltip-inline tc" style="display:flex;gap:8px">${this._costHtml(b.cost)}</span>`}<span style="color:var(--dim)">${type === 'wall' ? 'Basılı tutup sürükle: sur hattı · Bırak: yerleştir' : type === 'gate' ? 'Bitmiş bir sur parçasına tıkla: kapı olur' : type === 'rail' ? 'Basılı tutup sürükle: ray hattı · Bırak: yerleştir' : type === 'dock' ? 'Kıyıya yerleştir: bir kısmı suda olmalı · Sol tık: yerleştir' : (mv ? 'Sol tık: yeni yer' : 'Sol tık: yerleştir · Shift+tık: birden çok, köylüler sırayla yapar')}${turn ? ' · R: döndür' : ''} · Sağ tık / Esc: iptal</span>`;
+    const turn = !NO_ROTATE.has(type) && !['wall', 'gate', 'rail'].includes(type);   // (R turns it, src/input.js)
+    this.placeEl.innerHTML = `<span>${b.icon || ico('x-build')} <b>${esc(b.name)}</b> yerleştir</span><span class="tooltip-inline tc" style="display:flex;gap:8px">${this._costHtml(b.cost)}</span><span style="color:var(--dim)">${type === 'wall' ? 'Basılı tutup sürükle: sur hattı · Bırak: yerleştir' : type === 'gate' ? 'Bitmiş bir sur parçasına tıkla: kapı olur' : type === 'rail' ? 'Basılı tutup sürükle: ray hattı · Bırak: yerleştir' : type === 'dock' ? 'Kıyıya yerleştir: bir kısmı suda olmalı · Sol tık: yerleştir' : 'Sol tık: yerleştir · Shift+tık: birden çok, köylüler sırayla yapar'}${turn ? ' · R: döndür' : ''} · Sağ tık / Esc: iptal</span>`;
     this.placeEl.classList.remove('hidden');
   }
 
@@ -1319,20 +1318,12 @@ export class UI {
     const pool = ents.length > 1 ? ents.filter((x) => x.done) : [first];
     const e = pool[0] || first, bd = BUILDINGS[e.type] || {};
     const many = () => (this.app.input?.shift ? 5 : 1); // Shift+click / Shift+hotkey: 5 per building
-    // (players 2026-11-22: "let us move and turn buildings") Döndür / Taşı on the two last free places of one own building
-    const moveBtns = () => {
+    // (players 2026-11-22: "let us turn buildings") Döndür on slot 12 of one own building
+    const turnBtn = () => {
       if (ents.length !== 1 || e.owner !== this._me()) return;
       if (!NO_ROTATE.has(e.type) && slots[12] == null) put({ icon: ROT_ICON, name: 'Döndür', desc: 'Binayı çeyrek tur çevirir. Sadece görünüşü değişir. Yerleştirirken R tuşu da çevirir.', run: () => safe(() => g.cmdRotateBuilding(this._me(), e.id), false) !== false }, 12);
-      if (e.done && slots[13] == null && safe(() => g.canRelocate, null)) {
-        const why = safe(() => g.canRelocate(this._me(), e.id), { ok: false });
-        if (why.ok || why.reason !== 'Bu bina taşınamaz') put({
-          icon: MOVE_ICON, name: 'Taşı', desc: 'Binayı başka yere taşı: yeni yere tıkla. Eskisi kalkar, yenisi ücretsiz yeniden kurulur (kule hariç yarı sürede). En fazla 30 kare öteye; kuyruk boş olmalı, saldırı altındaki bina taşınamaz.',
-          check: () => { const c = safe(() => g.canRelocate(this._me(), e.id), { ok: false, reason: '' }); return c.ok ? { ok: true } : { ok: false, reason: c.reason }; },
-          run: () => !!safe(() => this.app.input?.startRelocate?.(e.id), false),
-        }, 13);
-      }
     };
-    if (!e.done) { moveBtns(); put({ ...del, name: 'İnşaatı İptal Et', desc: 'Temeli kaldır.' }, 14); return slots; }
+    if (!e.done) { turnBtn(); put({ ...del, name: 'İnşaatı İptal Et', desc: 'Temeli kaldır.' }, 14); return slots; }
     if (e.type === 'market' && this.page === 'barter') {
       // one row per resource given: food, wood, stone -> the other two (Shift: 5 times)
       for (const a of BARTER_RES) {
@@ -1428,7 +1419,7 @@ export class UI {
         run: () => { this.page = 'barter'; return true; },
       });
     }
-    moveBtns();
+    turnBtn();
     put(del, 14);
     return slots;
   }
@@ -1624,7 +1615,11 @@ export class UI {
       for (const p of g.players || []) {
         if (p.defeated || p.id === this._me() || this._ally(this._me(), p.id)) continue;
         const last = g.buildings.filter((b) => b.owner === p.id && !b.dead && PROD_B.has(b.type) && (b.done || b.progress > 0));   // (same set as the victory rule: no temple)
-        if (!last.length || last.length > 2) continue;
+        /* (owner 2026-11-22) only a rival that once had 3+ of them and lost them: at the start every rival has one town
+           center, and the blink gave its place away from the first second */
+        if (!this._prodPeak || this._prodPeak.g !== g) this._prodPeak = { g, m: new Map() };
+        const peak = Math.max(this._prodPeak.m.get(p.id) || 0, last.length); this._prodPeak.m.set(p.id, peak);
+        if (!last.length || last.length > 2 || peak < 3) continue;
         for (const b of last) {
           const r = Math.max(5, (b.size || 3) * k * 0.9) + blink * 3;
           ctx.strokeStyle = 'rgba(255,90,70,' + (0.45 + 0.5 * blink).toFixed(2) + ')'; ctx.lineWidth = 2;
