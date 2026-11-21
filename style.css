@@ -1016,6 +1016,7 @@ button.gbtn, button.gbtn .gbtn-t { color: #1f1f1f !important; text-shadow: none 
 .agepanel .obar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--gold2), #fff0c0); transition: width .4s; }
 .agepanel .om { font-size: 11.5px; line-height: 1.35; color: var(--dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .agepanel .om.ready { color: var(--green); font-weight: 600; }
+.agepanel .om:empty { display: none; }
 .agepanel .om .gi { width: 13px; height: 13px; vertical-align: -2px; }
 /* the age-up button: a command card button (same frame and icon colour) */
 .agebtn { width: 46px; height: 46px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid rgba(232,194,106,.35); background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.02)); transition: all .12s; }

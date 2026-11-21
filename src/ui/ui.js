@@ -905,7 +905,8 @@ export class UI {
     this.stepsEl.classList.toggle('hidden', !steps.length);
     this.objEl.querySelector('.ot').textContent = next.name;
     this.objEl.querySelector('.acost').innerHTML = cost;
-    const om = this.objEl.querySelector('.om'); om.innerHTML = keepIcons(esc(mtxt)); om.classList.toggle('ready', !aging && !miss.length && hasTc);
+    /* (owner 2026-11-22) no 'Eksik: …' line: the cost chips show what is short and the age button's tooltip lists the rest */
+    const om = this.objEl.querySelector('.om'); om.innerHTML = ''; om.classList.remove('ready'); void mtxt;
   }
 
   // the age-up button of the next age box: the town center's own age-up action (same check / run as the card button)
