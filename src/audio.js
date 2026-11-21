@@ -1,7 +1,9 @@
 // Aevum audio manager. Web Audio API, real recorded samples only (see assets/sfx/LICENSES.md).
 // Never throws: missing files / missing AudioContext simply result in silence.
 
-const BASE = 'assets/sfx/';
+import { fetchAsset } from './cdn.js';
+
+const BASE = 'sfx/';   // (under assets/: from jsDelivr on the live site, src/cdn.js)
 
 // Logical sound -> { files, vol, cat, minGap (s), pitch (+- fraction), range (world tiles, 0 = non positional) }
 const SOUNDS = {
@@ -158,7 +160,7 @@ export class AudioManager {
 
   async _load(name) {
     try {
-      const res = await fetch(BASE + name + '.mp3');
+      const res = await fetchAsset(BASE + name + '.mp3');
       if (!res.ok) return;
       const arr = await res.arrayBuffer();
       const buf = await new Promise((ok, fail) => {

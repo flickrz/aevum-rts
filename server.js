@@ -97,6 +97,21 @@
   for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, onStopSignal);
   // (Windows gives a child process no real SIGTERM: test/notice-test.mjs sends it over the IPC channel instead)
   if (NO_AUTH && typeof process.send === 'function') process.on('message', (m) => { if (m === 'SIGTERM') onStopSignal(); });
+  // ---- the live site serves only index.html, the favicons and /mp/* (owner 2026-11-22: "render.com'u mümkün olduğunca
+  // hafifletelim"): index.html names the deployed commit and the page loads style.css and src/** from jsDelivr at that
+  // commit (assets/** at the asset pin, src/cdn.js); this host keeps a copy of everything as the fallback.
+  // RENDER_GIT_COMMIT is set by Render; AEVUM_CDN_COMMIT (a pushed commit) tries it locally, with ?cdn=1 in the URL.
+  const CODE_SHA = [process.env.AEVUM_CDN_COMMIT, process.env.RENDER_GIT_COMMIT].map((c) => String(c || '').trim().toLowerCase()).find((c) => /^[0-9a-f]{40}$/.test(c)) || '';
+  if (CODE_SHA) console.log('Kod jsDelivr uzerinden: ' + CODE_SHA.slice(0, 7));
+  const PAGE = path.join(ROOT, 'index.html');
+  let pageCache = null;   // {mtime, size, buf, etag, hashes}: index.html as it is served
+  function servedPage(st) {
+    if (pageCache && pageCache.mtime === st.mtimeMs && pageCache.size === st.size) return pageCache;
+    const html = fs.readFileSync(PAGE, 'utf8').replace(/<meta name="aevum-cdn" content="[^"]*">/, '<meta name="aevum-cdn" content="' + CODE_SHA + '">');
+    const buf = Buffer.from(html, 'utf8');
+    pageCache = { mtime: st.mtimeMs, size: st.size, buf, etag: 'W/"p' + crypto.createHash('sha1').update(buf).digest('hex').slice(0, 16) + '"', hashes: scriptHashes(html) };
+    return pageCache;
+  }
   const GZ_EXT = new Set(['.js', '.mjs', '.css', '.html', '.json', '.svg', '.md', '.txt']);
   const gzCache = new Map();   // file -> { etag, buf }: the gzipped copy of a text file, per version
   const MIME = {
@@ -668,29 +683,32 @@
   // Content-Security-Policy of the game page, sent as Report-Only (the browser console names what it would block):
   // the inline import map by its hash, three.js and models from jsDelivr, the emoji font, Firebase / Google sign-in,
   // the relay on this host (also ws/wss for older browsers where 'self' does not cover them)
+  // (the inline scripts by their hashes: the import map and index.html's two loaders)
   const cspCache = new Map();   // file -> {mtime, hashes}
-  function cspFor(req, file) {
-    let hashes = '';
-    try {
-      const st = fs.statSync(file), hit = cspCache.get(file);
-      if (hit && hit.mtime === st.mtimeMs) hashes = hit.hashes;
-      else {
-        const html = fs.readFileSync(file, 'utf8'), list = [];
-        for (const m of html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)) list.push("'sha256-" + crypto.createHash('sha256').update(m[1].replace(/\r\n?/g, '\n'), 'utf8').digest('base64') + "'");   // (the browser hashes the text with \n line ends)
-        hashes = list.join(' ');
-        cspCache.set(file, { mtime: st.mtimeMs, hashes });
-      }
-    } catch { /* no hashes */ }
+  function scriptHashes(html) {
+    const list = [];
+    for (const m of html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)) list.push("'sha256-" + crypto.createHash('sha256').update(m[1].replace(/\r\n?/g, '\n'), 'utf8').digest('base64') + "'");   // (the browser hashes the text with \n line ends)
+    return list.join(' ');
+  }
+  function cspFor(req, file, pageHashes) {
+    let hashes = pageHashes || '';
+    if (pageHashes == null) {
+      try {
+        const st = fs.statSync(file), hit = cspCache.get(file);
+        if (hit && hit.mtime === st.mtimeMs) hashes = hit.hashes;
+        else { hashes = scriptHashes(fs.readFileSync(file, 'utf8')); cspCache.set(file, { mtime: st.mtimeMs, hashes }); }
+      } catch { /* no hashes */ }
+    }
     const host = /^[A-Za-z0-9.:[\]-]{1,255}$/.test(String(req.headers.host || '')) ? String(req.headers.host) : '';
     const g = 'https://www.gstatic.com https://apis.google.com https://accounts.google.com https://aevum-a081f.firebaseapp.com';
     return [
       "default-src 'self'",
       // 'wasm-unsafe-eval': three's MeshoptDecoder compiles WebAssembly (it allows WebAssembly only, not eval)
       "script-src 'self' 'wasm-unsafe-eval' " + hashes + ' https://cdn.jsdelivr.net ' + g,
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "font-src 'self' data: https://fonts.gstatic.com",
+      "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
+      "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com",
       "img-src 'self' data: blob: https://cdn.jsdelivr.net https://*.googleusercontent.com https://www.gstatic.com",
-      "media-src 'self' data: blob:",
+      "media-src 'self' data: blob: https://cdn.jsdelivr.net",
       "connect-src 'self'" + (host ? ' ws://' + host + ' wss://' + host : '') + ' https://cdn.jsdelivr.net https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com ' + g,
       'frame-src ' + g,
       "worker-src 'self' blob:",
@@ -720,24 +738,29 @@
       }
       // (2026-11-20: the free plan's 5 GB a month ran out - every visit downloaded everything again under "no-store")
       // Files carry an ETag, so a browser that has one gets an empty 304. The game's code and pages are revalidated on
-      // every load (a new version shows at once); models, sounds and icons are kept for a day before asking again.
-      // Text files go out gzipped (kept in memory per file version).
+      // every load (a new version shows at once); models, sounds, icons and the favicons are kept for a day before asking
+      // again. Text files go out gzipped (kept in memory per file version). (On the live site only index.html, the
+      // favicons and the CDN fallback come from here, see CODE_SHA.)
       const ext = path.extname(file).toLowerCase();
-      const etag = 'W/"' + st.size.toString(36) + '-' + Math.floor(st.mtimeMs).toString(36) + '"';
+      let page = null;
+      if (file === PAGE) { try { page = servedPage(st); } catch { res.writeHead(500); res.end(); return; } }
+      const etag = page ? page.etag : 'W/"' + st.size.toString(36) + '-' + Math.floor(st.mtimeMs).toString(36) + '"';
       const head = {
         'Content-Type': MIME[ext] || 'application/octet-stream',
-        'Cache-Control': rel.startsWith('/assets/') ? 'public, max-age=86400' : 'no-cache',
+        'Cache-Control': rel.startsWith('/assets/') || /^\/(favicon[^/]*|apple-touch-icon\.png)$/.test(rel) ? 'public, max-age=86400' : 'no-cache',
         ETag: etag,
         Vary: 'Accept-Encoding',
       };
-      if (ext === '.html') head['Content-Security-Policy-Report-Only'] = cspFor(req, file);
+      if (ext === '.html') head['Content-Security-Policy-Report-Only'] = cspFor(req, file, page ? page.hashes : null);
       const inm = String(req.headers['if-none-match'] || '');
       if (inm && inm.split(',').some((t) => t.trim() === etag || t.trim() === '*')) { res.writeHead(304, head); res.end(); return; }
-      if (GZ_EXT.has(ext) && st.size > 1024 && st.size < 8 * 1024 * 1024 && /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
+      const size = page ? page.buf.length : st.size;
+      if (GZ_EXT.has(ext) && size > 1024 && size < 8 * 1024 * 1024 && /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
         const hit = gzCache.get(file);
         const send = (buf) => { res.writeHead(200, Object.assign(head, { 'Content-Encoding': 'gzip', 'Content-Length': buf.length })); res.end(req.method === 'HEAD' ? undefined : buf); };
         if (hit && hit.etag === etag) { send(hit.buf); return; }
-        fs.readFile(file, (e2, raw) => {
+        const read = page ? (cb) => cb(null, page.buf) : (cb) => fs.readFile(file, cb);
+        read((e2, raw) => {
           if (e2) { res.writeHead(500); res.end(); return; }
           zlib.gzip(raw, { level: 9 }, (e3, buf) => {
             if (e3) { res.writeHead(200, Object.assign(head, { 'Content-Length': raw.length })); res.end(req.method === 'HEAD' ? undefined : raw); return; }
@@ -746,9 +769,10 @@
         });
         return;
       }
-      head['Content-Length'] = st.size;
+      head['Content-Length'] = size;
       res.writeHead(200, head);
       if (req.method === 'HEAD') { res.end(); return; }
+      if (page) { res.end(page.buf); return; }
       fs.createReadStream(file).on('error', () => res.destroy()).pipe(res);
     });
   }

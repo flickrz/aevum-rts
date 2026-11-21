@@ -2,8 +2,9 @@
 // built into one sprite (assets/icons/icons.svg) by tools/build-icons.mjs. They take the text colour.
 // Every unit / building / tech of data.js has an icon (keys u-<unit>, b-<building>, t-<tech>).
 import { UNITS, BUILDINGS, TECHS } from './data.js';
+import { fetchAsset } from './cdn.js';
 
-const SPRITE = 'assets/icons/icons.svg';
+const SPRITE = 'icons/icons.svg';   // (under assets/: from jsDelivr on the live site, src/cdn.js)
 const OK = /^[a-z0-9-]+$/;
 
 // The sprite is put into the page ONCE, before the UI is built, and icons point into it (#gi-key).
@@ -11,8 +12,9 @@ const OK = /^[a-z0-9-]+$/;
 // it again - every time a panel re-rendered: icons blinked.)
 if (typeof document !== 'undefined' && !document.getElementById('gi-sprite')) {
   try {
-    /* no-cache: revalidated with the ETag (a tiny 304) so a new icon shows at once despite /assets/ being cached a day */
-    const txt = await fetch(SPRITE, { cache: 'no-cache' }).then(r => (r.ok ? r.text() : ''));
+    /* from the host: no-cache, revalidated with the ETag (a tiny 304) so a new icon shows at once despite /assets/ being
+       cached a day; the CDN's copy at the pinned commit never changes */
+    const txt = await fetchAsset(SPRITE, undefined, { cache: 'no-cache' }).then(r => (r.ok ? r.text() : ''));
     if (txt.startsWith('<svg')) {
       const holder = document.createElement('div');
       holder.id = 'gi-sprite'; holder.setAttribute('aria-hidden', 'true');

@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Aevum</title>
+<!-- the deployed commit: server.js fills it in on the live site (RENDER_GIT_COMMIT), then style.css and src/** come
+     from jsDelivr at that commit instead of this host; empty = everything from this host (README: How the live site is served) -->
+<meta name="aevum-cdn" content="">
 <link rel="icon" href="./favicon.svg" type="image/svg+xml">
 <link rel="icon" href="./favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
-<!-- emoji fallback: Windows 10's emoji font lacks the newer icons (🪵 🪨 🪙 🫐); only the glyphs a page uses are downloaded -->
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap">
-<link rel="stylesheet" href="./style.css">
+<!-- (the import map comes before anything that loads a module: a later one would be ignored) -->
 <script type="importmap">
 {
   "imports": {
@@ -19,10 +19,43 @@
   }
 }
 </script>
+<script>
+/* where the code comes from: jsDelivr at the deployed commit, or this host (no commit, a local server, ?cdn=0);
+   ?cdn=1 tries the CDN on a local server. The stylesheet is written by the parser, so it still holds back the first
+   paint and the scripts below (it comes before the font stylesheet, which would hold this script back); if the CDN
+   copy fails, this host's copy is loaded instead. */
+(function () {
+  var m = document.querySelector('meta[name="aevum-cdn"]'), c = m ? m.content : '', q = location.search, h = location.hostname;
+  var local = h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || /\.localhost$/.test(h);
+  var on = /^[0-9a-f]{40}$/.test(c) && !/[?&]cdn=0/.test(q) && (!local || /[?&]cdn=1/.test(q));
+  window.AEVUM_CODE = on ? 'https://cdn.jsdelivr.net/gh/flickrz/aevum-rts@' + c + '/' : './';
+  document.write('<link rel="stylesheet" id="aevum-css" href="' + window.AEVUM_CODE + 'style.css">');
+  if (on) document.write('<link rel="modulepreload" href="' + window.AEVUM_CODE + 'src/main.js">');   /* (fetched now, not after the stylesheets) */
+  var l = document.getElementById('aevum-css');
+  if (on && l) l.onerror = function () { l.onerror = null; console.warn('[cdn] style.css from this host'); l.href = './style.css'; };
+})();
+</script>
+<!-- emoji fallback: Windows 10's emoji font lacks the newer icons (🪵 🪨 🪙 🫐); only the glyphs a page uses are downloaded -->
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap">
 </head>
 <body>
 <canvas id="game"></canvas>
 <div id="ui"></div>
-<script type="module" src="./src/main.js"></script>
+<script>
+/* the game's entry module (its imports load from the same place); if it or any module it imports cannot be fetched
+   from the CDN, nothing of it has run yet and the same files are loaded from this host */
+(function () {
+  var base = window.AEVUM_CODE || './';
+  function load(src, fallback) {
+    var s = document.createElement('script');
+    s.type = 'module'; s.src = src;
+    if (fallback) s.onerror = function () { console.warn('[cdn] code from this host'); window.AEVUM_CODE = './'; load(fallback, null); };
+    document.body.appendChild(s);
+  }
+  load(base + 'src/main.js', base === './' ? null : './src/main.js');
+})();
+</script>
 </body>
 </html>

@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { assetUrls, cdnFailed } from '../cdn.js';
 
 // the types that have a model, per era (files: assets/models/<era>/<type>.glb). Each age's buildings evolve from the
 // previous age's model. Pasture (live sheep), dock (turns to the water), farm, rails and the station stay procedural.
@@ -25,25 +26,12 @@ const PIECE = { wallseg: 1, wallpost: 1, gatehouse: 1 };
 // which horizontal axis of a piece's file runs along the wall line ('z': turned a quarter round on load);
 // default: the longer one (a gatehouse); per-file overrides where the piece is about as long as it is thick
 const RUN_Z = {};
-const DIR = './assets/models/';
 // (2026-11-20: the host's free monthly bandwidth ran out, the models were most of it) on the live site the models come
-// from jsDelivr, which serves the public repository's files for free and lets browsers keep them for a year. Pinned to
-// the public snapshot that holds these exact files: test/cdn-pin-test.mjs checks they still match before a release, and
-// the pin moves to the new snapshot when a model changes. Local servers and ?cdn=0 load them from here; if the CDN fails,
-// the file is loaded from here too.
-export const CDN_SHA = '4c75a897b409e3998308186d0fe4a550082471e9';
-const CDN_DIR = 'https://cdn.jsdelivr.net/gh/flickrz/aevum-rts@' + CDN_SHA + '/assets/models/';
-const USE_CDN = (() => {
-  try {
-    if (/[?&]cdn=0/.test(location.search)) return false;
-    if (/[?&]cdn=1/.test(location.search)) return true;   // (to try the CDN on a local server)
-    const h = location.hostname;
-    return !(h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h.endsWith('.localhost'));
-  } catch { return false; }
-})();
+// from jsDelivr, pinned to the asset commit (src/cdn.js ASSET_PIN); a file the CDN cannot give comes from the host.
 function loadGlb(rel, ok, fail) {
-  if (!USE_CDN) { loader.load(DIR + rel, ok, undefined, fail); return; }
-  loader.load(CDN_DIR + rel, ok, undefined, () => loader.load(DIR + rel, ok, undefined, fail));
+  const urls = assetUrls('models/' + rel);
+  if (urls.length < 2) { loader.load(urls[0], ok, undefined, fail); return; }
+  loader.load(urls[0], ok, undefined, () => { cdnFailed(); loader.load(urls[1], ok, undefined, fail); });
 }
 const ERA_STARTED = new Set(), ERA_DONE = new Set(), WANTED = new Set();   // (WANTED: eras a building asked for)
 let loader = null;
