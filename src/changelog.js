@@ -2,6 +2,23 @@
 // release (Turkish, player-facing: what changed in the game, not how). Shown by src/ui/updates-ui.js.
 export const CHANGELOG = [
   {
+    v: '0.9.4', date: '2026-11-22', title: 'Yeni yerleşim, bina döndürme ve birçok düzeltme',
+    items: [
+      'Yeni yerleşim: kaynaklar mini haritanın yanında; her kaynakta miktar, dakikalık gelir ve çalışan köylü sayısı. Boştaki köylü ve nüfus da orada.',
+      'Çağ kutusu mini haritanın üstünde: maliyet, ilerleme ve çağ atlama düğmesi (üstüne gelince eksikleri gösterir). Üst çubuk inceldi, Taş Devri hedefleri onun altında.',
+      'Binalar döndürülebiliyor: yerleştirirken R, kurulu binada Döndür.',
+      'Seçimde türlere göre sayılar; bir türe tıklayınca sadece o tür seçilir (Shift+tık çıkarır, Ctrl+tık ekrandakilerin hepsi).',
+      'Köylüyü gönderdiğin kaynak kısa süre yanıp söner; tarla ve ağıl dakikada ne kadar yiyecek verdiğini gösterir.',
+      'Sur kapısı Savunma sayfasında; istatistiklerde rakiplerin çağı, ordusu ve köylüleri.',
+      'Kenarda kaydırma alanı genişledi; ayarlarda yeni Touchpad modu var.',
+      'Yeni harita boyu: Minik (192).',
+      'Kolay yapay zekâ daha geç ve daha küçük saldırıyor (normal ve zor aynı).',
+      'Büyücünün alanı 8 kare; seçilince yumuşak bir ışık halesiyle gösterilir.',
+      'Düzeltmeler: Taş Devri hedefi artık Tarla değil Ağıl istiyor; iskele suya gömülmüyor; komut kartı ipucu kaybolmuyor; mini haritadaki görüş alanı doğru şekilde; maç başında rakibin yeri kırmızı halkayla görünmüyor; kaybolan maç geçmişi buluttan geri geliyor.',
+      'Oyun dosyaları artık hızlı bir dağıtım ağından yükleniyor: daha hızlı açılış.',
+    ],
+  },
+  {
     v: '0.9.3', date: '2026-11-22', title: 'Saldırarak yürüme, devriye ve hileye karşı önlemler',
     items: [
       'Yeni komutlar: K ile Saldırarak Yürü (askerler yolda gördükleri düşmanla dövüşüp yollarına devam eder), V ile Devriye (iki nokta arasında gidip gelir). Tuşa bastıktan sonra yere sol tıkla; Shift basılıyken birden çok nokta verebilirsin.',
