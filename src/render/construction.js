@@ -23,6 +23,27 @@ const M = {
   iron: m(0x5a5e66, .5, .6), log: m(0x8a6238), hide: m(0x9a7a52, .97), mud: m(0x7a5a3a, 1), mudbrick: m(0xc9a070, .95),
   stone: m(0xa7a399, .95), brick: m(0xa6503a, .88), plaster: m(0xe8e0cc, .9), rope: m(0xd8c89a, .9), concrete: m(0x9c9a94, .95),
 };
+// (player 2026-11-22: "the ground turns brown when building starts, keep the original ground") the site plot is a
+// soft patch of trodden earth fading into the grass at its edges, not a hard brown square
+let _plotMat = null;
+function plotMat() {
+  if (_plotMat) return _plotMat;
+  const S = 128, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d'), img = g.createImageData(S, S), d = img.data;
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const u = Math.abs(x / (S - 1) * 2 - 1), v = Math.abs(y / (S - 1) * 2 - 1);
+    const r = Math.pow(Math.pow(u, 4) + Math.pow(v, 4), .25);        // rounded square
+    const n = rnd();
+    const a = Math.max(0, Math.min(1, (1 - r) / .35)) * (.72 + n * .25);
+    const k = (y * S + x) * 4, t = .82 + n * .3;
+    d[k] = 120 * t; d[k + 1] = 96 * t; d[k + 2] = 62 * t; d[k + 3] = a * 255;
+  }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  _plotMat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false, roughness: 1, metalness: 0 });
+  return _plotMat;
+}
 // era -> [foundation, pile A item, pile B item, scaffold pole]
 const ERA = [
   { found: 'log', a: 'branch', b: 'hide', pole: M.branch },
@@ -191,7 +212,7 @@ function buildRig(v, e, color) {
   rig.F = F; rig.ht = ht; rig.hf = hf;
   const G = F, sx2 = ht * 2 / .92, sz2 = hf * 2 / .92; // footprint widths in the frame (s for a normal site)
   // ---- stage 1: plot ----
-  add(rig, G, GEO.box, M.soil, sx2 * .98, .025, sz2 * .98, 0, .005, 0, 0, { hide: 1.01 });
+  add(rig, G, GEO.box, plotMat(), sx2 * 1.12, .02, sz2 * 1.12, 0, .012, 0, 0, { hide: 1.01 });
   for (let i = 0; i < 4; i++) {
     const cx = (i & 1 ? 1 : -1) * (ht + .04), cz = (i & 2 ? 1 : -1) * (hf + .04);
     add(rig, G, GEO.cyl, M.peg, .04, .32, .04, cx, 0, cz, i * .005, { hide: .4 });
