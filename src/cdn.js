@@ -9,7 +9,7 @@
 // Local servers and ?cdn=0 load everything from the host; ?cdn=1 tries the CDN on a local server. A file the CDN
 // cannot give is loaded from the host instead, and after a few CDN failures the rest of the page's assets come from
 // the host directly (jsDelivr down: no waiting on it for every file).
-export const ASSET_PIN = '85d290ad8e915bc0035259e82c6206d40f4df63e';
+export const ASSET_PIN = '6bd8ea5801aba53d3169e14d3c8bdc399edfb665';
 const CDN_ASSETS = 'https://cdn.jsdelivr.net/gh/flickrz/aevum-rts@' + ASSET_PIN + '/assets/';
 const HOST_ASSETS = './assets/';
 const MAX_FAILS = 3;
