@@ -93,7 +93,7 @@ const ID1 = feedbackId(CHAT[0].name), ID3 = feedbackId(CHAT[2].name);
   let t = 1000000, release = null;
   const base = createMemoryAdminStore({ chat: CHAT });
   const old = await base.query('adminFeedback');
-  const slow = Object.assign({}, base, { async query(c) { if (c === 'chatlog') { await new Promise((r) => { release = r; }); return CHAT; } return old; } });
+  const slow = Object.assign({}, base, { async query(c) { if (c === 'claude') { await new Promise((r) => { release = r; }); return CHAT; } return old; } });
   const A = createAdmin({ store: slow, now: () => t });
   const p = A.feedback();
   await new Promise((r) => setImmediate(r));

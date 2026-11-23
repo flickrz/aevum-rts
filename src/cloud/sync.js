@@ -168,6 +168,9 @@ export class CloudSync {
     if (!this.auth.user || !e || !e.text) return Promise.resolve(false);
     const id = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     const data = { t: String(e.t || ''), room: String(e.room || ''), name: String(e.name || '').slice(0, 40), text: String(e.text).slice(0, 200), uid: this.auth.user.uid, at: null };
+    // a line to @claude also goes to users/{uid}/claude/{id} (the owner's admin page reads only that small collection,
+    // srv/admin.mjs); a separate write, so the chat log line never depends on it
+    if (/@claude/i.test(data.text)) this.fs.commit([{ set: this._base() + '/claude/' + id, data, serverTime: ['at'] }]).catch(() => {});
     return this.fs.commit([{ set: this._base() + '/chatlog/' + id, data, serverTime: ['at'] }]).then(() => true, () => false);
   }
 

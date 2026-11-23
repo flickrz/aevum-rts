@@ -12,6 +12,11 @@ export const NOTE_MAX = 500;
 export const ID_RE = /^f[0-9a-f]{16}$/;
 export const COLLECTION = 'adminFeedback';
 export const feedbackId = (docName) => 'f' + crypto.createHash('sha1').update(String(docName)).digest('hex').slice(0, 16);
+// (2026-11-23: reading every chat line on each load used up the free daily Firestore read quota) the @claude lines
+// are now also written to users/{uid}/claude/{id} (CloudSync.logChat), and only that small collection is read. A
+// copy keeps the id of its chatlog original: the path is hashed as if it were users/{uid}/chatlog/{id}.
+export const FEEDBACK_COLLECTION = 'claude';
+export const lineId = (docName) => feedbackId(String(docName).replace(/\/claude\/([^/]+)$/, '/chatlog/$1'));
 
 // a Firestore REST value -> plain
 export const val = (v) => (!v ? null : 'stringValue' in v ? v.stringValue : 'timestampValue' in v ? v.timestampValue : 'integerValue' in v ? +v.integerValue : 'doubleValue' in v ? v.doubleValue : null);
@@ -20,7 +25,7 @@ export const val = (v) => (!v ? null : 'stringValue' in v ? v.stringValue : 'tim
 export function feedbackRows(docs) {
   return (docs || []).map((d) => {
     const f = d.fields || {};
-    return { id: feedbackId(d.name), at: String(val(f.at) || val(f.t) || ''), room: String(val(f.room) || ''), name: String(val(f.name) || '?'), text: String(val(f.text) || '') };
+    return { id: lineId(d.name), at: String(val(f.at) || val(f.t) || ''), room: String(val(f.room) || ''), name: String(val(f.name) || '?'), text: String(val(f.text) || '') };
   }).filter((r) => /@claude/i.test(r.text)).map((r) => ({ ...r, text: r.text.replace(/@claude/ig, '').trim() }))
     .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
 }
@@ -76,7 +81,7 @@ export function createAdmin({ store, now = () => Date.now(), ttlMs = 45000, coun
       loading = (async () => {
         const t0 = now();
         const [chat, dec] = await Promise.all([
-          store.query('chatlog', { allDescendants: true, fields: ['at', 't', 'room', 'name', 'text'] }),
+          store.query(FEEDBACK_COLLECTION, { allDescendants: true, fields: ['at', 't', 'room', 'name', 'text'] }),
           store.query(COLLECTION),
         ]);
         cache = { rows: feedbackRows(chat), decisions: decisionMap(dec) };
@@ -123,7 +128,7 @@ export function createMemoryAdminStore(seed = {}) {
     calls,
     async query(collectionId) {
       calls.query++;
-      if (collectionId === 'chatlog') return chat;
+      if (collectionId === FEEDBACK_COLLECTION || collectionId === 'chatlog') return chat;
       if (collectionId === COLLECTION) return [...dec].map(([id, fields]) => ({ name: 'projects/x/databases/(default)/documents/' + COLLECTION + '/' + id, fields }));
       return [];
     },
