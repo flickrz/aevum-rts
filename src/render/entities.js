@@ -1469,6 +1469,29 @@ function makeHorse(g, coatHex, P, sc) {
   }
   if (sc) P.hbody.scale.setScalar(sc);
 }
+// (owner 2026-11-23: "ayıyı düzelt", the stretched horse read as a horse) a bear of its own: heavy low body with a
+// shoulder hump, no neck, a big head with round ears and a lighter snout, short thick legs. Same pivots as makeHorse
+// (hbody / hhead / hl) so _animHorse walks it.
+function makeBear(g, P, sc) {
+  const m = mat(0x4a3322, .95), dk = mat(0x2a1c12, .95), sn = mat(0x8a6a4a, .9);
+  P.hbody = piv(g, 0, 0, 0);
+  bx(P.hbody, m, .5, .42, .82, 0, .5, 0);            // body
+  bx(P.hbody, m, .46, .16, .3, 0, .76, .18);          // shoulder hump
+  bx(P.hbody, m, .44, .36, .24, 0, .48, -.38);        // rump
+  P.hhead = piv(P.hbody, 0, .6, .46);
+  bx(P.hhead, m, .32, .28, .28, 0, 0, .08);            // head
+  bx(P.hhead, sn, .16, .13, .16, 0, -.05, .28);        // snout
+  bx(P.hhead, dk, .07, .05, .04, 0, .0, .37);          // nose
+  bx(P.hhead, m, .09, .09, .05, .11, .17, .02); bx(P.hhead, m, .09, .09, .05, -.11, .17, .02);   // ears
+  bx(P.hbody, m, .1, .1, .08, 0, .58, -.52);           // stubby tail
+  P.hl = [];
+  for (let i = 0; i < 4; i++) {
+    const l = piv(P.hbody, (i & 1 ? 1 : -1) * .16, .4, (i & 2 ? -1 : 1) * .27);
+    bx(l, m, .15, .36, .16, 0, -.2, 0); bx(l, dk, .16, .06, .2, 0, -.38, .02);   // leg + paw
+    P.hl.push(l);
+  }
+  if (sc) P.hbody.scale.setScalar(sc);
+}
 function makeWheels(g, P, r, hw, z1, z2, age) {
   P.wheels = [];
   for (let i = 0; i < 4; i++) {
@@ -1585,7 +1608,7 @@ function makeUnitRaw(type, color, age) {
     makeHorse(inner, 0x6e6964, P, .4);
   } else if (type === 'bear') {
     rig = 'deer'; h = .8; pw = .6; pd = .9;
-    makeHorse(inner, 0x3f2b1d, P, .62); inner.scale.x *= 1.35;
+    makeBear(inner, P, .75);
   } else { makeHuman(inner, color, KIT.villager, P, A); inner.scale.setScalar(.72); }
   inner.scale.multiplyScalar(USCALE); h *= USCALE; pw *= USCALE; pd *= USCALE;
   P.spear = !!(k && k.weapon === 'spear');
