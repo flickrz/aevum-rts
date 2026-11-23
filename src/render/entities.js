@@ -116,8 +116,8 @@ function glowTex() {
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
     const u = Math.abs(x / (S - 1) * 2 - 1), v = Math.abs(y / (S - 1) * 2 - 1);
     const r = Math.pow(Math.pow(u, 6) + Math.pow(v, 6), 1 / 6);   // rounded square, 1 at the edge
-    const edge = Math.exp(-Math.pow((r - .86) / .07, 2));            // the bright band
-    const fill = r < .86 ? .6 : 0;                                    // a gentle wash inside
+    const edge = Math.exp(-Math.pow((r - .88) / .05, 2));            // the bright band
+    const fill = 0;                                    // a gentle wash inside
     const out = r >= .86 ? Math.max(0, 1 - (r - .86) / .14) : 1;      // fades to nothing at the border
     const a = Math.min(1, Math.max(fill, edge)) * out;
     const k = (y * S + x) * 4; d[k] = d[k + 1] = d[k + 2] = 255; d[k + 3] = a * 255;
@@ -126,7 +126,7 @@ function glowTex() {
   _glowTex = new THREE.CanvasTexture(c);
   return _glowTex;
 }
-const SELB = SELM.map(m => { const c = m.clone(); c.opacity = 1; c.map = glowTex(); return c; });
+const SELB = SELM.map(m => { const c = m.clone(); c.opacity = .6; c.map = glowTex(); return c; });
 const GLOW_G = new THREE.PlaneGeometry(1, 1).rotateX(-PI / 2);
 const PROXY_M = new THREE.MeshBasicMaterial({ visible: false });
 const HPM = {
