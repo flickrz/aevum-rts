@@ -2140,8 +2140,51 @@ export class UI {
     btns.push(this._mbtn(box, 'Kayıtlı Maça Devam Et', () => {
       import('./mp-resume.js').then((m) => m.menuResume(this)).catch((e) => fail(e));
     }));
+    this._mpRooms(box, go, btns);
     this._mbtn(box, 'Geri', () => this._menuMain());
     this._onlinePanel(box);
+  }
+  // the open rooms (server.js /mp/rooms: still in their lobby, not full), each with Katıl (the join-by-code flow);
+  // refreshed every few seconds while this menu is on screen
+  _mpRooms(box, go, btns) {
+    const cloud = this.app.cloud;
+    if (!cloud?.openRooms) return;
+    const wrap = el('div', 'mp-rooms');
+    const head = el('div', 'op-head'), count = el('span', 'op-count', '…');
+    head.append(el('span', 'op-title', 'Açık Odalar'), count);
+    const list = el('div', 'op-list');
+    list.textContent = 'Yükleniyor...';
+    list.addEventListener('wheel', (ev) => ev.stopPropagation(), { passive: true });
+    wrap.append(head, list); box.append(wrap);
+    const SIZE_TR = { 192: 'Minik', 256: 'Küçük', 320: 'Orta', 384: 'Büyük', 448: 'Çok Büyük', 512: 'Dev' };
+    let rooms = null;
+    const draw = () => {
+      count.textContent = String(rooms.length);
+      list.textContent = '';
+      if (!rooms.length) { list.append(el('div', 'prof-dim op-empty', 'Şu an açık oda yok. Bir oda kur, burada herkese görünsün.')); return; }
+      for (const rm of rooms) {
+        const r = el('div', 'op-row');
+        const av = el('span', 'fr-av'); av.append(avatarEl(rm.av, rm.uid, 'av-sm'));
+        const t = el('span', 'fr-txt'), nm = el('b', 'fr-name'), sub = el('small', 'fr-sub');
+        nm.textContent = (rm.host || 'Oyuncu') + ' · ' + rm.code;
+        sub.textContent = (rm.n | 0) + ' oyuncu · ' + (rm.slots | 0) + '/' + (rm.max | 0) + ' yer' + (rm.map ? ' · ' + (MAP_TYPE_TR[rm.map] || rm.map) : '') + (SIZE_TR[rm.size] ? ' · ' + SIZE_TR[rm.size] : '');
+        t.append(nm, sub); r.append(av, t);
+        const b = el('button', 'mbtn small op-inv', 'Katıl'); b.type = 'button';
+        b.disabled = !!btns[0]?.disabled;
+        b.title = rm.code + ' odasına katıl';
+        b.onclick = () => { this._click(); go(rm.code); };
+        btns.push(b); r.append(b); list.append(r);
+      }
+    };
+    const load = async () => {
+      let got;
+      try { got = (await cloud.openRooms()).rooms; } catch (e) { if (!rooms) { list.textContent = String(e?.message || e); count.textContent = '-'; } return; }
+      if (!wrap.isConnected) return;
+      for (let i = btns.length - 1; i >= 0; i--) if (!btns[i].isConnected || btns[i].closest('.mp-rooms') === wrap) btns.splice(i, 1);
+      rooms = got; draw();
+    };
+    load();
+    const timer = setInterval(() => { if (!wrap.isConnected) { clearInterval(timer); return; } load(); }, 4000);
   }
   // the online players list on the right (src/ui/online-ui.js), next to this menu box while it is shown
   _onlinePanel(box) {
@@ -2233,6 +2276,7 @@ export class UI {
         srow('Başlangıç Kaynakları', sel([['low', 'Düşük'], ['normal', 'Normal'], ['high', 'Yüksek']], sets.startRes ?? 'normal', (v) => call('setSettings', { startRes: v })));
         srow('Başlangıç Çağı', sel(AGES.map((a, j) => [j, a.name]), sets.startAge ?? 0, (v) => call('setSettings', { startAge: +v })));
         srow('Harita', sel([['explored', 'Keşfedilmiş'], ['dark', 'Karanlık']], sets.fog ?? 'explored', (v) => call('setSettings', { fog: v })));
+        srow('Oda Listesi', sel([['1', 'Herkese açık'], ['0', 'Sadece davetle']], st.listed === false ? '0' : '1', (v) => call('setListed', v === '1')));
         body.append(sg);
       } else {
         const sets = st.settings || {};

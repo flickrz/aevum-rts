@@ -79,6 +79,7 @@ function cleanLobby(st) {
   if (!st.slots.every(s => isObj(s) && (s.kind === 'human' || s.kind === 'ai') && peerOk(s.peer))) return false;
   if (st.waiting != null && !(Array.isArray(st.waiting) && st.waiting.length <= MAX_PLAYERS && st.waiting.every(w => isObj(w) && peerOk(w.peer)))) return false;
   if (st.resume != null && typeof st.resume !== 'boolean' && !isObj(st.resume)) return false;   // (true in a start message)
+  if (st.listed != null) st.listed = st.listed !== false;
   for (const s of st.slots) {
     if (s.name != null) s.name = String(s.name).slice(0, 20);
     if (!Number.isInteger(s.team) || s.team < 1 || s.team > MAX_PLAYERS) s.team = Math.max(1, Math.min(4, s.team | 0));
@@ -269,7 +270,7 @@ export class NetSession {
     await this.t.connect(code); this.room = code;
     this.isHost = true; this.phase = 'lobby';
     this.state = {
-      code, hostPeer: this.t.id,
+      code, hostPeer: this.t.id, listed: true,   // listed: shown in the open rooms list (server.js /mp/rooms)
       settings: { mapSize: 320, mapType: 'random', climate: 'random', startRes: 'normal', startAge: 0, fog: 'explored', seed: null },
       slots: [{ kind: 'human', peer: this.t.id, uid: this.uid, name: this.name, av: cleanAv(this.ident && this.ident.av), tp: cleanTp(this.ident && this.ident.tp), team: 1, ready: true }],
     };
@@ -620,6 +621,8 @@ export class NetSession {
     if (patch.seed != null) st.seed = patch.seed | 0;
     this._broadcastLobby();
   }
+  // host: show this room in the public open rooms list (true) or keep it invite / code only (false)
+  setListed(on) { this._hostOnly(); this._notResume(); this.state.listed = on !== false; this._broadcastLobby(); }
   canStart() {
     if (!this.isHost || this.phase !== 'lobby') return { ok: false, reason: 'Sadece kurucu başlatabilir.' };
     const sl = this.state.slots;
