@@ -2,6 +2,17 @@
 // release (Turkish, player-facing: what changed in the game, not how). Shown by src/ui/updates-ui.js.
 export const CHANGELOG = [
   {
+    v: '0.9.6', date: '2026-11-23', title: 'Kurtlar, ayılar ve telefonda oynama',
+    items: [
+      'Haritada kurt sürüleri ve ayılar: yaklaşanlara saldırır, öldürülünce bol yiyecek verir.',
+      'Avcılık: köylüler hayvanı önce mızrakla avlar, sonra yiyeceğini toplar.',
+      'Telefon ve tablet desteği: parmakla seçme ve emir verme, sürükleyerek toplu seçim, iki parmakla yakınlaştırma, sol altta haritada gezinme kolu.',
+      'Telefonda Ana ekrana ekle ile uygulama gibi tam ekran açılır.',
+      'Çağ atlama kutusundaki malzemelerin üzerine gelince adı ve eksik miktarı görünür.',
+      'Düzeltme: bağlantı sorunlarında son otomatik kayıt artık kaybolmuyor.',
+    ],
+  },
+  {
     v: '0.9.5', date: '2026-11-23', title: 'Müzik, ortam sesleri ve açık odalar',
     items: [
       'Savaş müziği: düşman saldırınca yavaşça giriyor, savaş bitince bir süre sonra kısılarak susuyor. Ana menüde de kendi müziği çalıyor.',
