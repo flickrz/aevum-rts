@@ -37,7 +37,7 @@ function plotMat() {
     const n = rnd();
     const a = Math.max(0, Math.min(1, (1 - r) / .35)) * (.72 + n * .25);
     const k = (y * S + x) * 4, t = .82 + n * .3;
-    d[k] = 120 * t; d[k + 1] = 96 * t; d[k + 2] = 62 * t; d[k + 3] = a * 255;
+    d[k] = 92 * t; d[k + 1] = 70 * t; d[k + 2] = 44 * t; d[k + 3] = a * 255;
   }
   g.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(c);
