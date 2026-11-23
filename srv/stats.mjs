@@ -11,6 +11,7 @@ export const ONLINE_MS = 150 * 1000;        // a browser that sent a beat in the
 export const MAX_LIVE = 20000;              // live browsers tracked at once (beats beyond that are ignored)
 export const MAX_IDS = 60000;               // unique ids kept per day and kind (keeps one day's document < 1 MB)
 export const STATES = ['menu', 'sp', 'mp'];
+export const PAST_TTL = 6 * 3600 * 1000;    // the stored past days are read again at most this often (and on a new day)
 const VID_RE = /^[A-Za-z0-9]{8,32}$/;
 export const okVid = (v) => typeof v === 'string' && VID_RE.test(v);
 export const dayOf = (t) => new Date(t + 3 * 3600 * 1000).toISOString().slice(0, 10);
@@ -39,6 +40,7 @@ export function createStats({ now = () => Date.now(), store = null, log = () => 
   const live = new Map();      // visitor id -> {t, s, fb}
   let day = emptyDay(dayOf(now()));
   let dirty = false, loaded = !store, loadP = null;
+  let past = null;   // {d: today, n, t, rows}: the stored days as last read (report)
 
   const add = (set, id) => { if (!set.has(id) && set.size < MAX_IDS) { set.add(id); dirty = true; } };
   // today's document is read once, before the first write, so a restart keeps counting from where it was
@@ -116,14 +118,19 @@ export function createStats({ now = () => Date.now(), store = null, log = () => 
       try { await store.put(day.d, encodeDay(day)); return true; } catch (e) { dirty = true; log('stats put', e); return false; }
     },
     // the owner's view: online now, today, and the last n days (today first)
+    // (2026-11-23: the owner's screen asks every minute, and each list() is a batchGet of n+1 day documents) the
+    // past days never change: they are read once per day (and n), at most every PAST_TTL, and served from memory
     async report(n = 30) {
       roll();
       const today = summary(day);
       let days = [today], persisted = !!store;
       if (store) {
         try {
-          const old = await store.list(n + 1);
-          for (const o of old) if (o.day !== today.day && days.length < n) days.push({ day: o.day, visitors: o.nv | 0, players: o.np | 0, sp: o.sp | 0, mp: o.mp | 0, peak: o.peak | 0 });
+          if (!past || past.d !== today.day || past.n < n || now() - past.t >= PAST_TTL || now() < past.t) {
+            const rows = await store.list(n + 1);
+            past = { d: today.day, n, t: now(), rows: Array.isArray(rows) ? rows : [] };
+          }
+          for (const o of past.rows) if (o.day !== today.day && days.length < n) days.push({ day: o.day, visitors: o.nv | 0, players: o.np | 0, sp: o.sp | 0, mp: o.mp | 0, peak: o.peak | 0 });
         } catch (e) { log('stats list', e); persisted = false; }
       }
       return { online: online(), today, days, persisted };

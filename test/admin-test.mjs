@@ -85,7 +85,9 @@ const ID1 = feedbackId(CHAT[0].name), ID3 = feedbackId(CHAT[2].name);
   const f2 = await A.feedback();
   ok(f2.items[0].status === 'rejected' && f2.items[0].note === 'not now' && store.calls.query === 2, 'admin: a decision shows at once (cache updated, no new read)');
   t += 50000; await A.feedback();
-  ok(store.calls.query === 4, 'admin: the cache expires');
+  ok(store.calls.query === 3, 'admin: the cache expires (the lines are read again; the decisions are kept, they are written here)');
+  const f3 = await A.feedback({ fresh: true });
+  ok(store.calls.query === 5 && f3.items[0].status === 'rejected', 'admin: fresh (Yenile) reads the lines and the decisions again');
   ok((await A.accounts()) === 7 && (await A.accounts()) === 7 && store.calls.count === 1, 'admin: the account count is cached');
 }
 // a decision made while a read is under way (the read saw the old state) is not lost when that read lands

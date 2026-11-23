@@ -234,8 +234,9 @@ const app = {
 
   // single-player saves only (multiplayer records live under 'mp-...' and are listed by listMpSaves).
   // Logged in: local and cloud saves together (item.cloud 'none' | 'synced' | 'newer' | 'only', see cloud/sync.js)
-  listSaves() { return mergedSaves(false); },
-  listMpSaves() { return mergedSaves(true); },
+  // opts.fresh: the save screens (the cloud list is read again when it is older than 5 minutes; else 30)
+  listSaves(opts) { return mergedSaves(false, opts); },
+  listMpSaves(opts) { return mergedSaves(true, opts); },
   // a save record; a cloud-only (or newer cloud) copy is downloaded, verified and cached locally first
   async getSave(key) {
     const it = saveIndex.get(key);
@@ -416,7 +417,7 @@ function notifyTp(game, text, type) {
 }
 // the local saves of the signed-in account (+ its cloud saves). Saves of other accounts used on this PC stay hidden;
 // saves from before accounts (no owner) are taken over by the first account that lists them.
-async function mergedSaves(mp) {
+async function mergedSaves(mp, opts = {}) {
   if (!cloudOn()) return [];
   const me = ownerUid();
   const pick = s => (mp ? !!s.mp : !s.mp && !storage.isMpKey(s.key));
@@ -427,7 +428,7 @@ async function mergedSaves(mp) {
   }
   const local = all.filter(s => s.owner === me);
   let remote = [];
-  try { remote = (await cloud.listCloudSaves({ maxWait: 3000 })).filter(pick); } catch (err) { remote = []; }
+  try { remote = (await cloud.listCloudSaves({ maxWait: 3000, fresh: !!(opts && opts.fresh) })).filter(pick); } catch (err) { remote = []; }
   const list = mergeSaveLists(local, remote);
   for (const it of list) saveIndex.set(it.key, it);
   return list;
@@ -455,7 +456,7 @@ function initCloud() {
       else if (st === 'expired') ui.hint?.('cloud-expired', '☁ Hesap oturumu sona erdi; Profil ekranından tekrar giriş yap.', 'warn', 300);
       else if (st === 'synced' && prev === 'offline') ui.hint?.('cloud-back', '☁ Bulut bağlantısı geri geldi.', 'info', 120);
     });
-    window.addEventListener('online', () => cloudSafe(c => c.kick({ pull: true })));
+    window.addEventListener('online', () => cloudSafe(c => c.kick({ pull: 'lazy' })));
     // another tab signed out / into another account: this tab follows (never revives a session signed out there)
     window.addEventListener('storage', ev => {
       if (ev.key !== AUTH_KEY && ev.key !== null) return;
@@ -697,8 +698,9 @@ function boot() {
     // invites from friends (and being shown online to them) while signed in
     cloud.startInbox(m => { if (m && m.type === 'invite') app.ui.showInvite(m); });
     // sync runs by itself: every 4 minutes too (new matches from other PCs, renames, TP), never by a button
-    setInterval(() => { if (!document.hidden) cloudSafe(c => c.kick({ pull: true })); }, 4 * 60 * 1000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) cloudSafe(c => c.kick({ pull: true })); });
+    // (2026-11-23) 'lazy': a pull (3+ reads) at most every 20 minutes per browser; the kicks still send what is queued
+    setInterval(() => { if (!document.hidden) cloudSafe(c => c.kick({ pull: 'lazy' })); }, 4 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) cloudSafe(c => c.kick({ pull: 'lazy' })); });
   }
   // back from a Google sign in by redirect (the popup was blocked): finish it (the SDK loads only in this case)
   if (cloud && cloud.google && cloud.google.redirectPending()) import('./ui/cloud-ui.js').then(m => m.resumeGoogleRedirect(app.ui)).catch(err => console.warn('[cloud]', err));

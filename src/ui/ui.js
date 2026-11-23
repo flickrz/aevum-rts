@@ -548,7 +548,7 @@ export class UI {
     if (errText) fail(errText);
     const cloudOn = !!safe(() => this.app.cloud?.loggedIn, false);
     let busy = false;
-    Promise.resolve(safe(() => this.app.listSaves(), [])).then((l) => {
+    Promise.resolve(safe(() => this.app.listSaves({ fresh: true }), [])).then((l) => {
       list.innerHTML = '';
       if (!l || !l.length) { list.innerHTML = '<div style="color:var(--dim);text-align:center;padding:20px">Kayıt bulunamadı.</div>'; return; }
       for (const s of l) {

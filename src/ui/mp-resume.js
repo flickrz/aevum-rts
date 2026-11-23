@@ -23,7 +23,7 @@ export function menuResume(ui, errText) {
   const fail = (e) => { err.textContent = (e && e.message) || String(e || 'Hata'); err.classList.remove('hidden'); };
   if (errText) fail(errText);
   let busy = false;
-  Promise.resolve(safe(() => app.listMpSaves(), [])).then((l) => {
+  Promise.resolve(safe(() => app.listMpSaves({ fresh: true }), [])).then((l) => {
     list.innerHTML = '';
     if (!l || !l.length) { list.innerHTML = '<div style="color:var(--dim);text-align:center;padding:20px">Çok oyunculu kayıt yok. Maç sırasında 💾 Kaydet\'e bas (kurucu 2 dakikada bir otomatik kaydeder).</div>'; return; }
     for (const s of l) {

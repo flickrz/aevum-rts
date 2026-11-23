@@ -1,7 +1,11 @@
 // Aevum - read every player's multiplayer chat log from Firestore (users/{uid}/chatlog/*, written by
 // CloudSync.logChat for each line a player sends) and print it in time order.
-//   node tools/read-chatlog.mjs [--since 2026-11-15] [--room ABCDE] [--claude] [--out file.txt]
-// --claude: only the feedback lines (players write @claude in the chat, multiplayer or single player = room TEK)
+//   node tools/read-chatlog.mjs --all [--since 2026-11-15] [--room ABCDE] [--out file.txt]
+//   node tools/read-chatlog.mjs --claude [--since 2026-11-15] [--out file.txt]
+// --claude: only the feedback lines (players write @claude in the chat, multiplayer or single player = room TEK). They
+// are read from the small copy users/*/claude (CloudSync.logChat writes it), not from the whole chat log.
+// --all: every chat line. (2026-11-23) That costs one Firestore read per line ever written (thousands, from the
+// free plan's 50k a day), so it is refused without --all.
 // Needs a Firebase service-account key (Firebase console -> Project settings -> Service accounts -> Generate new
 // private key). Looked up in $AEVUM_SA, else ~/.aevum/firebase-sa.json. Never commit that file.
 import fs from 'fs';
@@ -28,12 +32,14 @@ async function accessToken() {
 }
 const val = (v) => (!v ? null : 'stringValue' in v ? v.stringValue : 'timestampValue' in v ? v.timestampValue : 'integerValue' in v ? +v.integerValue : null);
 
+const onlyClaude = process.argv.includes('--claude');
+if (!onlyClaude && !process.argv.includes('--all')) { console.error('Reading the whole chat log costs one Firestore read per line ever written. Use --claude (the @claude lines only), or --all to read everything.'); process.exit(2); }
 const tok = await accessToken();
 const base = `https://firestore.googleapis.com/v1/projects/${sa.project_id}/databases/(default)/documents`;
 const rows = [];
 let last = null;
-for (;;) {   // a collection-group query over every users/*/chatlog, 300 at a time (ordered by document name)
-  const q = { structuredQuery: { from: [{ collectionId: 'chatlog', allDescendants: true }], orderBy: [{ field: { fieldPath: '__name__' } }], limit: 300 } };
+for (;;) {   // a collection-group query over every users/*/chatlog (or users/*/claude), 300 at a time (ordered by document name)
+  const q = { structuredQuery: { from: [{ collectionId: onlyClaude ? 'claude' : 'chatlog', allDescendants: true }], orderBy: [{ field: { fieldPath: '__name__' } }], limit: 300 } };
   if (last) q.structuredQuery.startAt = { values: [{ referenceValue: last }], before: false };
   const r = await fetch(base + ':runQuery', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify(q) });
   const out = await r.json(); if (!Array.isArray(out)) throw new Error(JSON.stringify(out));
@@ -43,7 +49,6 @@ for (;;) {   // a collection-group query over every users/*/chatlog, 300 at a ti
   last = docs[docs.length - 1].name;
 }
 const since = arg('--since'), room = arg('--room');
-const onlyClaude = process.argv.includes('--claude');
 const lines = rows.filter((r) => (!since || (r.t || r.at) >= since) && (!room || r.room === room.toUpperCase()) && (!onlyClaude || /@claude/i.test(r.text)))
   .sort((a, b) => (a.at || a.t).localeCompare(b.at || b.t))
   .map((r) => `${r.t || r.at}  [${r.room || '-'}]  ${r.name}: ${r.text}`);

@@ -119,6 +119,8 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
     if (h) return { ticket: decodeURIComponent(h[1]), owner: true };
     var s = null; try { s = JSON.parse(localStorage.getItem('aevum.auth') || 'null'); } catch (e) { s = null; }
     if (!s || typeof s.refreshToken !== 'string' || !s.refreshToken) return null;
+    // the game's stored relay ticket of this account (src/cloud/sync.js TICKET_PREFIX): no /mp/auth (Firestore reads)
+    try { var k = JSON.parse(localStorage.getItem('aevum.cloud.tkt.' + s.uid) || 'null'); if (k && typeof k.ticket === 'string' && k.fb === s.uid && k.exp - Date.now() > 10 * 60 * 1000) return { ticket: k.ticket, owner: k.owner === true }; } catch (e) { /* ask the server */ }
     var r = await fetch('https://securetoken.googleapis.com/v1/token?key=' + encodeURIComponent(API_KEY), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(s.refreshToken) });
     if (!r.ok) return null;
     var tok = (await r.json()).id_token;
@@ -201,11 +203,11 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
   }
   function renderAll() { renderFilters(); renderList(); }
 
-  async function loadAll() {
+  async function loadAll(fresh) {
     $('list').textContent = ''; $('list').append(el('div', 'empty', 'Mesajlar yükleniyor…'));
     var st = api('/mp/admin/stats').then(renderStats, function (e) { $('sync').textContent = 'İstatistik okunamadı: ' + e.message; });
     try {
-      var f = await api('/mp/admin/feedback');
+      var f = await api('/mp/admin/feedback' + (fresh === true ? '?fresh=1' : ''));
       rows = f.items || [];
       renderAll();
     } catch (e) {
@@ -216,7 +218,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
   }
   $('q').addEventListener('input', function (e) { query = e.target.value; shown = 60; renderList(); });
   $('more').onclick = function () { shown += 60; renderList(); };
-  $('reload').onclick = loadAll;
+  $('reload').onclick = function () { loadAll(true); };
 
   (async function () {
     var t = null;

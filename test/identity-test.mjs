@@ -25,7 +25,7 @@ function jwt(claims, { kid = 'k1', key = privateKey, alg = 'RS256' } = {}) {
   return h + '.' + p + '.' + b64u(crypto.sign('RSA-SHA256', Buffer.from(h + '.' + p), key));
 }
 const good = (over = {}) => Object.assign({ aud: PROJECT, iss: 'https://securetoken.google.com/' + PROJECT, sub: 'fbUser123', iat: T() - 10, auth_time: T() - 10, exp: T() + 3000, email: 'kim@gmail.com', firebase: { sign_in_provider: 'google.com' } }, over);
-let certFetches = 0;
+let certFetches = 0, fsReads = 0;
 const fsDocs = new Map(), nameDocs = new Map();
 const fakeFetch = async (url, init) => {
   const nm = /\/documents\/names\/([^/?]+)$/.exec(String(url));
@@ -35,6 +35,7 @@ const fakeFetch = async (url, init) => {
   }
   if (url === 'CERTS') { certFetches++; return { ok: true, json: async () => ({ k1: pem }), headers: { get: () => 'public, max-age=600' } }; }
   if (String(url).includes(':batchGet')) {
+    fsReads++;
     const tok = String(init.headers.Authorization).slice(7);
     const sub = JSON.parse(Buffer.from(tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString()).sub;
     const body = JSON.parse(init.body);
@@ -137,8 +138,15 @@ const UID = 'a'.repeat(32);
   const a = await id.auth({ token: jwt(good({ iat: T() - 5, auth_time: T() - 5, exp: T() + 3000 })) });
   ok(a.ident.tp === 7, 'the relay ticket carries the verified TP (' + a.ident.tp + ')');
   fsDocs.set('users/fbUser123/meta/tp', { s: { stringValue: fake } });
-  const b = await id.auth({ token: jwt(good({ iat: T() - 5, auth_time: T() - 5, exp: T() + 3000 })) });
-  ok(b.ident.tp === 0, 'an edited stored ledger shows 0 TP');
+  const r0 = fsReads;
+  const c = await id.auth({ token: jwt(good({ iat: T() - 5, auth_time: T() - 5, exp: T() + 3000 })) });
+  ok(fsReads === r0 && c.ident.tp === 7, 'a second auth soon after reuses the checked account (no Firestore read)');
+  const b = await id.auth({ token: jwt(good({ iat: T() - 5, auth_time: T() - 5, exp: T() + 3000 })), fresh: true });
+  ok(b.ident.tp === 0 && fsReads === r0 + 1, 'an edited stored ledger shows 0 TP (fresh: read again)');
+  // a credited match: the cached account carries the new ledger, and the server can hand out a ticket with the new TP
+  const meB = id.checkTicket(b.ticket);
+  const rt = id.reticket(meB, 12);
+  ok(id.checkTicket(rt.ticket).tp === 12 && rt.ident.uid === meB.uid && rt.ident.name === meB.name && rt.exp > clock, 'reticket: same identity, new TP');
 }
 {
   const k = keysFromEnv({ RENDER_SERVICE_ID: 'srv-abc' });

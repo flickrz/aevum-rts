@@ -54,6 +54,7 @@ export function menuStats(ui) {
       : '⚠ Kalıcı kayıt kapalı (sunucuda AEVUM_SA yok): sayılar sunucu yeniden başlayınca sıfırlanır.'));
   }).catch((e) => { if (box.isConnected) body.textContent = (e && e.message) || 'İstatistikler alınamadı.'; });
   load();
-  timer = setInterval(load, 60 * 1000);
+  // (the server keeps the past days in memory: a refresh costs no Firestore read; a hidden tab does not ask)
+  timer = setInterval(() => { if (!box.isConnected) { clearInterval(timer); return; } if (!document.hidden) load(); }, 60 * 1000);
   ui._mbtn(box, 'Geri', () => { clearInterval(timer); ui._menuMain(); });
 }

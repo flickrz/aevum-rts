@@ -21,12 +21,27 @@ import { packSave, unpackSave } from './codec.js';
 import { isAvatar, defaultAvatar, avatarOf } from '../avatars.js';
 
 export const MAX_CLOUD_SAVES = 30;
+export const MAX_CLOUD_AUTOS = 10;                   // autosaves kept in the cloud (every match makes one; the oldest go first)
 export const AUTO_UPLOAD_MS = 5 * 60 * 1000;        // autosaves: at most one upload per game every 5 minutes
 export const HIST_PAGE = 200;
 export const HIST_BATCH = 100;                       // records per commit
 export const CHUNKS_PER_COMMIT = 4;                  // 4 x 512 KiB base64 < the 10 MiB request limit
 export const ATOMIC_CHARS = 8 * 1024 * 1024;         // a save up to this size goes up in one atomic commit (chunks + meta)
-export const SAVE_LIST_TTL = 60 * 1000;
+// (2026-11-23, the free daily Firestore read quota ran out) listing the saves costs one read per save: the list is
+// kept for the session and updated locally on upload / delete; it is read again at most every 30 minutes, or every
+// 5 minutes while the save screens are opened (fresh)
+export const SAVE_LIST_TTL = 30 * 60 * 1000;
+export const SAVE_LIST_FRESH = 5 * 60 * 1000;
+export const PULL_EVERY = 20 * 60 * 1000;            // 'lazy' pulls (timer, tab focus, Profil, after a match): at most this often
+export const PULL_KEY = 'aevum.cloud.pullAt.';       // + firebase uid: the last successful pull (shared by tabs and reloads)
+export const FULL_PULL_TRIES = 2;                     // full history re-pulls (local history shrank) per PC and day
+export const QUOTA_KEY = 'aevum.cloud.quotaUntil';  // a quota error: no Firestore call from any tab before this time
+export const QUOTA_WAIT = 30 * 60 * 1000, QUOTA_JITTER = 10 * 60 * 1000;
+export const TICKET_PREFIX = 'aevum.cloud.tkt.';     // + firebase uid: the relay ticket (12 h), reused across reloads
+export const PLAYERS_KEY = 'aevum.cloud.players';    // the registered players list (Arkadaşlar), cached
+export const PLAYERS_TTL = 6 * 3600 * 1000, PLAYERS_LIMIT = 50;
+const TKT_SLOW_MS = 5 * 60 * 1000;                   // a relay auth refused (409 / 403 / 503...): asked again after this
+const TKT_SLOW = [400, 403, 409, 429, 503];
 export const GUEST_KEY = 'aevum.guestProfile';       // the guest profile of this PC while an account is logged in
 export const ACCOUNT_UIDS_KEY = 'aevum.accountUids'; // profile uids of accounts used on this PC (hidden from the guest)
 export const STATE_PREFIX = 'aevum.cloud.';          // + firebase uid: {cursor, queue: {h, s}, up, card, name, release}
@@ -109,11 +124,20 @@ export function mergeSaveLists(local, cloud) {
   return out.sort((a, b) => (b.time || 0) - (a.time || 0));
 }
 // which cloud saves to delete to keep at most `max`: oldest autosaves first, then the oldest others
-export function pruneList(list, max = MAX_CLOUD_SAVES, keep = null) {
-  const n = (list || []).length - max;
-  if (n <= 0) return [];
-  const cand = list.filter((s) => s.key !== keep).sort((a, b) => (isAutoKey(b.key) - isAutoKey(a.key)) || ((a.time || 0) - (b.time || 0)));
-  return cand.slice(0, n).map((s) => s.key);
+// (and at most maxAuto autosaves: every match adds one, and each listed save costs a read)
+export function pruneList(list, max = MAX_CLOUD_SAVES, keep = null, maxAuto = MAX_CLOUD_AUTOS) {
+  list = list || [];
+  const autos = list.filter((s) => isAutoKey(s.key));
+  const out = [];
+  if (autos.length > maxAuto) {
+    const old = autos.filter((s) => s.key !== keep).sort((a, b) => (a.time || 0) - (b.time || 0));
+    for (const s of old.slice(0, autos.length - maxAuto)) out.push(s.key);
+  }
+  const n = list.length - out.length - max;
+  if (n <= 0) return out;
+  const gone = new Set(out);
+  const cand = list.filter((s) => s.key !== keep && !gone.has(s.key)).sort((a, b) => (isAutoKey(b.key) - isAutoKey(a.key)) || ((a.time || 0) - (b.time || 0)));
+  return out.concat(cand.slice(0, n).map((s) => s.key));
 }
 export const nameFromEmail = (email) => {
   const s = String(email || '').split('@')[0].replace(/[^A-Za-z0-9_çğıöşüÇĞİÖŞÜ]/g, '').slice(0, P.NAME_MAX);
@@ -146,13 +170,14 @@ export class CloudSync {
     this.setTimer = opts.setTimer || ((f, ms) => setTimeout(f, ms));
     this.clearTimer = opts.clearTimer || ((h) => clearTimeout(h));
     this.auth = opts.auth || new Auth({ fetch: opts.fetch, apiKey: opts.apiKey, ls: this.ls, now: this.now, setTimer: opts.authTimers ? this.setTimer : null, clearTimer: this.clearTimer });
-    this.fs = firestoreApi({ fetch: opts.fetch, projectId: opts.projectId, token: (f) => this.auth.token(f) });
+    this.fs = this._gated(firestoreApi({ fetch: opts.fetch, projectId: opts.projectId, token: (f) => this.auth.token(f) }));
     this.auth.onChange = () => this._emit();
     this.google = opts.google || null;   // GoogleSignIn (google.js): the only way to sign in
     this.guestless = !!opts.guestless;   // accounts are mandatory: signing out leaves no local (guest) profile
     this.relayBase = opts.relayBase || '';
     this.relayFetch = opts.relayFetch || opts.fetch;
-    this._tkt = null; this._tktP = null;
+    this._tkt = null; this._tktP = null; this._tktErr = null; this._tktReread = false;
+    this._friends = null;
     this._setup = false;
     this.offline = false; this.lastError = '';
     this._busy = null; this._again = null; this._retry = null; this._backoff = 0;
@@ -160,6 +185,22 @@ export class CloudSync {
     this._autoAt = new Map(); this._pendingAuto = new Map();
     this._listeners = new Set();
   }
+
+  // (2026-11-23) a quota error (429 RESOURCE_EXHAUSTED) stops every Firestore call of every tab of this browser for
+  // 30-40 minutes (persisted: a reload or another tab does not start again at once); the calls fail fast as 'quota'
+  // without reaching the network, so the queued writes simply wait. The jitter spreads the tabs that resume.
+  _gated(api) {
+    const gate = (fn) => async (...a) => {
+      const until = Number(lsGet(this.ls, QUOTA_KEY)) || 0;
+      if (until > this.now()) throw new CloudError('quota', 'QUOTA_WAIT', 'Bulut kotası doldu; daha sonra tekrar denenecek.', 429);
+      try { return await fn(...a); } catch (e) {
+        if (e && e.kind === 'quota') lsSet(this.ls, QUOTA_KEY, String(this.now() + QUOTA_WAIT + Math.floor(Math.random() * QUOTA_JITTER)));
+        throw e;
+      }
+    };
+    return Object.assign({}, api, { get: gate(api.get), commit: gate(api.commit), query: gate(api.query), batchGet: gate(api.batchGet) });
+  }
+  quotaWait() { const u = Number(lsGet(this.ls, QUOTA_KEY)) || 0; return Math.max(0, u - this.now()); }
 
   // ---------- chat log (owner 2026-11-15: revisions are agreed over chat; read back with tools/read-chatlog.mjs) ----------
   // one chat line this player SENT -> users/{uid}/chatlog/{id} (each line is written once, by its sender). Best effort:
@@ -315,7 +356,7 @@ export class CloudSync {
   }
   async _attach(opts = {}) {
     const fb = this.auth.user.uid;
-    this._stCache = null; this._saveList = null;
+    this._stCache = null; this._saveList = null; this._friends = null;
     let cloud = opts.profileDoc;   // (already read by the caller: undefined = read it here)
     if (cloud === undefined) { try { cloud = await this.fs.get(this._base() + '/meta/profile'); } catch (e) { this.auth.signOut(); return fail(authMessage(e)); } }
     const local = this.o.profile.get();
@@ -360,6 +401,7 @@ export class CloudSync {
       this._st().name = cp.name; this._save();
       this._markAccountUid(cp.uid);
     }
+    this._tktErr = null;   // (a NO_PROFILE answer while the account was being set up no longer holds)
     this._emit();
     // first sync on this PC: pulls the account's history, uploads what the cloud lacks
     await this.flush({ pull: true });
@@ -369,12 +411,13 @@ export class CloudSync {
   // created from it). The account's history and saves stay cached in IndexedDB but are hidden from the guest.
   logout() {
     const p = this.o.profile.get();
+    if (this.auth.user) lsDel(this.ls, TICKET_PREFIX + this.auth.user.uid);   // (the stored relay ticket goes with the session)
     this.auth.signOut();
     if (this.google) { try { Promise.resolve(this.google.clear()).catch(() => {}); } catch (e) { /* ignore */ } }   // no SDK state survives
     this._stCache = null; this._saveList = null; this.offline = false; this.lastError = '';
     this._autoAt.clear(); this._pendingAuto.clear();
     if (this._retry != null) { this.clearTimer(this._retry); this._retry = null; }
-    this._tkt = null; this._tktP = null;
+    this._tkt = null; this._tktP = null; this._tktErr = null; this._tktReread = false; this._friends = null;
     const g = jget(this.ls, GUEST_KEY, null);
     lsDel(this.ls, GUEST_KEY);
     if (this.guestless) { if (this.o.profile.clear) this.o.profile.clear(); }
@@ -389,7 +432,7 @@ export class CloudSync {
     if (!now) { if (!before) return; this.auth.forget(); }
     else if (before && before.uid === now.uid && this.auth.s) { this.auth.s.refreshToken = now.refreshToken; return; }   // same account (a refresh there)
     else this.auth.load();
-    this._stCache = null; this._saveList = null; this.offline = false; this.lastError = ''; this._tkt = null; this._tktP = null;
+    this._stCache = null; this._saveList = null; this.offline = false; this.lastError = ''; this._tkt = null; this._tktP = null; this._tktErr = null; this._friends = null;
     this._autoAt.clear(); this._pendingAuto.clear();
     if (this._retry != null) { this.clearTimer(this._retry); this._retry = null; }
     if (!this.loggedIn && this.guestless && this.o.profile.clear) this.o.profile.clear();
@@ -457,7 +500,7 @@ export class CloudSync {
     const np = { v: 1, uid: p.uid, name: n.name, created: p.created, avatar: avatarOf(p.avatar, p.uid) };
     this.o.profile.set(np);
     const st = this._st(); st.card = null; st.name = n.name; this._save();
-    this._tkt = null;   // the relay ticket carries the name
+    this._dropTicket(true);   // the relay ticket carries the name (the server reads the profile again)
     this.kick();   // the public card follows
     return { ok: true, error: '', profile: np };
   }
@@ -474,7 +517,7 @@ export class CloudSync {
     const np = Object.assign({}, this.o.profile.get() || p, { avatar: id });
     this.o.profile.set(np);
     const st = this._st(); st.card = null; this._save();
-    this._tkt = null;
+    this._dropTicket(true);
     this.kick();
     return { ok: true, error: '', profile: np };
   }
@@ -497,6 +540,7 @@ export class CloudSync {
       const np = { v: 1, uid: cd.uid, name: named.name, created: Number(cd.created) || (p && p.uid === cd.uid ? p.created : this.now()), avatar: av };
       this._markAccountUid(np.uid);
       this.o.profile.set(np);
+      if (p && p.uid === np.uid) this._dropTicket(true);   // (changed on another PC: the stored ticket shows the old one)
     }
     if (st.name !== named.name) { st.name = named.name; this._save(); }
   }
@@ -508,7 +552,11 @@ export class CloudSync {
     if (typeof s !== 'string' || !s) return;
     const st = this._st(), a = ledgerInfo(s), b = ledgerInfo(st.tp);
     if (!a || (a.fb && this.auth.user && a.fb !== this.auth.user.uid)) return;
-    if (!b || a.n > b.n) { st.tp = s; st.tpDirty = false; this._save(); this._emit(); }
+    if (!b || a.n > b.n) {
+      st.tp = s; st.tpDirty = false; this._save();
+      if (b) this._dropTicket(true);   // TP changed on another PC: the next ticket shows it
+      this._emit();
+    }
     else if (b.n > a.n) { st.tpDirty = true; this._save(); }   // ours is newer: it goes up
   }
   async _pushTp(sid) {
@@ -529,47 +577,87 @@ export class CloudSync {
     return j || {};
   }
   // the relay ticket of this account: the server verified our Google session and read our profile -> {ticket, ident, exp}
+  // (2026-11-23) each /mp/auth costs the server 3-4 Firestore reads: the 12 h ticket is kept in localStorage and
+  // reused by reloads and other tabs until 10 minutes before it expires. fresh: a new one (a transport reconnect).
   async relayTicket(fresh = false) {
     if (!this.loggedIn) throw new CloudError('auth', 'NO_SESSION', 'Giriş yapılmadı.');
-    if (!fresh && this._tkt && this._tkt.exp - this.now() > 10 * 60 * 1000 && this._tkt.fb === this.auth.user.uid) return this._tkt;
+    const fb0 = this.auth.user.uid;
+    const have = this._tktHeld();
+    if (!fresh && have && have.exp - this.now() > 10 * 60 * 1000) return have;
+    // the server refused one a moment ago (no profile yet, name taken, Firestore down): not asked again at once
+    if (!fresh && this._tktErr && this._tktErr.fb === fb0 && this._tktErr.until > this.now()) throw this._tktErr.e;
     if (!this._tktP) {
-      const fb = this.auth.user.uid;
+      const fb = fb0, reread = this._tktReread;
       this._tktP = (async () => {
         let token = await this.auth.token(false);
+        const body = (tk) => (reread ? { token: tk, fresh: true } : { token: tk });
         let r;
-        try { r = await this._relay('/mp/auth', { token }); } catch (e) {
-          if (e.status !== 401) throw e;
-          token = await this.auth.token(true);   // a stale id token: once more with a fresh one
-          r = await this._relay('/mp/auth', { token });
+        try {
+          try { r = await this._relay('/mp/auth', body(token)); } catch (e) {
+            if (e.status !== 401) throw e;
+            token = await this.auth.token(true);   // a stale id token: once more with a fresh one
+            r = await this._relay('/mp/auth', body(token));
+          }
+        } catch (e) {
+          if (e && TKT_SLOW.includes(e.status) && this.auth.user && this.auth.user.uid === fb) this._tktErr = { fb, until: this.now() + TKT_SLOW_MS, e };
+          throw e;
         }
         if (!this.auth.user || this.auth.user.uid !== fb) throw new CloudError('stale', 'SESSION_CHANGED', 'Oturum değişti.');
-        this._tkt = { ticket: r.ticket, ident: r.ident, exp: r.exp, fb, owner: r.owner === true };
+        this._setTicket({ ticket: r.ticket, ident: r.ident, exp: r.exp, fb, owner: r.owner === true });
+        if (reread) this._tktReread = false;
+        this._tktErr = null;
         return this._tkt;
       })().finally(() => { this._tktP = null; });
     }
     return this._tktP;
   }
+  // the ticket in memory, else the one a reload / another tab stored (same account, not expired) -> ticket | null
+  _tktHeld() {
+    const u = this.auth.user;
+    if (!u) return null;
+    if (this._tkt && this._tkt.fb === u.uid && this._tkt.exp > this.now()) return this._tkt;
+    const t = jget(this.ls, TICKET_PREFIX + u.uid, null);
+    if (t && typeof t.ticket === 'string' && t.fb === u.uid && Number(t.exp) > this.now() && t.ident && typeof t.ident === 'object') { this._tkt = t; return t; }
+    return null;
+  }
+  _setTicket(t) { this._tkt = t; lsSet(this.ls, TICKET_PREFIX + t.fb, JSON.stringify(t)); }
+  // forget the ticket (memory + stored). reread: the next one makes the server read the profile / ledger again
+  _dropTicket(reread = false) {
+    if (this._tkt) lsDel(this.ls, TICKET_PREFIX + this._tkt.fb);
+    if (this.auth.user) lsDel(this.ls, TICKET_PREFIX + this.auth.user.uid);
+    this._tkt = null; this._tktErr = null;
+    if (reread) this._tktReread = true;
+  }
+  // a relay call with the ticket; a ticket the server no longer accepts (401) is replaced once
+  async _withTicket(fn) {
+    const t = await this.relayTicket();
+    try { return await fn(t); } catch (e) {
+      if (!(e && e.status === 401)) throw e;
+      if (this._tkt && this._tkt.ticket === t.ticket) this._dropTicket();
+      return fn(await this.relayTicket(true));
+    }
+  }
   // the current relay ticket when one is at hand (never fetches one): the stats beat carries it when it can
-  ticketNow() { return this.loggedIn && this._tkt && this._tkt.fb === this.auth.user.uid && this._tkt.exp > this.now() ? this._tkt.ticket : null; }
+  ticketNow() { const t = this.loggedIn ? this._tktHeld() : null; return t ? t.ticket : null; }
   // the game's owner (AEVUM_OWNERS on the server) sees the player statistics
   async isOwner() { try { return !!(await this.relayTicket()).owner; } catch (e) { return false; } }
   // the owner tells every open tab that an update comes: {inSec} (10..600, default 60) or {cancel: true} -> {ver, notice}
   async announce(body) {
-    const t = await this.relayTicket();
-    return this._relay('/mp/announce', body || {}, t.ticket);
+    return this._withTicket((t) => this._relay('/mp/announce', body || {}, t.ticket));
   }
   // -> {online: {total, menu, sp, mp, signedIn}, today, days: [{day, visitors, players, sp, mp, peak}], persisted}
   async stats() {
     const t = await this.relayTicket();
     let r;
     try { r = await this.relayFetch(this.relayBase + '/mp/stats', { cache: 'no-store', headers: { 'X-Aevum-Ticket': t.ticket } }); } catch (e) { throw new CloudError('network', 'NETWORK', 'Oyun sunucusuna ulaşılamadı.'); }
+    if (r.status === 401) this._dropTicket();
     if (!r.ok) throw new CloudError('server', 'STATS_' + r.status, r.status === 403 ? 'Bu ekran yalnızca oyunun sahibine açık.' : 'İstatistikler alınamadı (' + r.status + ').', r.status);
     return r.json();
   }
   // a match starts -> the server's match ticket (null when it cannot be had: no TP for this match then).
   // team: my team in a multiplayer match; the server keeps it as my team for the result (a claim cannot change it)
   async tpStart(mode, room, team) {
-    try { const t = await this.relayTicket(); const r = await this._relay('/mp/tp/start', Number.isInteger(team) ? { mode, room, team } : { mode, room }, t.ticket); return typeof r.mt === 'string' ? r.mt : null; } catch (e) { console.warn('[tp] start', e && e.message); return null; }
+    try { const r = await this._withTicket((t) => this._relay('/mp/tp/start', Number.isInteger(team) ? { mode, room, team } : { mode, room }, t.ticket)); return typeof r.mt === 'string' ? r.mt : null; } catch (e) { console.warn('[tp] start', e && e.message); return null; }
   }
   // a match ended -> {ok, gained, tp, reason}. team: my team in a multiplayer match (default: the record that was
   // just stored, see onRecord). A multiplayer win waits on the server for the other players' reports (pending).
@@ -579,15 +667,19 @@ export class CloudSync {
     try {
       let r;
       for (let i = 0; ; i++) {
-        const t = await this.relayTicket();
-        r = await this._relay('/mp/tp/claim', { mt, result, team: Number.isInteger(team) ? team : null, ledger: this._st().tp || '' }, t.ticket);
+        r = await this._withTicket((t) => this._relay('/mp/tp/claim', { mt, result, team: Number.isInteger(team) ? team : null, ledger: this._st().tp || '' }, t.ticket));
         if (!r.pending || i >= 20) break;
         await new Promise((res) => this.setTimer(res, Math.max(1000, Math.min(10000, (r.retryIn | 0) || 5000))));
       }
       if (r.ok && typeof r.ledger === 'string') {
         const st = this._st();
         if (r.ledger !== st.tp) { st.tp = r.ledger; st.tpDirty = true; this._save(); }
-        if (r.gained) this._tkt = null;   // the lobby shows the new TP after a fresh ticket
+        // the lobby shows the new TP: the server hands back a ticket with it (an older server: a fresh one is asked for)
+        if (r.gained) {
+          const t = this._tkt;
+          if (typeof r.ticket === 'string' && Number(r.exp) > this.now() && t && this.auth.user && t.fb === this.auth.user.uid && r.ident && r.ident.fb === t.fb) this._setTicket(Object.assign({}, t, { ticket: r.ticket, ident: r.ident, exp: Number(r.exp) }));
+          else this._dropTicket(true);
+        }
         this._emit(); this.kick();
       }
       return { ok: !!r.ok, gained: r.gained | 0, tp: r.tp | 0, reason: r.reason || '' };
@@ -602,10 +694,16 @@ export class CloudSync {
     return { fb: d.id, name: P.checkName(x.name || '').ok ? P.checkName(x.name).name : 'Oyuncu', avatar: isAvatar(x.avatar) ? x.avatar : null, games: x.games | 0, wins: x.wins | 0 };
   }
   // registered players, most recently active first (my own card left out) -> [{fb, name, avatar, games, wins}]
-  async players(limit = 100) {
+  // (2026-11-23: one read per listed card) the newest PLAYERS_LIMIT cards, kept in localStorage for PLAYERS_TTL
+  async players(limit = PLAYERS_LIMIT) {
     if (!this.loggedIn) return [];
+    const me = this.auth.user.uid;
+    const c = jget(this.ls, PLAYERS_KEY, null);
+    if (c && Array.isArray(c.list) && c.limit >= limit && this.now() - (Number(c.at) || 0) < PLAYERS_TTL && this.now() >= (Number(c.at) || 0)) return c.list.filter((x) => x && x.fb !== me).slice(0, limit);
     const docs = await this.fs.query('', { collection: 'profiles', structured: { orderBy: [{ field: { fieldPath: 'updated' }, direction: 'DESCENDING' }], limit } });
-    return docs.map((d) => this._cardOf(d)).filter((c) => c.fb !== this.auth.user.uid);
+    const list = docs.map((d) => this._cardOf(d));
+    lsSet(this.ls, PLAYERS_KEY, JSON.stringify({ at: this.now(), limit, list }));
+    return list.filter((x) => x.fb !== me);
   }
   // a player by exact user name (case-insensitive, Turkish-aware) -> card | null
   async findPlayer(name) {
@@ -617,33 +715,42 @@ export class CloudSync {
     const c = await this.fs.get('profiles/' + d.data.uid);
     return c ? this._cardOf(c) : { fb: d.data.uid, name: n.name, avatar: null, games: 0, wins: 0 };
   }
+  // my friends list: read once per session (Arkadaşlar and every lobby share it), then kept up to date here
   async friends() {
     if (!this.loggedIn) return [];
+    const fb = this.auth.user.uid;
+    if (this._friends && this._friends.fb === fb) return this._friends.list.slice();
     const docs = await this.fs.query(this._base(), { collection: 'friends', structured: { limit: 300 } });
-    return docs.map((d) => this._cardOf(d)).sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+    const list = docs.map((d) => this._cardOf(d)).sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+    if (this.auth.user && this.auth.user.uid === fb) this._friends = { fb, list };
+    return list.slice();
   }
   async addFriend(card) {
     if (!this.loggedIn || !card || typeof card.fb !== 'string' || !/^[A-Za-z0-9]{1,128}$/.test(card.fb)) return fail('Oyuncu bulunamadı.');
     if (card.fb === this.auth.user.uid) return fail('Kendini arkadaş olarak ekleyemezsin.');
-    try { await this.fs.commit([{ set: this._base() + '/friends/' + card.fb, data: { name: String(card.name || 'Oyuncu').slice(0, P.NAME_MAX), avatar: isAvatar(card.avatar) ? card.avatar : null, added: this.now() } }]); } catch (e) { return fail(authMessage(e)); }
+    const data = { name: String(card.name || 'Oyuncu').slice(0, P.NAME_MAX), avatar: isAvatar(card.avatar) ? card.avatar : null, added: this.now() };
+    try { await this.fs.commit([{ set: this._base() + '/friends/' + card.fb, data }]); } catch (e) { return fail(authMessage(e)); }
+    if (this._friends && this.auth.user && this._friends.fb === this.auth.user.uid) {
+      const c = this._cardOf({ id: card.fb, data });
+      this._friends.list = this._friends.list.filter((x) => x.fb !== card.fb).concat([c]).sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+    }
     return { ok: true, error: '' };
   }
   async removeFriend(fb) {
     if (!this.loggedIn || !/^[A-Za-z0-9]{1,128}$/.test(String(fb))) return fail('Geçersiz.');
     try { await this.fs.commit([{ del: this._base() + '/friends/' + fb }]); } catch (e) { return fail(authMessage(e)); }
+    if (this._friends) this._friends.list = this._friends.list.filter((x) => x.fb !== String(fb));
     return { ok: true, error: '' };
   }
   // which of these accounts have the game open right now -> Set(fb)
   async online(fbs) {
     if (!this.loggedIn || !fbs.length) return new Set();
-    const t = await this.relayTicket();
-    const r = await this._relay('/mp/online', { fbs }, t.ticket);
+    const r = await this._withTicket((t) => this._relay('/mp/online', { fbs }, t.ticket));
     return new Set(Array.isArray(r.online) ? r.online : []);
   }
   // invite a friend into my room (code) -> {ok, online}
   async invite(fb, code) {
-    const t = await this.relayTicket();
-    const r = await this._relay('/mp/invite', { to: fb, code }, t.ticket);
+    const r = await this._withTicket((t) => this._relay('/mp/invite', { to: fb, code }, t.ticket));
     return { ok: true, online: !!r.online };
   }
   // everyone with the game open and signed in (me left out) -> {total, players: [{fb, uid, name, av, tp, s}]}
@@ -653,7 +760,7 @@ export class CloudSync {
     const t = await this.relayTicket();
     let r;
     try { r = await this.relayFetch(this.relayBase + '/mp/players', { cache: 'no-store', headers: { 'X-Aevum-Ticket': t.ticket } }); } catch (e) { throw new CloudError('network', 'NETWORK', 'Oyun sunucusuna ulaşılamadı.'); }
-    if (r.status === 401) this._tkt = null;
+    if (r.status === 401) this._dropTicket();
     if (!r.ok) throw new CloudError('server', 'PLAYERS_' + r.status, 'Oyuncu listesi alınamadı (' + r.status + ').', r.status);
     const j = await r.json();
     return { total: j.total | 0, players: Array.isArray(j.players) ? j.players : [] };
@@ -664,15 +771,14 @@ export class CloudSync {
     const t = await this.relayTicket();
     let r;
     try { r = await this.relayFetch(this.relayBase + '/mp/rooms', { cache: 'no-store', headers: { 'X-Aevum-Ticket': t.ticket } }); } catch (e) { throw new CloudError('network', 'NETWORK', 'Oyun sunucusuna ulaşılamadı.'); }
-    if (r.status === 401) this._tkt = null;
+    if (r.status === 401) this._dropTicket();
     if (!r.ok) throw new CloudError('server', 'ROOMS_' + r.status, 'Oda listesi alınamadı (' + r.status + ').', r.status);
     const j = await r.json();
     return { total: j.total | 0, rooms: Array.isArray(j.rooms) ? j.rooms : [] };
   }
   // invite everyone online who is not in a match into my room (code); skip: accounts already in the room -> {sent}
   async inviteAll(code, skip = []) {
-    const t = await this.relayTicket();
-    const r = await this._relay('/mp/invite-all', { code, skip }, t.ticket);
+    const r = await this._withTicket((t) => this._relay('/mp/invite-all', { code, skip }, t.ticket));
     return { sent: r.sent | 0 };
   }
   // my inbox on the game server (long-poll while signed in): it also marks me online. onMsg({type:'invite', code, from})
@@ -683,7 +789,7 @@ export class CloudSync {
     const loop = async () => {
       let fails = 0;
       while (this._inboxRun) {
-        if (!this.loggedIn || this.auth.dead) { await new Promise((r) => this.setTimer(r, 5000)); continue; }
+        if (!this.loggedIn || this.auth.dead || this._setup) { await new Promise((r) => this.setTimer(r, 5000)); continue; }
         const fb = this.auth.user.uid;
         try {
           const t = await this.relayTicket();
@@ -691,7 +797,7 @@ export class CloudSync {
           const to = ctl ? this.setTimer(() => { try { ctl.abort(); } catch (e) { /* ignore */ } }, 35000) : null;
           let r;
           try { r = await this.relayFetch(this.relayBase + '/mp/inbox?tk=' + encodeURIComponent(t.ticket) + '&t=' + this.now(), Object.assign({ cache: 'no-store' }, ctl ? { signal: ctl.signal } : {})); } finally { if (to != null) this.clearTimer(to); }
-          if (r.status === 401) { this._tkt = null; throw new Error('ticket'); }
+          if (r.status === 401) { this._dropTicket(); throw new Error('ticket'); }
           if (!r.ok) throw new Error('inbox ' + r.status);
           const arr = await r.json();
           fails = 0;
@@ -699,7 +805,9 @@ export class CloudSync {
           for (const m of Array.isArray(arr) ? arr : []) { try { if (this._inboxFn) this._inboxFn(m); } catch (e) { console.warn('[inbox]', e); } }
         } catch (e) {
           fails++;
-          await new Promise((r) => this.setTimer(r, Math.min(30000, 2000 * fails)));
+          // the server refused the ticket itself (no profile, name taken, Firestore down): each try costs it reads
+          const slow = !!(e && TKT_SLOW.includes(e.status));
+          await new Promise((r) => this.setTimer(r, slow ? TKT_SLOW_MS : Math.min(30000, 2000 * fails)));
         }
       }
     };
@@ -743,7 +851,8 @@ export class CloudSync {
       await this.auth.deleteAccount();
     } catch (e) { return fail(e.kind === 'network' ? 'Çevrimdışı: hesap şu an silinemiyor.' : authMessage(e)); }
     lsDel(this.ls, STATE_PREFIX + fb);
-    this._stCache = null; this._saveList = null; this._tkt = null;
+    this._stCache = null; this._saveList = null; this._tkt = null; this._friends = null;
+    lsDel(this.ls, TICKET_PREFIX + fb);
     if (this.google) { try { await this.google.clear(); } catch (e) { /* ignore */ } }
     if (p && opts.local) { try { await opts.local(p.uid); } catch (e) { console.warn('[cloud] local cleanup', e); } }
     if (this.guestless && this.o.profile.clear) this.o.profile.clear();
@@ -773,6 +882,7 @@ export class CloudSync {
     const p = this.o.profile.get();
     if (!this.loggedIn || !rec || !p || rec.uid !== p.uid) return;
     this._queue('h', [rec.id]);
+    // a full pull: the account profile first (a rename on another PC never goes back onto the public card)
     this.kick({ pull: true });
   }
   // records written by an import: the account's own ones are uploaded
@@ -796,13 +906,19 @@ export class CloudSync {
     // a local history that was emptied (site data cleared, a new browser profile) never got the older ones back. When
     // this PC holds fewer of the account's records than it did after the last pull, or that count was never kept
     // (older state), pull everything again once.
+    // (2026-11-23) the re-pull never touches st.cursor before it completed (a failed page used to leave a null
+    // cursor behind, saved by the next state write: every later pull read the whole history again), and it runs at
+    // most FULL_PULL_TRIES times a day on this PC (a history list that keeps failing / shrinking cannot loop it)
+    let cursor = st.cursor, held = false;
     if (st.cursor && p) {
       const mine = (await this.o.history.list()).filter((r) => r && r.uid === p.uid).length;
       this._alive(sid);
-      if (st.known == null || mine < st.known) st.cursor = null;
+      if (st.known == null || mine < st.known) {
+        const tries = (Array.isArray(st.fullAt) ? st.fullAt : []).filter((t) => typeof t === 'number' && this.now() - t < 24 * 3600 * 1000 && t <= this.now());
+        if (tries.length < FULL_PULL_TRIES) { cursor = null; st.fullAt = tries.concat([this.now()]); this._save(); } else held = true;
+      }
     }
-    const first = !st.cursor;
-    let cursor = st.cursor;
+    const first = !cursor;
     const got = [];
     for (let page = 0; page < 50; page++) {
       const sq = { orderBy: [{ field: { fieldPath: 't' }, direction: 'ASCENDING' }, { field: { fieldPath: '__name__' }, direction: 'ASCENDING' }], limit: HIST_PAGE };
@@ -831,7 +947,8 @@ export class CloudSync {
     if (put.length) await this.o.history.put(put);
     this._alive(sid);
     st.cursor = cursor;
-    if (p) { st.known = (await this.o.history.list()).filter((r) => r && r.uid === p.uid).length; this._alive(sid); }
+    // (a re-pull held back by the daily cap keeps the higher count: it runs on a later day)
+    if (p) { const n = (await this.o.history.list()).filter((r) => r && r.uid === p.uid).length; this._alive(sid); st.known = held && st.known != null ? Math.max(st.known, n) : n; }
     this._save();
     if (up.length) this._queue('h', up);
     return put.length;
@@ -895,7 +1012,8 @@ export class CloudSync {
     if (this._busy) {
       // a loop of an earlier session (signed out / switched meanwhile): run after it ends instead of joining it
       if (this._busySid !== sid) return this._busy.then(() => this.flush(opts));
-      this._again = { pull: !!((this._again && this._again.pull) || opts.pull) };
+      const a = this._again && this._again.pull, b = opts.pull;
+      this._again = { pull: a === true || b === true ? true : (a || b) ? 'lazy' : false };
       return this._busy;
     }
     this._busySid = sid;
@@ -912,14 +1030,23 @@ export class CloudSync {
     this._emit();
     return this._busy;
   }
+  // pull: true = always; 'lazy' = only when the last successful pull of this account in this browser (any tab) is
+  // older than PULL_EVERY (the timer, tab focus, Profil, after a match: 3 reads each, mostly for nothing)
+  _pullDue() {
+    const u = this.auth.user;
+    const t = u ? Number(lsGet(this.ls, PULL_KEY + u.uid)) || 0 : 0;
+    return !(t > 0 && t <= this.now() && this.now() - t < PULL_EVERY);
+  }
   async _flushOnce({ pull } = {}) {
     if (!this.loggedIn || this.auth.dead || this._setup) return { ok: false, added: 0 };
     const sid = this._sid();
     let added = 0;
     try {
       const q = this._st().queue;
-      if (pull) await this._pullMeta(sid);
-      if (pull || q.h.length) added = await this._pull(sid);   // pull first: a finished record never loses to an older 'abandoned'
+      const doPull = pull === true || (pull === 'lazy' && this._pullDue());
+      if (doPull) await this._pullMeta(sid);
+      if (doPull || q.h.length) added = await this._pull(sid);   // pull first: a finished record never loses to an older 'abandoned'
+      if (doPull && this._sid() === sid) lsSet(this.ls, PULL_KEY + this.auth.user.uid, String(this.now()));
       await this._pushHistory(sid);
       await this._pushSaves(sid);
       await this._pushReleases(sid);
@@ -940,17 +1067,18 @@ export class CloudSync {
     if (e && e.kind === 'auth') { this.auth.dead = true; this.lastError = authMessage(e); return; }
     this.offline = true;
     this.lastError = e && e.kind === 'quota' ? 'Bulut kotası doldu; daha sonra tekrar denenecek.' : e && e.kind === 'network' ? 'Çevrimdışı; bağlantı gelince tekrar denenecek.' : 'Bulut hatası; daha sonra tekrar denenecek.';
-    this._schedule(e && e.kind === 'quota' ? RETRY_MAX : null);
+    // a quota error: wait until the quota pause ends (shared by every tab, see _gated)
+    this._schedule(e && e.kind === 'quota' ? Math.max(RETRY_MAX, this.quotaWait() + 1000) : null);
   }
   _schedule(ms) {
     if (this._retry != null) return;
     this._backoff = Math.min(RETRY_MAX, this._backoff ? this._backoff * 2 : RETRY_MIN);
-    this._retry = this.setTimer(() => { this._retry = null; this.kick({ pull: true }); }, ms || this._backoff);
+    this._retry = this.setTimer(() => { this._retry = null; this.kick({ pull: 'lazy' }); }, ms || this._backoff);
   }
-  // fire and forget
-  kick(opts = {}) { if (this.loggedIn && !this.auth.dead && !this._setup) this.flush(opts); }
-  // app start: resume the session in the background
-  start() { if (this.loggedIn) { this._emit(); this.kick({ pull: true }); } }
+  // fire and forget. While a quota pause runs nothing is sent (the queue waits for the scheduled retry).
+  kick(opts = {}) { if (this.loggedIn && !this.auth.dead && !this._setup && !this.quotaWait()) this.flush(opts); }
+  // app start: resume the session in the background (a reload soon after the last pull does not pull again)
+  start() { if (this.loggedIn) { this._emit(); this.kick({ pull: 'lazy' }); } }
 
   // ---------- saves ----------
   // a local save was written (key in the local store). info: {auto, game: match id / mp code}
@@ -1009,8 +1137,9 @@ export class CloudSync {
     this._alive(sid);
     if (st.up[ck] === pk.sha) return;   // the cloud already holds exactly this save
     // the version this upload replaces (from the cached list: at worst a stale entry leaves orphaned chunk docs of
-    // a version another PC uploaded meanwhile; the meta doc always points to complete chunks)
-    const list = await this.listCloudSaves({ strict: true });
+    // a version another PC uploaded meanwhile; the meta doc always points to complete chunks). (2026-11-23) the list
+    // is read once per session for this (one read per save), not again before every upload: it is kept up to date here
+    const list = this._saveList || await this.listCloudSaves({ strict: true });
     this._alive(sid);
     const base = this._base() + '/saves/' + ck;
     const old = list.find((x) => x.key === ck) || null;
@@ -1049,9 +1178,11 @@ export class CloudSync {
   }
   // -> [meta] (cached for a minute). maxWait: answer from the cache (or []) after this many ms, the fetch goes on.
   // strict: errors are thrown (used by uploads); otherwise an error returns the cache (or []).
-  async listCloudSaves({ force = false, maxWait = 0, strict = false } = {}) {
+  // fresh: the save screens (read again when the list is older than SAVE_LIST_FRESH, else SAVE_LIST_TTL)
+  async listCloudSaves({ force = false, maxWait = 0, strict = false, fresh = false } = {}) {
     if (!this.loggedIn) return [];
-    if (!force && this._saveList && this.now() - this._saveListAt < SAVE_LIST_TTL) return this._saveList;
+    const age = this.now() - this._saveListAt;
+    if (!force && this._saveList && age >= 0 && age < (fresh ? SAVE_LIST_FRESH : SAVE_LIST_TTL)) return this._saveList;
     if (!this._saveListP) {
       const uid = this.auth.user.uid;
       this._saveListP = this.fs.query(this._base(), { collection: 'saves', structured: { limit: 200 } }).then((docs) => {

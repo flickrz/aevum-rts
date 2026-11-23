@@ -24,6 +24,7 @@ import crypto from 'node:crypto';
 
 export const CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 export const TICKET_TTL = 12 * 3600 * 1000;
+export const ACCOUNT_TTL = 15 * 60 * 1000;   // a checked account (profile, ledger, name claim) is reused this long by /mp/auth
 export const MATCH_TTL = 48 * 3600 * 1000;
 export const TP_WIN = 3, TP_LOSS = 1;
 export const TP_MIN_MS = 5 * 60 * 1000;      // a match shorter than this (wall clock since its ticket) gives no TP
@@ -176,6 +177,7 @@ export function createIdentity(opts = {}) {
   // ---------- profile uid owners ----------
   // uid -> fb. The first account that shows a profile uid owns it; one that copied it gets its own derived uid.
   const uidOwners = new Map();
+  const accounts = new Map();   // fb -> {prof (uid already checked), ledgerS, t}: see auth
   const derivedUid = (fb) => crypto.createHmac('sha256', keys[0]).update('aevum-uid|' + fb).digest('hex').slice(0, 32);
   async function shownUid(uid, fb) {
     let owner = uidOwners.get(uid) || null;
@@ -213,13 +215,25 @@ export function createIdentity(opts = {}) {
       const tok = body && body.token;
       const v = await verifyIdToken(tok);
       fb = v.fb;
-      const a = await readAccount(fb, tok);
-      prof = a.prof; ledgerS = a.ledger;
-      if (prof && UID_RE.test(prof.uid || '') && cleanName(prof.name)) {
-        // the name must be this account's claim (names/ is first come, first served); the uid its own (see shownUid)
-        const owner = await nameOwner(cleanName(prof.name), tok);
-        if (owner && owner !== fb) throw new IdentityError('NAME_TAKEN', 'Bu kullanıcı adı başka bir hesaba ait.', 409);
-        prof = Object.assign({}, prof, { uid: await shownUid(prof.uid, fb) });
+      // (2026-11-23, the free Firestore read quota ran out) the checked account is reused for ACCOUNT_TTL: 3-4 reads
+      // saved per auth. fresh: the client changed its profile (rename / avatar) or saw a newer ledger: read again
+      const c = accounts.get(fb);
+      if (c && !(body && body.fresh) && now() - c.t < ACCOUNT_TTL && now() >= c.t) { prof = c.prof; ledgerS = c.ledgerS; }
+      else {
+        const a = await readAccount(fb, tok);
+        prof = a.prof; ledgerS = a.ledger;
+        let checked = false;
+        if (prof && UID_RE.test(prof.uid || '') && cleanName(prof.name)) {
+          // the name must be this account's claim (names/ is first come, first served); the uid its own (see shownUid)
+          const owner = await nameOwner(cleanName(prof.name), tok);
+          if (owner && owner !== fb) throw new IdentityError('NAME_TAKEN', 'Bu kullanıcı adı başka bir hesaba ait.', 409);
+          const shown = prof.uid;
+          prof = Object.assign({}, prof, { uid: await shownUid(prof.uid, fb) });
+          // (kept only when both checks really ran: an unreadable names doc / uid store is asked again next time)
+          checked = owner != null && uidOwners.has(shown);
+        }
+        if (checked) { if (accounts.size > 50000) accounts.clear(); accounts.set(fb, { prof, ledgerS, t: now() }); }
+        else accounts.delete(fb);
       }
     }
     if (!prof || !UID_RE.test(prof.uid || '') || !cleanName(prof.name)) throw new IdentityError('NO_PROFILE', 'Hesap profili henüz hazır değil.', 409);
@@ -227,6 +241,12 @@ export function createIdentity(opts = {}) {
     const ident = { fb, uid: prof.uid, name: cleanName(prof.name), av: cleanAv(prof.avatar), tp: L ? L.tp : 0 };
     const exp = now() + TICKET_TTL;
     return { ticket: sign(keys, Object.assign({ k: 't', exp }, ident)), ident, exp };
+  }
+  // the same identity with a new TP (after a credited match, so the client needs no new /mp/auth) -> {ticket, ident, exp}
+  function reticket(ident, tp) {
+    const id = { fb: ident.fb, uid: ident.uid, name: cleanName(ident.name), av: cleanAv(ident.av), tp: Number.isInteger(tp) && tp >= 0 ? tp : ident.tp | 0 };
+    const exp = now() + TICKET_TTL;
+    return { ticket: sign(keys, Object.assign({ k: 't', exp }, id)), ident: id, exp };
   }
   // relay ticket -> ident | null
   function checkTicket(s) {
@@ -324,7 +344,10 @@ export function createIdentity(opts = {}) {
     if (result === 'won' && wt.length >= TP_WIN_CAP) return keep('Bir saatte en çok ' + TP_WIN_CAP + ' galibiyet TP verir.');
     const gained = result === 'won' ? TP_WIN : TP_LOSS;
     const N = { v: 1, fb: L.fb, tp: L.tp + gained, w: L.w + (result === 'won' ? 1 : 0), l: L.l + (result === 'lost' ? 1 : 0), n: L.n + 1, last: t, mids: L.mids.concat([m.mid]).slice(-LEDGER_MIDS), wt: result === 'won' ? wt.concat([t]) : wt };
-    return { ok: true, ledger: sign(keys, N), tp: N.tp, gained, reason: '' };
+    const ledger = sign(keys, N);
+    const c = accounts.get(ident.fb);
+    if (c) c.ledgerS = ledger;   // (the cached account shows the new TP in its next ticket)
+    return { ok: true, ledger, tp: N.tp, gained, reason: '' };
   }
   // the client asks what its stored ledger is worth
   function ledgerInfo(ident, s) {
@@ -332,5 +355,5 @@ export function createIdentity(opts = {}) {
     return L ? { ok: true, tp: L.tp, w: L.w, l: L.l, n: L.n } : { ok: false, tp: 0 };
   }
 
-  return { verifyIdToken, readAccount, auth, checkTicket, matchStart, matchClaim, ledgerInfo, openLedger, _sign: (o) => sign(keys, o) };
+  return { verifyIdToken, readAccount, auth, reticket, checkTicket, matchStart, matchClaim, ledgerInfo, openLedger, _sign: (o) => sign(keys, o) };
 }

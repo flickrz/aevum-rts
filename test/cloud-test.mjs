@@ -2,7 +2,7 @@
 // Run: node test/cloud-test.mjs
 import { createHash } from 'node:crypto';
 import * as P from '../src/profile.js';
-import { CloudSync, nameKey, nameFromGoogle, cloudKeyOf, mergeSaveLists, pruneList, visibleHistory, reownRecord, betterRecord, GUEST_KEY, ACCOUNT_UIDS_KEY, STATE_PREFIX, MAX_CLOUD_SAVES } from '../src/cloud/sync.js';
+import { CloudSync, nameKey, nameFromGoogle, cloudKeyOf, mergeSaveLists, pruneList, visibleHistory, reownRecord, betterRecord, isAutoKey, GUEST_KEY, ACCOUNT_UIDS_KEY, STATE_PREFIX, MAX_CLOUD_SAVES, MAX_CLOUD_AUTOS, PULL_EVERY } from '../src/cloud/sync.js';
 import { Auth, AUTH_KEY, authMessage } from '../src/cloud/auth.js';
 import { GoogleSignIn, googleMessage, REDIRECT_KEY } from '../src/cloud/google.js';
 import { sha256Js, sha256Hex, packSave, unpackSave, utf8 } from '../src/cloud/codec.js';
@@ -359,6 +359,38 @@ console.log('History sync');
   await A.history.put(ab); A.cloud.onRecord(ab); await A.cloud.flush();
   ok(JSON.parse(ff.data(`users/${aFb}/matches/sp-00000000000000aa`).j).result === 'won' && A.history.m.get('sp-00000000000000aa').result === 'won', "a finished result is never replaced by a later 'abandoned'");
 }
+console.log('Read savings (2026-11-23: the free daily read quota ran out)');
+{
+  T += PULL_EVERY + 1000;
+  let r0 = ff.stats.reads;
+  await A2.cloud.flush({ pull: 'lazy' });
+  ok(ff.stats.reads - r0 === 3, 'a lazy pull runs when the last one is PULL_EVERY old: ' + (ff.stats.reads - r0) + ' reads');
+  r0 = ff.stats.reads;
+  await A2.cloud.flush({ pull: 'lazy' }); A2.cloud.kick({ pull: 'lazy' }); await A2.cloud._busy;
+  ok(ff.stats.reads - r0 === 0, 'lazy pulls right after it read nothing: ' + (ff.stats.reads - r0));
+  // the local history shrank: the re-pull of everything never loses the cursor when it fails, and is capped per day
+  const st = A2.cloud._st(), cur = JSON.stringify(st.cursor), persisted = () => JSON.stringify(JSON.parse(A2.ls.getItem(STATE_PREFIX + aFb)).cursor);
+  ok(cur && cur !== 'null', 'a cursor is held');
+  st.fullAt = [];   // (the emptied-history test above used one of today's re-pulls)
+  st.known = (st.known | 0) + 5; A2.cloud._save();
+  ff.failNext(503, 1, ':runQuery');
+  await A2.cloud.flush({ pull: true });
+  A2.cloud._queue('h', []); A2.cloud._save();   // (any later state write)
+  ok(JSON.stringify(A2.cloud._st().cursor) === cur && persisted() === cur, 'a failed re-pull leaves the cursor as it was (memory and stored)');
+  if (A2.cloud._retry != null) { A2.cloud.clearTimer(A2.cloud._retry); A2.cloud._retry = null; }
+  r0 = ff.stats.reads;
+  await A2.cloud.flush({ pull: true });
+  const full = ff.stats.reads - r0;
+  ok(full > 3 && A2.cloud._st().known === [...A2.history.m.values()].filter((r) => r.uid === aUid).length, 'the next try re-pulls everything once: ' + full + ' reads');
+  st.known = (st.known | 0) + 5; A2.cloud._save();
+  r0 = ff.stats.reads;
+  await A2.cloud.flush({ pull: true });
+  ok(ff.stats.reads - r0 === 3, 'a third re-pull the same day does not run: ' + (ff.stats.reads - r0) + ' reads');
+  T += 25 * 3600 * 1000;
+  r0 = ff.stats.reads;
+  await A2.cloud.flush({ pull: true });
+  ok(ff.stats.reads - r0 > 3, 'the next day it may run again');
+}
 console.log('Offline queue');
 {
   ff.offline = true;
@@ -382,7 +414,11 @@ console.log('Offline queue');
   const rec3 = mkRec(aUid, { endedAt: T });
   await A.history.put(rec3); A.cloud.onRecord(rec3); await A.cloud.flush();
   ok(A.cloud.status === 'offline' && /kota/.test(A.cloud.lastError), 'quota -> ' + A.cloud.lastError);
-  T += 6 * 60 * 1000; await runTimers(); await A.cloud.flush();
+  { const q0 = ff.stats.requests;
+    A.cloud.kick({ pull: true }); await A.cloud._busy; await A.cloud.flush({ pull: true }); await A.cloud.listCloudSaves({ force: true });
+    const A3 = A.reload(); await A3.flush({ pull: true });
+    ok(ff.stats.requests === q0, 'during the quota pause nothing reaches Firestore (kicks, flushes, lists, a reload): ' + (ff.stats.requests - q0) + ' requests'); }
+  T += 41 * 60 * 1000; await runTimers(); await A.cloud.flush();   // (the quota pause: 30-40 minutes)
   ok(cloudIds(ff, aFb).includes(rec3.id), 'quota retry succeeded');
   ff.revokeRefresh(); ff.expireAllTokens();
   const rec4 = mkRec(aUid, { endedAt: T });
@@ -457,7 +493,9 @@ console.log('Autosave gate');
   ok(ff.data(`users/${aFb}/saves/auto-${mid}`).time === T, 'leaving the game uploads the waiting autosave');
   T += 5 * 60 * 1000 + 1;
   await A.saves.put('auto', { name: 'Otomatik Kayıt', time: T, matchId: mid, data: bigData(7) });
+  const sr0 = ff.stats.reads;
   A.cloud.onSaved('auto', { auto: true, game: mid }); await A.cloud.flush();
+  ok(ff.stats.reads === sr0, 'a re-upload does not list the cloud saves again: ' + (ff.stats.reads - sr0) + ' reads');
   ok(ff.data(`users/${aFb}/saves/auto-${mid}`).time === T && w() >= 1, 'after 5 minutes: uploaded again');
   // the autosave of a different match on this PC keeps the other one in the cloud
   const mid2 = '1111111111111111';
@@ -487,8 +525,9 @@ console.log('Pruning + delete');
     A.cloud.onSaved(k, {}); await A.cloud.flush();
   }
   const metas = ff.paths(`users/${aFb}/saves/`).filter((p) => !p.includes('/chunks/'));
-  ok(metas.length === MAX_CLOUD_SAVES, `at most ${MAX_CLOUD_SAVES} cloud saves (had ${before}, uploaded 34): ${metas.length}`);
   const keys = metas.map((p) => p.split('/').pop());
+  const autos = keys.filter((k) => isAutoKey(k)).length;
+  ok(metas.length <= MAX_CLOUD_SAVES && autos === MAX_CLOUD_AUTOS, `at most ${MAX_CLOUD_SAVES} cloud saves, ${MAX_CLOUD_AUTOS} of them autosaves (had ${before}, uploaded 34): ${metas.length}, ${autos} auto`);
   ok(keys.includes('manual-1') && keys.includes('mp-ABCDE-3600') && keys.filter((k) => k.startsWith('manual-p')).length === 17, 'manual / multiplayer saves kept, autosaves pruned');
   const orphan = ff.paths(`users/${aFb}/saves/`).filter((p) => p.includes('/chunks/') && !keys.includes(p.split('/')[3]));
   ok(orphan.length === 0, 'pruned saves leave no orphan chunks');
@@ -622,6 +661,7 @@ console.log('Turkish name folding');
     const Y2 = pc(fx, 'Başka');
     ok((await gLogin(Y2, 'y@example.com', { askMerge: async () => false })).ok && Y2.profile.get().name === 'Yağız', 'PC 2 logged in as Yağız');
     ok((await Y.cloud.rename('Kartal')).ok, 'PC 1 renames to Kartal');
+    T += PULL_EVERY + 1000;   // (a restart pulls again once this browser's last pull is PULL_EVERY old)
     Y2.reload();   // restarted with its stored session
     Y2.cloud.start(); await Y2.cloud._busy; await settle();
     ok(Y2.profile.get().name === 'Kartal' && fx.data('profiles/' + yFb).name === 'Kartal', 'PC 2 takes the new name; the public card keeps it');
@@ -709,7 +749,7 @@ console.log('Mandatory accounts: automatic user name, avatar, TP ledger, sign ou
   const { isAvatar } = await import('../src/avatars.js');
   const { ledgerInfo } = await import('../src/cloud/sync.js');
   const fz = fakeFirebase({ now });
-  let clockMs = 1e12;
+  let clockMs = T;   // (the server clock: tickets expire on the same time line as the client)
   const idm = createIdentity({ noAuth: true, now: () => clockMs, tpMinMs: 5 * 60 * 1000 });
   const json = (o, status = 200) => ({ ok: status < 300, status, json: async () => o });
   const mkPc = () => {
@@ -756,6 +796,15 @@ console.log('Mandatory accounts: automatic user name, avatar, TP ledger, sign ou
   c = await A1.cloud.tpClaim(mt3, 'lost');
   ok(c.gained === 1 && A1.cloud.tp.tp === 4, 'loss: +1 TP');
   ok((await A1.cloud.tpClaim(mt3, 'lost')).gained === 0, 'the same match never counts twice');
+  { let auths = 0; const rf = A1.cloud.relayFetch; A1.cloud.relayFetch = async (u, i) => { if (u === '/mp/auth') auths++; return rf(u, i); };
+    await A1.cloud.relayTicket(); auths = 0;
+    A1.cloud._tkt = null;   // a reload: memory gone, localStorage kept
+    const t2 = await A1.cloud.relayTicket(); await A1.cloud.isOwner(); const mty = await A1.cloud.tpStart('sp');
+    ok(auths === 0 && t2 && t2.ident.fb === A1.cloud.user.uid && typeof mty === 'string' && A1.cloud.ticketNow() === t2.ticket, 'the relay ticket is reused from localStorage after a reload (no /mp/auth): ' + auths);
+    A1.cloud._setTicket(Object.assign({}, t2, { ticket: t2.ticket.slice(0, -3) + 'xyz' }));
+    const mtx = await A1.cloud.tpStart('sp');
+    ok(typeof mtx === 'string' && auths === 1, 'a stored ticket the server refuses is replaced once (TP still works): ' + auths);
+    A1.cloud.relayFetch = rf; }
   ok((await A1.cloud.tpClaim(await A1.cloud.tpStart('sp'), 'abandoned')).gained === 0, 'abandoned: 0 TP');
   await A1.cloud.flush();
   const stored = fz.data('users/' + A1.cloud.user.uid + '/meta/tp');
@@ -781,6 +830,8 @@ console.log('Mandatory accounts: automatic user name, avatar, TP ledger, sign ou
   ok((await A2.cloud.addFriend(f1)).ok, 'add friend');
   ok(!(await A2.cloud.addFriend({ fb: A2.cloud.user.uid, name: 'me' })).ok, 'cannot add yourself');
   let fl = await A2.cloud.friends();
+  { const r0 = fz.stats.reads; await A2.cloud.friends(); await A2.cloud.players();
+    ok(fz.stats.reads === r0, 'friends and the players list are not read again on the next open: ' + (fz.stats.reads - r0) + ' reads'); }
   ok(fl.length === 1 && fl[0].fb === B1.cloud.user.uid && fl[0].name === 'aliveli2', 'friends list read back');
   ok(fz.paths('users/' + A1.cloud.user.uid + '/friends/').length === 1, 'the list lives under my account (owner-only rules)');
   ok((await A2.cloud.removeFriend(f1.fb)).ok && (await A2.cloud.friends()).length === 0, 'remove friend');
