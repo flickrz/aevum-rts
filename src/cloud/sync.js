@@ -1100,6 +1100,24 @@ export class CloudSync {
     this._queue('s', [key]);
     this.kick();
   }
+  // (2026-11-23 player report: "the save was not there") the single local autosave slot 'auto' is about to hold the
+  // autosave of another match. When its current record has not reached the cloud yet (queued during a quota pause or
+  // offline, or waiting for the 5 minute gate), the queue would upload the new match instead and the old one was lost:
+  // keep it under its own key 'auto-<match id>' (= its cloud key) and queue that. -> the kept key or null
+  async keepAutoSlot(newMatchId) {
+    if (!this.loggedIn) return null;
+    const old = await this.o.saves.get('auto');
+    if (!old || !old.data || !MATCH_RE.test(old.matchId || '') || old.matchId === newMatchId) return null;
+    const st = this._st();
+    if (!st.queue.s.includes('auto') && this._pendingAuto.get(old.matchId) !== 'auto') return null;
+    const k = 'auto-' + old.matchId;
+    if (!(await this.o.saves.put(k, old))) return null;
+    this._pendingAuto.delete(old.matchId);
+    st.queue.s = st.queue.s.filter((x) => x !== 'auto');
+    this._save();
+    this._queue('s', [k]);
+    return k;
+  }
   // leaving a game: the autosave that waited for the 5 minute gate goes up now
   onLeave(game) {
     if (!this.loggedIn || game == null) return;
@@ -1118,7 +1136,11 @@ export class CloudSync {
       const rec = await this.o.saves.get(key);
       this._alive(sid);
       if (rec && rec.data) {
-        try { await this._upload(key, rec, sid); } catch (e) { if (e.retryable || e.kind === 'auth' || e.kind === 'stale') throw e; console.warn('[cloud] save upload dropped', e); }
+        try {
+          await this._upload(key, rec, sid);
+          // a kept autosave slot (keepAutoSlot) is in the cloud now: the local copy is not needed any more
+          if (/^auto-[0-9a-f]{16}$/.test(key) && this._st().up[key]) await this.o.saves.del(key);
+        } catch (e) { if (e.retryable || e.kind === 'auth' || e.kind === 'stale') throw e; console.warn('[cloud] save upload dropped', e); }
       }
       this._alive(sid);
       this._unqueue('s', [key]);
