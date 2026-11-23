@@ -13,6 +13,8 @@ const argv = process.argv.slice(2);
 const arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const saPath = process.env.AEVUM_SA || path.join(os.homedir(), '.aevum', 'firebase-sa.json');
 if (!fs.existsSync(saPath)) { console.error('Service-account key not found: ' + saPath); process.exit(2); }
+// (PR #5 by anupam-orbisai) refuse a key file other users can read. POSIX only: Windows keeps no such mode bits (it always reports 0o666).
+if (process.platform !== 'win32' && (fs.statSync(saPath).mode & 0o077)) { console.error('Refusing to use ' + saPath + ': key file is readable by group/other, chmod 600 it first.'); process.exit(2); }
 const sa = JSON.parse(fs.readFileSync(saPath, 'utf8'));
 const admin = createAdmin({ store: createSaStore({ sa }) });
 
