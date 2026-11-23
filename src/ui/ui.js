@@ -240,12 +240,34 @@ export class UI {
     this.modalEl.addEventListener('mousedown', (e) => { if (e.target === this.modalEl && !this.modalLocked) this._closeModal(); });
     this._buildPause();
     this._renderCard();
+    this._bindPressSound();
   }
 
   // the game's own confirmation dialog (instead of window.confirm): ask({title, text, ok, cancel, danger}) -> Promise<boolean>
   ask(opts) { return ask(opts); }
   askOpen() { return askOpen(); }
-  _click() { safe(() => this.app.audio?.ui('click')); }
+  // the click sound plays on PRESS, not on the 'click' event (which fires on release and felt late, owner 2026-11-23);
+  // its release half plays on pointer-up. _click() from an onclick handler is then a no-op for that same press.
+  _click() { if (performance.now() - (this._pressT || -1e9) < 600) return; safe(() => this.app.audio?.ui('click')); }
+  _clickable(t) {
+    for (let el = t, i = 0; el && el !== document.body && i < 6; el = el.parentElement, i++) {
+      if (el.disabled) return false;
+      if (el.tagName === 'BUTTON' || typeof el.onclick === 'function' || el.getAttribute?.('role') === 'button') return true;
+    }
+    return false;
+  }
+  _bindPressSound() {
+    if (this._pressBound || typeof document === 'undefined') return;
+    this._pressBound = true;
+    document.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || !this._clickable(e.target)) return;
+      this._pressT = performance.now(); this._pressDown = true;
+      safe(() => { this.app.audio?.resume?.(); this.app.audio?.ui('click'); });
+    }, true);
+    const up = () => { if (!this._pressDown) return; this._pressDown = false; safe(() => this.app.audio?.ui('clickUp')); };
+    document.addEventListener('pointerup', up, true);
+    document.addEventListener('pointercancel', () => { this._pressDown = false; }, true);
+  }
   _error() { safe(() => this.app.audio?.ui('error')); }
 
   // ------------------------------------------------------------------ tooltip
