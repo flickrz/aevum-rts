@@ -44,13 +44,13 @@ const HOTKEYS = 'QERTYFGHJKZXCVB'; // W/A/S/D are camera-only (never a card slot
 const BUILD_CATS = {
   eco: { name: 'Ekonomi', icon: CAT_ICONS.eco, desc: 'Ekonomi binaları: tarla, depo, pazar...', list: ['towncenter', 'farm', 'lumbercamp', 'minecamp', 'storage', 'market', 'temple', 'university', 'bank', 'factory', 'dock', 'pasture'] },
   mil: { name: 'Askeri', icon: CAT_ICONS.mil, desc: 'Askeri binalar: kışla, okçuluk, ahır...', list: ['barracks', 'archery', 'stable', 'blacksmith', 'siege', 'castle', 'academy'] },
-  def: { name: 'Savunma', icon: CAT_ICONS.def, desc: 'Savunma yapıları: kule, sur ve sur kapısı.', list: ['tower', 'wall', 'gate'] },
+  def: { name: 'Savunma', icon: CAT_ICONS.def, desc: 'Savunma yapıları: kule ve sur (kapı: bitmiş suru seç → Kapı Aç).', list: ['tower', 'wall'] },
   tra: { name: 'Ulaşım', icon: CAT_ICONS.tra, desc: 'Ulaşım: istasyon ve demir yolu (Sanayi Çağı).', list: ['station', 'rail'] },
 };
-// (players 2026-11-22: "I can't put a gate in my walls, couldn't find it") the build page's own words for the wall and the gate
+// (players 2026-11-22: "I can't put a gate in my walls, couldn't find it") the build page's own words for the wall;
+// (owner 2026-11-23) no separate gate card: a gate is opened from a selected wall piece only
 const BUILD_DESC = {
-  wall: BUILDINGS.wall.desc + ' Kapı için: bitmiş bir sur parçasını seç → Kapı Aç (Q), ya da bu sayfadaki Kapı ile sur parçasına tıkla.',
-  gate: 'Bitmiş bir sur parçasına tıkla: o parça kapı olur (sadece sen ve müttefiklerin geçer). 3 kare geniş kapı için: suru seç → Kapı Aç.',
+  wall: BUILDINGS.wall.desc + ' Kapı için: bitmiş bir sur parçasını seç → Kapı Aç (Q).',
 };
 // Döndür on the building card (no sprite icon for it: Material Design rotate, Apache 2.0)
 const ROT_ICON = '<svg class="gi" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 4a8 8 0 1 0 7.75 10h-2.1A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35A7.96 7.96 0 0 0 12 4z"/></svg>';
@@ -586,7 +586,7 @@ export class UI {
       <b>Kamera:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / ok tuşları veya ekran kenarı ile kaydır (WASD yalnızca kamerayı oynatır), tekerlek ile yakınlaş, orta tuş ya da <kbd>Boşluk</kbd> basılıyken fareyle döndür, <kbd>Home</kbd> / <kbd>Backspace</kbd> Şehir Merkezine dön. Touchpad ile mi oynuyorsun? Ayarlar → <b>Touchpad modu</b>: iki parmakla kaydır, parmakları açıp kapatarak yakınlaş.<br>
       <b>Komut kartı:</b> Sağ alttaki düğmeler; kısayollar <kbd>Q</kbd><kbd>E</kbd><kbd>R</kbd><kbd>T</kbd><kbd>Y</kbd> / <kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd> / <kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd><kbd>B</kbd> ızgara sırasıyla.<br>
       <b>Binalar:</b> <kbd>Shift</kbd>+tık ile aynı türden birden çok bina seç, çift tık ekrandaki tümünü seçer; üretim her binada aynı anda başlar. <kbd>Shift</kbd>+üret: 5 adet sıraya ekler. <kbd>Shift</kbd> basılıyken bina yerleştirmek araç açık kalır, birden çok temel atarsın. Yerleştirirken <kbd>R</kbd> binayı çevirir. Kendi binanı seçince <b>Döndür</b> düğmesi de çıkar.<br>
-      <b>Sur kapısı:</b> Bitmiş bir sur parçasını seç, <b>Kapı Aç</b> (<kbd>Q</kbd>) ile 3 kare genişliğinde kapı yap. Ya da Savunma sayfasındaki <b>Kapı</b> ile bir sur parçasına tıkla. Kapıdan yalnızca sen ve müttefiklerin geçer.<br>
+      <b>Sur kapısı:</b> Bitmiş bir sur parçasını seç, <b>Kapı Aç</b> (<kbd>Q</kbd>) ile 3 kare genişliğinde kapı yap. Kapıdan yalnızca sen ve müttefiklerin geçer.<br>
       <b>Ekonomi:</b> Köylülerle yiyecek, odun, taş ve altın topla; Taş Devri'nde ağıl, Tunç Devri'nden itibaren tarla kur (nüfus sınırı sabit 1000, ev gerekmez).<br>
       <b>Büyücü:</b> Tapınakta (Taş Devri'nden itibaren) üretilir. Saldırmaz; çevresindeki (8 kare) yaralı dost birlikleri savaş sırasında da saniyede 2 can iyileştirir, tapınak araştırmaları bunu artırır. Bir birliği aynı anda yalnızca bir büyücü iyileştirir.<br>
       <b>Çağ atlama:</b> Şehir Merkezinden yeterli kaynak ve bina ile sonraki çağa geç; yeni birimler ve binalar açılır.<br>
