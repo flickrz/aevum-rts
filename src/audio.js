@@ -70,9 +70,7 @@ const SOUNDS = {
   board:     { files: ['step1', 'step2', 'step3'], vol: 0.14, minGap: 0.35, range: 24 },
   trainCoin: { files: ['coins2'], vol: 0.12, minGap: 5, range: 40 },
   // interface
-  // (owner 2026-11-23) a real mouse click: the press plays on pointer-down, its release on pointer-up (src/ui/ui.js)
   ui_click:  { files: ['click_a', 'click_b'], vol: 0.5, minGap: 0.04, range: 0, cat: 'ui', rotate: true, pitch: 0.02 },
-  ui_clickUp:{ files: ['click_a_up', 'click_b_up'], vol: 0.35, minGap: 0.04, range: 0, cat: 'ui', rotate: true, pitch: 0.02 },
   ui_select: { files: ['k_tick'], vol: 0.2, minGap: 0.15, range: 0, cat: 'ui' },
   ui_command:{ files: ['click_a', 'click_b'], vol: 0.2, minGap: 0.18, rotate: true, pitch: 0.02, range: 0, cat: 'ui' },
   ui_error:  { files: ['mclick'], vol: 0.6, minGap: 0.15, range: 0, cat: 'ui', rate: 0.75 },
