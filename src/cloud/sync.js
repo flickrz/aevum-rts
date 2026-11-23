@@ -191,8 +191,7 @@ export class CloudSync {
   // without reaching the network, so the queued writes simply wait. The jitter spreads the tabs that resume.
   _gated(api) {
     const gate = (fn) => async (...a) => {
-      const until = Number(lsGet(this.ls, QUOTA_KEY)) || 0;
-      if (until > this.now()) throw new CloudError('quota', 'QUOTA_WAIT', 'Bulut kotası doldu; daha sonra tekrar denenecek.', 429);
+      if (this.quotaWait() > 0) throw new CloudError('quota', 'QUOTA_WAIT', 'Bulut kotası doldu; daha sonra tekrar denenecek.', 429);
       try { return await fn(...a); } catch (e) {
         if (e && e.kind === 'quota') lsSet(this.ls, QUOTA_KEY, String(this.now() + QUOTA_WAIT + Math.floor(Math.random() * QUOTA_JITTER)));
         throw e;
@@ -200,7 +199,8 @@ export class CloudSync {
     };
     return Object.assign({}, api, { get: gate(api.get), commit: gate(api.commit), query: gate(api.query), batchGet: gate(api.batchGet) });
   }
-  quotaWait() { const u = Number(lsGet(this.ls, QUOTA_KEY)) || 0; return Math.max(0, u - this.now()); }
+  // (a stored time further away than one pause: the clock was turned back meanwhile, the pause is over)
+  quotaWait() { const w = (Number(lsGet(this.ls, QUOTA_KEY)) || 0) - this.now(); return w > 0 && w <= QUOTA_WAIT + QUOTA_JITTER ? w : 0; }
 
   // ---------- chat log (owner 2026-11-15: revisions are agreed over chat; read back with tools/read-chatlog.mjs) ----------
   // one chat line this player SENT -> users/{uid}/chatlog/{id} (each line is written once, by its sender). Best effort:
@@ -664,6 +664,12 @@ export class CloudSync {
   async tpClaim(mt, result, team) {
     if (!mt || (result !== 'won' && result !== 'lost')) return { ok: false, gained: 0, tp: this.tp.tp, reason: '' };
     if (team == null && this._lastRec && this._lastRec.mode === 'mp' && this.now() - this._lastRec.at < 60000) team = this._lastRec.team;
+    // (2026-11-23) pulls are 'lazy' now (up to 20 minutes old): the server builds the new ledger on the one sent here,
+    // so a ledger another PC raised meanwhile is read first (1 read per match). Otherwise that PC's TP would be lost.
+    if (this.loggedIn) {
+      const fb = this.auth.user.uid;
+      try { const d = await this.fs.get(this._base() + '/meta/tp'); if (d && d.data && this.auth.user && this.auth.user.uid === fb) this._mergeLedger(d.data.s); } catch (e) { /* claim with the local one */ }
+    }
     try {
       let r;
       for (let i = 0; ; i++) {

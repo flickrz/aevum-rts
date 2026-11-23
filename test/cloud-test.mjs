@@ -813,6 +813,14 @@ console.log('Mandatory accounts: automatic user name, avatar, TP ledger, sign ou
   const A2 = mkPc();
   await login(A2, 'ali.veli@gmail.com');
   ok(A2.cloud.tp.tp === 4 && A2.profile.get().avatar === 'crown' && A2.profile.get().name === 'aliveli', 'another PC: TP, avatar and name follow the account');
+  // TP won on PC 1 while PC 2 has not pulled since (lazy pulls): PC 2's next claim builds on it, nothing is lost
+  { const mta = await A1.cloud.tpStart('sp'); clockMs += 6 * 60 * 1000;
+    ok((await A1.cloud.tpClaim(mta, 'won')).gained === 3, 'PC 1 wins: +3'); await A1.cloud.flush();
+    const mtb = await A2.cloud.tpStart('sp'); clockMs += 6 * 60 * 1000;
+    const cb = await A2.cloud.tpClaim(mtb, 'lost');
+    ok(cb.gained === 1 && A2.cloud.tp.tp === 8, 'PC 2 claims on the ledger PC 1 raised (4 + 3 + 1 = ' + A2.cloud.tp.tp + ')');
+    await A2.cloud.flush();
+    ok(ledgerInfo(fz.data('users/' + A2.cloud.user.uid + '/meta/tp').s).tp === 8, 'and the cloud ledger holds both'); }
   // editing the local state does not give TP: the relay ticket reads the stored ledger through the server
   const st = A2.cloud._st(); const parts = st.tp.split('.');
   const forged = Buffer.from(JSON.stringify(Object.assign(JSON.parse(Buffer.from(parts[0].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString()), { tp: 999 }))).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_') + '.' + parts[1];
