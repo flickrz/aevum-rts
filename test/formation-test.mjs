@@ -72,4 +72,24 @@ const tc = () => ({ x: 82, z: 58 });
   step(g, 6);
   ok(helpers.some(h => Math.hypot(h.x - foe.x, h.z - foe.z) < 2.5), 'helpers reach the attacker');
 }
+// 6) a rally flag on a resource, a drop-off camp or a farm puts the new villager straight to work
+{
+  const g = mk(), p = g.players[0]; p.res.food = p.res.wood = p.res.gold = p.res.stone = 9999;
+  const tcB = g.buildings.find(b => b.owner === 0 && b.type === 'towncenter');
+  const near = (pred) => { let best = null, bd = 1e9; for (const e of g.entities.values()) if (e.kind === 'resource' && !e.dead && pred(e)) { const d = Math.hypot(e.x - tcB.x, e.z - tcB.z); if (d < bd) { bd = d; best = e; } } return best; };
+  // place a building on free ground as close as possible to a spot
+  const placeNear = (type, x, z) => { for (let r = 1; r < 14; r++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) { if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue; const tx = (x | 0) + dx, tz = (z | 0) + dz; if (g.canPlace(type, tx, tz, 0)) return g._addBuilding(type, 0, tx, tz, true); } return null; };
+  const trainOne = () => { const n0 = g.units.length; g.train(tcB.id, 'villager'); for (let i = 0; i < 30 * 60 && g.units.length === n0; i++) g.update(1 / 30); g.update(1 / 30); return g.units[g.units.length - 1]; };
+  const tree = near(e => e.type === 'tree'), mine = near(e => e.type === 'gold' || e.type === 'stone');
+  const cases = [['tree', tree.id, 'wood']];
+  const lc = placeNear('lumbercamp', tree.x, tree.z); if (lc) cases.push(['lumber camp', lc.id, 'wood']); else ok(false, 'lumber camp placed');
+  const mc = placeNear('minecamp', mine.x, mine.z); if (mc) cases.push(['mining camp', mc.id, mine.type]); else ok(false, 'mining camp placed');
+  const fm = placeNear('farm', tcB.x + 10, tcB.z + 10); if (fm) cases.push(['farm', fm.id, 'food']); else ok(false, 'farm placed');
+  for (const [name, tid, res] of cases) {
+    const t = g.getEntity(tid); g.setRally(tcB.id, t.x, t.z, tid);
+    const v = trainOne(), o = v && v.order;
+    ok(v && v.type === 'villager' && o && o.type === 'gather' && o.res === res,
+      'rally on ' + name + ' -> new villager gathers ' + res + ' (' + (o ? o.type + '/' + o.res : 'no order') + ')');
+  }
+}
 if (fails.length) { console.log('FAIL', fails); process.exit(1); } else console.log('ALL OK');

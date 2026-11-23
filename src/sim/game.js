@@ -1234,7 +1234,15 @@ export class Game {
   _rallyWork(b) {
     const ra = b.rally; if (!ra) return null;
     const t = ra.tid != null ? this.entities.get(ra.tid) : null;
-    if (t && !t.dead && (t.kind === 'building' || t.amount > 0)) return t;
+    if (t && !t.dead && t.kind === 'building') {
+      if (t.type === 'farm' || t.type === 'pasture') return t;
+      // flag on a drop-off camp (lumber camp, mining camp, mill): work the nearest matching resource around it
+      const bd0 = BUILDINGS[t.type], drop = bd0 && t.owner === b.owner && !(bd0.trains || []).length ? bd0.dropoff : null; if (!drop) return null;
+      let best = null, bd = 1e9;
+      for (const e of this.entities.values()) { if (e.kind !== 'resource' || e.dead || !(e.amount > 0) || e.type === 'fish' || !drop.includes(RES_OF[e.type])) continue; const d = Math.hypot(e.x - t.x, e.z - t.z); if (d < 16 && d < bd) { bd = d; best = e; } }
+      return best;
+    }
+    if (t && !t.dead && t.amount > 0) return t;
     const want = ra.rtype; if (!want) return null; // flag on plain ground: villager just walks there
     let best = null, bd = 1e9;
     for (const e of this.entities.values()) { if (e.kind !== 'resource' || e.dead || !(e.amount > 0)) continue; if (want && e.type !== want) continue; const d = Math.hypot(e.x - ra.x, e.z - ra.z); if (d < (want ? 10 : 1.6) && d < bd) { bd = d; best = e; } }

@@ -78,6 +78,8 @@ export class Input {
   ownVillagers() { return this.app.selection.filter(id => { const e = this.ent(id); return e && e.kind === 'unit' && e.owner === this.me() && !e.dead && e.type === 'villager'; }); }
   // a building that trains units (only those take a rally flag)
   _trains(id) { const e = this.ent(id); return !!e && !!BUILDINGS[e.type] && (BUILDINGS[e.type].trains || []).length > 0; }
+  // a drop-off camp (lumber camp, mining camp, mill): a rally flag on it sends new villagers to work around it
+  _dropCamp(e) { const d = BUILDINGS[e.type]; return !!d && !!d.dropoff && !(d.trains || []).length; }
   ownBuildings() { return this.app.selection.filter(id => { const e = this.ent(id); return e && e.kind === 'building' && e.owner === this.me(); }); }
   sfx(name) { try { this.app.audio.ui(name); } catch (err) { /* ignore */ } }
   // the target an order went to pulses for a moment (renderer.flashTarget), so the player sees which one was taken
@@ -409,7 +411,7 @@ export class Input {
     if (!units.length) {
       const blds = this.ownBuildings().filter(id => this._trains(id));
       if (!blds.length) return;
-      const work = target && (target.kind === 'resource' || (target.kind === 'building' && target.owner === this.me() && (target.type === 'farm' || target.type === 'pasture')));
+      const work = target && (target.kind === 'resource' || (target.kind === 'building' && target.owner === this.me() && (target.type === 'farm' || target.type === 'pasture' || this._dropCamp(target))));
       const p = work ? { x: target.x, z: target.z } : g;
       if (!p) return;
       let ok = false;
