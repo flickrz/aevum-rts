@@ -2216,12 +2216,14 @@ export class EntityView {
     }
   }
 
-  _animHorse(v, e, t, walking) {
+  // gp / amp (deer): a gait phase and leg swing that follow the drawn speed; others step at a fixed pace
+  _animHorse(v, e, t, walking, gp, amp) {
     const hl = v.P.hl;
     if (walking) {
-      const s = Math.sin(t * 11), c = Math.cos(t * 11);
-      hl[0].rotation.x = s * .7; hl[3].rotation.x = s * .7; hl[1].rotation.x = -s * .7; hl[2].rotation.x = -s * .7;
-      v.P.hbody.position.y = Math.abs(c) * .04; v.P.hhead.rotation.x = s * .08;
+      const ph = gp === undefined ? t * 11 : gp, A = amp === undefined ? .7 : amp;
+      const s = Math.sin(ph), c = Math.cos(ph);
+      hl[0].rotation.x = s * A; hl[3].rotation.x = s * A; hl[1].rotation.x = -s * A; hl[2].rotation.x = -s * A;
+      v.P.hbody.position.y = Math.abs(c) * .04 * A / .7; v.P.hhead.rotation.x = s * .08;
     } else {
       hl[0].rotation.x = hl[1].rotation.x = hl[2].rotation.x = hl[3].rotation.x = 0;
       v.P.hbody.position.y = 0; v.P.hhead.rotation.x = Math.sin(t * .7) * .12 + (v.rig === 'deer' && Math.sin(t * .23) > .3 ? .8 : 0);
@@ -2235,8 +2237,8 @@ export class EntityView {
     }
     if (v.pop > 0) this._pop(v, dt);
     const map = this.game.map, k = Math.min(1, dt * 14);
-    const dx = e.x - v.x, dz = e.z - v.z;
-    if (dx * dx + dz * dz > 9) { v.x = e.x; v.z = e.z; } else { v.x += dx * k; v.z += dz * k; }
+    const dx = e.x - v.x, dz = e.z - v.z, ox = v.x, oz = v.z, snap = dx * dx + dz * dz > 9;
+    if (snap) { v.x = e.x; v.z = e.z; } else { v.x += dx * k; v.z += dz * k; }
     let dr = (e.rot || 0) - v.rot;
     while (dr > PI) dr -= PI * 2; while (dr < -PI) dr += PI * 2;
     v.rot += dr * Math.min(1, dt * 12);
@@ -2254,7 +2256,16 @@ export class EntityView {
     switch (v.rig) {
       case 'human': this._animHuman(v, e, t, gt, false); break;
       case 'cav': this._animHorse(v, e, t, walking); this._animHuman(v, e, t, gt, true); break;
-      case 'deer': case 'cart': this._animHorse(v, e, t, walking); break;
+      case 'deer': {
+        // the sim moves deer without an anim state (they are resources, e.anim stays unset): walk while the drawn
+        // position moves, with stride rate and swing following the speed (slow wander vs a flight from a hunter)
+        const sp = snap || !(dt > 0) ? 0 : Math.hypot(v.x - ox, v.z - oz) / dt;
+        v.spd = (v.spd || 0) + (sp - (v.spd || 0)) * Math.min(1, dt * 8);
+        const mv = v.spd > .12;
+        if (mv) v.gph = (v.gph || 0) + dt * Math.min(16, 5 + v.spd * 5);
+        this._animHorse(v, e, t, mv, v.gph, .4 + .3 * Math.min(1, v.spd / 2)); break;
+      }
+      case 'cart': this._animHorse(v, e, t, walking); break;
       case 'ram': {
         const q = gt - (e.attackT == null ? -9 : e.attackT);
         P.log.position.z = e.anim === 'attack' && q >= 0 && q < .5 ? Math.sin(q / .5 * PI) * .35 - .1 : 0; break;
