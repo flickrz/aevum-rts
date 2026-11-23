@@ -2081,8 +2081,16 @@ export class Game {
 
   // ---------- building update ----------
   _updateBuilding(b, dt) {
-    b.nb = 0; b.nw = 0;
+    // (player report 2026-11-23: villagers sent to a pasture / farm and called back on the way still showed as its
+    // workers) b.wk = the workers really there this tick (counted by _plotFarm / _pasGather / the old farm once they
+    // arrive; units update before buildings), for the selection panel. A farm plot whose farmer got another order,
+    // stopped or died is freed at once instead of when the next farmer looks for a plot.
+    b.wk = b.nw; b.nb = 0; b.nw = 0;
     if (!b.done) return;
+    if (b.type === 'farm' && b.farm && Array.isArray(b.farm.w)) {
+      const w = b.farm.w;
+      for (let i = 0; i < w.length; i++) { if (!w[i]) continue; const h = this.entities.get(w[i]); if (!h || h.dead || !h.order || h.order.type !== 'gather' || h.order.targetId !== b.id || h.order.rt !== 'farm') w[i] = 0; }
+    }
     const d = BUILDINGS[b.type], p = this.players[b.owner];
     if (d.atk > 0) {
       if (b.cd > 0) b.cd -= dt;

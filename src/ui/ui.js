@@ -1169,19 +1169,23 @@ export class UI {
     const g = this.game, out = [];
     if (!g?.entities) return out;
     const all = [...g.entities.values()];
-    const workers = () => all.filter((u) => u.kind === 'unit' && !u.dead && u.owner === e.owner && u.order && u.order.type === 'gather' && u.order.targetId === e.id).length;
+    // assigned: villagers whose work order is this building (also the ones still walking there); working: the ones
+    // the sim counted on it this tick (Game._updateBuilding, b.wk). Only the working ones make food.
+    const assigned = () => all.filter((u) => u.kind === 'unit' && !u.dead && u.owner === e.owner && u.order && u.order.type === 'gather' && u.order.targetId === e.id).length;
+    const workers = (cap) => { const a = Math.min(cap, assigned()), n = Math.min(a, e.wk | 0); return { n, way: a - n }; };
+    const way = (k) => k > 0 ? ` · <b>${k}</b> yolda` : '';
     // (players 2026-11-22: "how much food a minute do the pasture and the farm give") the sim's own rates, see
     // Game._farmGather / _pasGather and the pasture's idle flock in _updateBuilding
     const mods = g.players?.[e.owner]?.mods || {};
     if (e.type === 'farm') {
-      const n = Math.min(8, workers()), per = Math.round(FARM_RATE_UI * FARM_RIPE_SHARE * (1 + (mods.farm || 0)) * 60);
-      out.push(`<span>${ico('u-villager')} <b>${n}/8</b> işçi</span>`, `<span>${RES_ICON.food} <b>~${per * n}</b>/dk · işçi başına ~${per}/dk</span>`);
+      const { n, way: k } = workers(8), per = Math.round(FARM_RATE_UI * FARM_RIPE_SHARE * (1 + (mods.farm || 0)) * 60);
+      out.push(`<span>${ico('u-villager')} <b>${n}/8</b> işçi${way(k)}</span>`, `<span>${RES_ICON.food} <b>~${per * n}</b>/dk · işçi başına ~${per}/dk</span>`);
     }
     if (e.type === 'pasture') {
-      const n = Math.min(6, workers()), sh = e.pasture?.sheep ?? 3, pm = mods.pasture || 0;
+      const { n, way: k } = workers(6), sh = e.pasture?.sheep ?? 3, pm = mods.pasture || 0;
       const idle = PASTURE_IDLE_RATE * sh * (1 + pm * 0.5) * 60;
       let herd = 0; for (let i = 0; i < n; i++) herd += PASTURE_HERD_C[i] * 0.5 * (sh / 5) * (1 + pm) * 60;
-      out.push(`<span>${ico('b-pasture')} <b>${sh}</b> koyun · <b>${n}/6</b> işçi</span>`, `<span>${RES_ICON.food} <b>~${Math.round(idle + herd)}</b>/dk${n ? ` · işçisiz ~${Math.round(idle)}/dk` : ''}</span>`);
+      out.push(`<span>${ico('b-pasture')} <b>${sh}</b> koyun · <b>${n}/6</b> işçi${way(k)}</span>`, `<span>${RES_ICON.food} <b>~${Math.round(idle + herd)}</b>/dk${n ? ` · işçisiz ~${Math.round(idle)}/dk` : ''}</span>`);
     }
     if (e.type === 'station') {
       const tr = all.find((t) => t.train && !t.dead && (t.train.a === e.id || t.train.b === e.id));
