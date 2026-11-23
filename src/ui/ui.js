@@ -39,6 +39,7 @@ const NATURE = {
   tree: { name: 'Ağaç', icon: NATURE_ICONS.tree, res: 'wood' }, stone: { name: 'Taş Ocağı', icon: NATURE_ICONS.stone, res: 'stone' },
   gold: { name: 'Altın Madeni', icon: NATURE_ICONS.gold, res: 'gold' }, berries: { name: 'Böğürtlen Çalısı', icon: NATURE_ICONS.berries, res: 'food' },
   deer: { name: 'Geyik', icon: NATURE_ICONS.deer, res: 'food' },
+  wolf: { name: 'Kurt', icon: NATURE_ICONS.deer, res: 'food' }, bear: { name: 'Ayı', icon: NATURE_ICONS.deer, res: 'food' },
   fish: { name: 'Balık Sürüsü', icon: NATURE_ICONS.fish, res: 'food' },
 };
 const HOTKEYS = 'QERTYFGHJKZXCVB'; // W/A/S/D are camera-only (never a card slot)
@@ -1666,9 +1667,9 @@ export class UI {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.mmTerrain, 0, 0, MM, MM);
     // resources (drawn under fog so unexplored ones stay hidden)
-    if (!this._mmRes || this._mmResG !== g || g.time - this._mmResT > 2 || g.time < this._mmResT) { this._mmResG = g; this._mmResT = g.time; this._mmRes = []; for (const e of g.entities.values()) if (e.kind === 'resource' && e.type !== 'tree' && e.type !== 'deer') this._mmRes.push(e); }
+    if (!this._mmRes || this._mmResG !== g || g.time - this._mmResT > 2 || g.time < this._mmResT) { this._mmResG = g; this._mmResT = g.time; this._mmRes = []; for (const e of g.entities.values()) if (e.kind === 'resource' && e.type !== 'tree' && e.type !== 'deer' && e.type !== 'wolf' && e.type !== 'bear') this._mmRes.push(e); }
     for (const e of this._mmRes) {
-      if (e.dead || e.kind !== 'resource' || e.type === 'tree' || e.type === 'deer') continue;
+      if (e.dead || e.kind !== 'resource' || e.type === 'tree' || e.type === 'deer' || e.type === 'wolf' || e.type === 'bear') continue;
       if (e.type === 'fish') { ctx.fillStyle = '#9fe4ff'; ctx.beginPath(); ctx.arc(e.x * k, e.z * k, 1.6, 0, Math.PI * 2); ctx.fill(); continue; }
       ctx.fillStyle = e.type === 'gold' ? '#ffd84a' : e.type === 'stone' ? '#c9cdd4' : '#d86aa0';
       ctx.fillRect(e.x * k - 1.5, e.z * k - 1.5, 3, 3);

@@ -15,9 +15,9 @@ const DT = 1 / 30;
 {
   const g = new Game({ mapSize: 96, enemies: 1, difficulty: 'normal', seed: 5, mapType: 'plains', fog: 'explored' });
   ok(g.ais.length === 1 && !(g.quests instanceof TutorialSystem) && g.quests.list.length === 0, 'normal game: AI, no quests');
-  ok(g.hash() === 2648196583, 'normal game: initial hash unchanged ' + g.hash());   // (re-pinned 2026-11-23: deer carry alive + 2 hp for hunting)
+  ok(g.hash() === 3191678098, 'normal game: initial hash unchanged ' + g.hash());   // (re-pinned 2026-11-23: hunting (deer alive + hp) and predators)
   for (let i = 0; i < 3600; i++) g.update(DT);
-  ok(g.hash() === 3554781939, 'normal game: hash after 2 min unchanged ' + g.hash());
+  ok(g.hash() === 1103691339, 'normal game: hash after 2 min unchanged ' + g.hash());
   const m = new Game({ mapSize: 96, seed: 3, mp: true, me: 0, tutorial: true, players: [{ kind: 'human', team: 1 }, { kind: 'ai', team: 2 }] });
   ok(!('tutorial' in m.cfg) && m.ais.length === 1 && m.quests.list.length === 0, 'multiplayer forces the tutorial off');
 }

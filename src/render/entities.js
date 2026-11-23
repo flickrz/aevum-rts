@@ -1580,6 +1580,12 @@ function makeUnitRaw(type, color, age) {
   } else if (type === 'deer') {
     rig = 'deer'; h = .6; pw = .4; pd = .7;
     makeHorse(inner, 0xa5713f, P, .5);
+  } else if (type === 'wolf') {   // (the wild predators reuse the deer rig: same quadruped, other size and coat)
+    rig = 'deer'; h = .5; pw = .35; pd = .6;
+    makeHorse(inner, 0x6e6964, P, .4);
+  } else if (type === 'bear') {
+    rig = 'deer'; h = .8; pw = .6; pd = .9;
+    makeHorse(inner, 0x3f2b1d, P, .62); inner.scale.x *= 1.35;
   } else { makeHuman(inner, color, KIT.villager, P, A); inner.scale.setScalar(.72); }
   inner.scale.multiplyScalar(USCALE); h *= USCALE; pw *= USCALE; pd *= USCALE;
   P.spear = !!(k && k.weapon === 'spear');
@@ -1945,7 +1951,7 @@ export class EntityView {
       const R = this.ctx.renderer, s = e.size || 1;
       if (R && R._patchTerrain && e.tx != null) R._patchTerrain({ x0: e.tx - 7, z0: e.tz - 7, x1: e.tx + s + 7, z1: e.tz + s + 7 });   // (with the bank around the pad)
     }
-    else if (e.kind === 'unit' || e.type === 'deer') {
+    else if (e.kind === 'unit' || e.type === 'deer' || e.type === 'wolf' || e.type === 'bear') {
       this._buildUnitMesh(v, e, e.kind === 'unit' ? this._age(e.owner) : 0);
     } else {
       v.root = makeResource(e); v.root.userData.id = e.id; v.h = .7;
@@ -2250,7 +2256,7 @@ export class EntityView {
     if (e.dead || e.anim === 'die') {
       const d = Math.max(0, gt - (e.deathTime == null ? gt : e.deathTime)), p = Math.min(1, d / .5);
       if (v.rig === 'human') { inner.rotation.x = -PI / 2 * p; inner.position.y = .08 * p - (d > 2 ? (d - 2) * .22 : 0); }
-      else { inner.rotation.z = PI / 2 * p * (v.rig === 'cav' || v.rig === 'deer' || v.rig === 'cart' ? 1 : .35); inner.position.y = .12 * p - (d > 2 ? (d - 2) * .3 : 0); }
+      else { inner.rotation.z = PI / 2 * p * (v.rig === 'cav' || v.rig === 'deer' || v.rig === 'cart' ? 1 : .35); inner.position.y = .12 * p - (d > 2 && e.kind !== 'resource' ? (d - 2) * .3 : 0); }   // (a predator carcass stays lying until hunted out)
       return y;
     }
     const walking = e.anim === 'walk';
@@ -2431,7 +2437,7 @@ export class EntityView {
         else this._sb.sync(v, this.batching && vis && tm - (v.amtT == null ? -99 : v.amtT) > 6, tm);
       }
       if (sel && vis && !e.dead) this._ring(v, e); else if (v.ring && v.ring.visible) v.ring.visible = false;
-      const showHp = vis && !e.dead && e.maxHp > 0 && !(e.kind === 'building' && this._fogged(e)) && (sel ? e.kind !== 'resource' || e.type === 'deer' : (e.kind !== 'resource' && e.hp < e.maxHp));
+      const showHp = vis && !e.dead && e.maxHp > 0 && !(e.kind === 'building' && this._fogged(e)) && (sel ? e.kind !== 'resource' || e.type === 'deer' || !!e.live : ((e.kind !== 'resource' || e.live) && e.hp < e.maxHp));
       if (showHp) this._hp(v, e, true, y);
       if (v.slots && v.root.visible) this._emit(v);
     }
