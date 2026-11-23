@@ -474,7 +474,7 @@ function attachGame(game, demo) {
   }
   if (!game.mp && app.net) { const s = app.net; app.net = null; try { s.close(); } catch (err) { console.warn(err); } }
   app.demo = demo;
-  if (app.audio) app.audio.demo = !!demo;   // (no battle music in the menu's background battle)
+  if (app.audio) { app.audio.demo = !!demo; app.audio.setMenuMusic?.(!!demo); }   // (menu music with the menu's background battle, no battle music there)
   app.game = game;
   app.me = game.me != null ? game.me : 0;
   app.selection = [];

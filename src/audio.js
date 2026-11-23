@@ -88,6 +88,8 @@ const DEFAULT_VOL = { master: 0.8, sfx: 0.9, ambient: 0.5, ui: 0.7, music: 0.7 }
 // fighting stops. MUSIC_LEVEL is the track's own level under the 'music' volume; the file streams (no 60 MB decode).
 const BATTLE_TRACK = 'music/empires-at-war.m4a';
 const MUSIC_LEVEL = 0.32, MUSIC_IN = 2.0, MUSIC_OUT = 3.5, MUSIC_HOLD = 25;
+// main menu music (owner 2026-11-23): plays while the menu (its background battle) is up, fades out when a game starts
+const MENU_TRACK = 'music/echoes-of-legend.m4a', MENU_LEVEL = 0.45;
 const LS_KEY = 'aevum.volume';
 const MAX_VOICES = 14;
 const MAX_COMBAT = 6;   // simultaneous small combat voices (combat: 1); a big fight reads as a battle, not noise
@@ -180,9 +182,10 @@ export class AudioManager {
   resume() {
     try {
       if (!this.ctx) return;
-      if (this.ctx.state === 'suspended') { const p = this.ctx.resume(); if (p && p.catch) p.catch(() => {}); }
+      if (this.ctx.state === 'suspended') { const p = this.ctx.resume(); if (p && p.then) p.then(() => this._menuApply(), () => {}); }
       this._wantAmbient = true;
       if (this._ready) this._startAmbient();
+      this._menuApply();   // (the browser lets music start only after the first click or key)
     } catch (e) { /* ignore */ }
   }
 
@@ -207,18 +210,37 @@ export class AudioManager {
   }
 
   // ---------- battle music ----------
+  _streamTrack(rel) {
+    const urls = assetUrls(rel);
+    const el = new Audio(); el.crossOrigin = 'anonymous'; el.loop = true; el.preload = 'auto';
+    let i = 0;
+    el.addEventListener('error', () => { if (i + 1 < urls.length) { if (i === 0 && urls.length > 1) cdnFailed(); el.src = urls[++i]; } });
+    el.src = urls[0];
+    const g = this.ctx.createGain(); g.gain.value = 0;
+    this.ctx.createMediaElementSource(el).connect(g); g.connect(this.gains.music);
+    return { el, g, on: false, stopT: 0 };
+  }
+  // the menu track on (the menu is up) or off (a game started); waits for the audio to be allowed
+  setMenuMusic(on) { this._menuWanted = !!on; this._menuApply(); }
+  _menuApply() {
+    try {
+      if (!this.ctx || this.ctx.state !== 'running' || typeof Audio === 'undefined') return;
+      if (!this._menuMus) { if (!this._menuWanted) return; this._menuMus = this._streamTrack(MENU_TRACK); }
+      const m = this._menuMus, now = this.ctx.currentTime;
+      m.g.gain.cancelScheduledValues(now);
+      if (this._menuWanted) {
+        m.on = true; m.stopT = 0;
+        if (m.el.paused) { const p = m.el.play(); if (p && p.catch) p.catch(() => {}); }
+        m.g.gain.setTargetAtTime(MENU_LEVEL, now, 1.2);
+      } else if (m.on) {
+        m.on = false; m.stopT = now + 6;
+        m.g.gain.setTargetAtTime(0, now, 1.0);
+      }
+    } catch (e) { /* never break the game for music */ }
+  }
   _musicEnsure() {
     if (this._mus || !this.ctx || typeof Audio === 'undefined') return this._mus || null;
-    try {
-      const urls = assetUrls(BATTLE_TRACK);
-      const el = new Audio(); el.crossOrigin = 'anonymous'; el.loop = true; el.preload = 'auto';
-      let i = 0;
-      el.addEventListener('error', () => { if (i + 1 < urls.length) { if (i === 0 && urls.length > 1) cdnFailed(); el.src = urls[++i]; } });
-      el.src = urls[0];
-      const g = this.ctx.createGain(); g.gain.value = 0;
-      this.ctx.createMediaElementSource(el).connect(g); g.connect(this.gains.music);
-      this._mus = { el, g, on: false, stopT: 0 };
-    } catch (e) { this._mus = null; }
+    try { this._mus = this._streamTrack(BATTLE_TRACK); } catch (e) { this._mus = null; }
     return this._mus;
   }
   // a fight between you (or an ally) and an enemy player: start the music if this is the start of one, keep it going
@@ -244,6 +266,8 @@ export class AudioManager {
   }
   _updateMusic() {
     try {
+      const mm = this._menuMus;
+      if (mm && !mm.on && mm.stopT && this.ctx && this.ctx.currentTime > mm.stopT) { mm.stopT = 0; try { mm.el.pause(); mm.el.currentTime = 0; } catch (e) { /* */ } }
       const m = this._mus; if (!m || !this.ctx) return;
       const now = this.ctx.currentTime;
       if (m.on && (!this.game || this.game.over || now - (this._lastFight || 0) > MUSIC_HOLD)) this._musicStop(!this.game || this.game.over);
