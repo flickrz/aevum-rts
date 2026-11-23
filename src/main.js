@@ -208,6 +208,8 @@ const app = {
     let ok = false;
     try {
       const hc = histCtx.get(app.game);
+      // the autosave slot still holds another match that has not reached the cloud yet: keep it (see keepAutoSlot)
+      if (auto && cloudOn()) { try { await cloud.keepAutoSlot(hc && hc.matchId); } catch (err) { console.warn('[save]', err); } }
       ok = await storage.put(k, { name: (auto ? 'Otomatik Kayıt — ' : 'Kayıt — ') + stamp, time, matchId: hc && hc.matchId, owner: ownerUid(), data: app.game.serialize() });
       if (ok) cloudSafe(c => c.onSaved(k, { auto, game: hc && hc.matchId }));
     } catch (err) { console.warn('[save]', err); }

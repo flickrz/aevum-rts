@@ -502,6 +502,21 @@ console.log('Autosave gate');
   await A.saves.put('auto', { name: 'Otomatik Kayıt', time: T + 5, matchId: mid2, data: bigData(5) });
   A.cloud.onSaved('auto', { auto: true, game: mid2 }); await A.cloud.flush();
   ok(!!ff.data(`users/${aFb}/saves/auto-${mid2}`) && !!ff.data(`users/${aFb}/saves/auto-${mid}`), 'one cloud autosave per match');
+  // (2026-11-23 player report) the autosave of a match queued during a quota pause, then a new match overwrites the
+  // local 'auto' slot: the old match must still reach the cloud (it was lost: the queue uploaded the new match only)
+  const mid3 = '3333333333333333', mid4 = '4444444444444444';
+  T += 6 * 60 * 1000;
+  await A.saves.put('auto', { name: 'Otomatik Kayıt', time: T, matchId: mid3, data: bigData(5) });
+  ff.failNext(429, 1, ':commit');
+  A.cloud.onSaved('auto', { auto: true, game: mid3 }); await A.cloud.flush();
+  ok(!ff.data(`users/${aFb}/saves/auto-${mid3}`) && A.cloud.quotaWait() > 0, 'quota: the autosave of match 3 waits');
+  ok(await A.cloud.keepAutoSlot(mid4) === 'auto-' + mid3 && !!(await A.saves.get('auto-' + mid3)), 'a new match: the waiting autosave slot is kept as auto-<match id>');
+  await A.saves.put('auto', { name: 'Otomatik Kayıt', time: T + 60000, matchId: mid4, data: bigData(6) });
+  A.cloud.onSaved('auto', { auto: true, game: mid4 });
+  T += 41 * 60 * 1000; await runTimers(); await A.cloud.flush();
+  ok(!!ff.data(`users/${aFb}/saves/auto-${mid3}`) && !!ff.data(`users/${aFb}/saves/auto-${mid4}`), 'after the quota pause both matches are in the cloud');
+  ok(!(await A.saves.get('auto-' + mid3)) && (await A.saves.get('auto')).matchId === mid4, 'the kept local copy is removed once uploaded');
+  ok(await A.cloud.keepAutoSlot('5555555555555555') === null, 'nothing waiting: the slot is not copied');
 }
 console.log('Multiplayer save across PCs');
 {
