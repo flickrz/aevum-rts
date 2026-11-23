@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Aevum Yönetim</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+/* the game's look (style.css): dark glass panels, gold headings. No player text is ever inserted as HTML. */
+:root { --gold: #e8c26a; --gold2: #b98a2e; --ink: #e9edf3; --dim: #9aa6b8; --glass: rgba(14, 18, 26, 0.78); --glass2: rgba(24, 30, 42, 0.86); --line: rgba(232, 194, 106, 0.28); --red: #ff5d5d; --green: #6fdc8c; --blue: #7fb4ef; --font: "Segoe UI", "Inter", system-ui, -apple-system, Roboto, sans-serif; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: radial-gradient(ellipse at 50% 0%, #141c2c, #0a0d13 70%) fixed, #0a0d13; color: var(--ink); font-family: var(--font); font-size: 14px; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; display: flex; flex-direction: column; gap: 20px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+h1 { font-weight: 200; letter-spacing: 8px; font-size: 28px; margin: 0; color: var(--gold); }
+h2 { font-weight: 400; letter-spacing: 3px; color: var(--gold); margin: 0 0 12px; text-transform: uppercase; font-size: 15px; }
+.sync { color: var(--dim); font-size: 12.5px; }
+.panel { background: var(--glass); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; box-shadow: 0 8px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.05); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.tile { background: var(--glass2); border-radius: 8px; padding: 10px 12px; }
+.tile b { display: block; font-size: 22px; color: var(--gold); font-variant-numeric: tabular-nums; }
+.tile span { color: var(--dim); font-size: 12.5px; }
+.tablewrap { overflow-x: auto; margin-top: 12px; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,.06); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--dim); font-weight: 500; font-size: 12px; }
+td.bar { width: 36%; }
+.barbg { height: 8px; border-radius: 4px; background: rgba(255,255,255,.06); overflow: hidden; }
+.barbg i { display: block; height: 100%; background: linear-gradient(90deg, var(--gold2), var(--gold)); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+button { font: inherit; color: inherit; cursor: pointer; }
+.chip { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 999px; padding: 5px 12px; font-size: 13px; }
+.chip[aria-pressed="true"] { border-color: var(--gold); background: rgba(232,194,106,.16); color: var(--gold); }
+.chip em { font-style: normal; color: var(--dim); margin-left: 4px; }
+#q { flex: 1 1 200px; min-width: 0; background: var(--glass2); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); padding: 7px 10px; font: inherit; }
+.list { display: flex; flex-direction: column; gap: 8px; }
+.item { background: var(--glass2); border-radius: 8px; padding: 10px 12px; border-left: 3px solid #3a4250; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; }
+.item.approved { border-left-color: var(--green); }
+.item.rejected { border-left-color: var(--red); opacity: .72; }
+.item.done { border-left-color: var(--blue); opacity: .8; }
+.meta { color: var(--dim); font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.meta b { color: var(--ink); font-weight: 600; }
+.text { grid-column: 1 / -1; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; user-select: text; }
+.badge { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,.07); color: var(--dim); align-self: start; }
+.badge.approved { background: rgba(111,220,140,.15); color: var(--green); }
+.badge.rejected { background: rgba(255,93,93,.15); color: var(--red); }
+.badge.done { background: rgba(127,180,239,.15); color: var(--blue); }
+.acts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.acts button { border: 1px solid rgba(255,255,255,.14); background: transparent; border-radius: 6px; padding: 4px 10px; font-size: 12.5px; }
+.acts button.ok { border-color: rgba(111,220,140,.5); color: var(--green); }
+.acts button.no { border-color: rgba(255,93,93,.45); color: var(--red); }
+.acts button.dn { border-color: rgba(127,180,239,.5); color: var(--blue); }
+.acts button:hover, .chip:hover { background: rgba(255,255,255,.05); }
+.acts button:disabled { opacity: .4; cursor: default; }
+.acts input { flex: 1 1 180px; min-width: 0; background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.1); border-radius: 6px; color: var(--ink); padding: 4px 8px; font: inherit; font-size: 12.5px; }
+button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.empty { color: var(--dim); padding: 18px 4px; }
+.gate { text-align: center; padding: 40px 16px; line-height: 1.6; }
+.gate a { color: var(--gold); }
+.more { align-self: center; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>AEVUM · YÖNETİM</h1>
+    <span class="sync" id="sync">Giriş kontrol ediliyor…</span>
+  </header>
+  <section class="panel gate" id="gate" hidden></section>
+  <section class="panel" id="stats" aria-labelledby="st-h" hidden>
+    <h2 id="st-h">İstatistikler</h2>
+    <div class="tiles" id="tiles"></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Gün</th><th>Ziyaretçi</th><th>Oyuncu</th><th>Tek</th><th>Çok</th><th>Aynı anda (en çok)</th><th class="bar"></th></tr></thead>
+        <tbody id="days"></tbody>
+      </table>
+    </div>
+  </section>
+  <section class="panel" id="fb" aria-labelledby="fb-h" hidden>
+    <h2 id="fb-h">@claude mesajları</h2>
+    <div class="controls">
+      <div class="chips" id="filters"></div>
+      <input id="q" type="search" placeholder="Ara: oyuncu ya da metin" aria-label="Mesajlarda ara">
+      <button class="chip" id="reload" type="button">Yenile</button>
+    </div>
+    <div class="list" id="list"><div class="empty">Mesajlar yükleniyor…</div></div>
+    <button class="chip more" id="more" type="button" hidden>Daha fazla göster</button>
+  </section>
+</div>
+<script>
+(function () {
+  'use strict';
+  var API_KEY = '__API_KEY__';
+  var STATUS = { new: 'Yeni', approved: 'Onaylı', rejected: 'Reddedildi', done: 'Yapıldı' };
+  var FILTERS = [['all', 'Hepsi'], ['new', 'Yeni'], ['approved', 'Onaylı'], ['rejected', 'Reddedildi'], ['done', 'Yapıldı']];
+  var rows = [], filter = 'new', query = '', shown = 60, ticket = null;
+  try { filter = localStorage.getItem('aevum.admin.filter') || 'new'; } catch (e) { /* ignore */ }
+  var $ = function (id) { return document.getElementById(id); };
+  var el = function (tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  var fmtNum = function (n) { return n == null ? '–' : Number(n).toLocaleString('tr-TR'); };
+  var fmtTime = function (iso) { var d = new Date(iso); return isNaN(d) ? String(iso || '') : d.toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); };
+
+  // a short message instead of the panels (no account, not the owner, an error), with a link to the game
+  function gate(msg) {
+    var g = $('gate'); g.textContent = '';
+    g.append(el('p', '', msg));
+    var p = el('p'), a = el('a', '', 'Oyuna git ve giriş yap'); a.href = '/'; p.append(a); g.append(p);
+    g.hidden = false; $('stats').hidden = true; $('fb').hidden = true; $('sync').textContent = '';
+  }
+  // the relay ticket: the game's stored Google session (localStorage 'aevum.auth', same origin) -> a fresh id token ->
+  // POST /mp/auth. (A local test may hand one over in the address: #tk=...; the part after # never reaches a server.)
+  async function getTicket() {
+    var h = /[#&]tk=([^&]+)/.exec(location.hash);
+    if (h) return { ticket: decodeURIComponent(h[1]), owner: true };
+    var s = null; try { s = JSON.parse(localStorage.getItem('aevum.auth') || 'null'); } catch (e) { s = null; }
+    if (!s || typeof s.refreshToken !== 'string' || !s.refreshToken) return null;
+    var r = await fetch('https://securetoken.googleapis.com/v1/token?key=' + encodeURIComponent(API_KEY), { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(s.refreshToken) });
+    if (!r.ok) return null;
+    var tok = (await r.json()).id_token;
+    var a = await fetch('/mp/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: tok }) });
+    if (!a.ok) return null;
+    return a.json();
+  }
+  async function api(pathname, body) {
+    var init = { cache: 'no-store', headers: { 'X-Aevum-Ticket': ticket } };
+    if (body) { init.method = 'POST'; init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
+    var r = await fetch(pathname, init);
+    var j = null; try { j = await r.json(); } catch (e) { j = null; }
+    if (!r.ok) { var e = new Error((j && j.error) || ('Sunucu hatası (' + r.status + ')')); e.status = r.status; throw e; }
+    return j;
+  }
+
+  function renderStats(st) {
+    var t = $('tiles'); t.textContent = '';
+    var daily = st.daily || [], today = daily[0] || {};
+    var tiles = [
+      [fmtNum(st.online ? st.online.total : null), 'Şu an açık'],
+      [fmtNum(st.live ? st.live.peers : null), 'Odalarda bağlı'],
+      [fmtNum(today.visitors), 'Bugün ziyaretçi'],
+      [fmtNum(today.players), 'Bugün oyuncu'],
+      [fmtNum((today.sp || 0) + (today.mp || 0)), 'Bugün maç'],
+      [fmtNum(st.accounts), 'Toplam hesap'],
+    ];
+    tiles.forEach(function (x) { var d = el('div', 'tile'); d.append(el('b', '', x[0]), el('span', '', x[1])); t.append(d); });
+    var body = $('days'); body.textContent = '';
+    var max = Math.max.apply(null, [1].concat(daily.map(function (d) { return d.visitors || 0; })));
+    daily.forEach(function (d) {
+      var tr = document.createElement('tr');
+      [String(d.day || '').slice(5).split('-').reverse().join('.'), fmtNum(d.visitors), fmtNum(d.players), fmtNum(d.sp), fmtNum(d.mp), fmtNum(d.peak)].forEach(function (v) { tr.append(el('td', '', v)); });
+      var bar = el('td', 'bar'), bg = el('div', 'barbg'), i = el('i'); i.style.width = Math.round((d.visitors || 0) / max * 100) + '%'; bg.append(i); bar.append(bg); tr.append(bar);
+      body.append(tr);
+    });
+    if (!daily.length) { var tr = document.createElement('tr'), td = el('td', 'empty', 'Henüz gün verisi yok.'); td.colSpan = 7; tr.append(td); body.append(tr); }
+    $('sync').textContent = st.live ? 'Sürüm ' + (st.live.ver || '') : '';
+  }
+  function renderFilters() {
+    var box = $('filters'); box.textContent = '';
+    FILTERS.forEach(function (f) {
+      var k = f[0], n = k === 'all' ? rows.length : rows.filter(function (r) { return r.status === k; }).length;
+      var b = el('button', 'chip', f[1]); b.type = 'button'; b.setAttribute('aria-pressed', String(filter === k));
+      b.append(el('em', '', String(n)));
+      b.onclick = function () { filter = k; shown = 60; try { localStorage.setItem('aevum.admin.filter', k); } catch (e) { /* ignore */ } renderAll(); };
+      box.append(b);
+    });
+  }
+  async function decide(r, change, btns) {
+    btns.forEach(function (b) { b.disabled = true; });
+    try {
+      var d = await api('/mp/admin/feedback', Object.assign({ id: r.id }, change));
+      r.status = d.status; r.note = d.note; r.decidedAt = d.decidedAt;
+      if (change.status) renderAll();
+    } catch (e) {
+      $('sync').textContent = 'Kaydedilemedi: ' + e.message;
+      btns.forEach(function (b) { b.disabled = false; });
+    }
+  }
+  function renderList() {
+    var list = $('list'); list.textContent = '';
+    var q = query.trim().toLocaleLowerCase('tr');
+    var vis = rows.filter(function (r) { return (filter === 'all' || r.status === filter) && (!q || (r.text + ' ' + r.name).toLocaleLowerCase('tr').indexOf(q) >= 0); });
+    if (!vis.length) { list.append(el('div', 'empty', rows.length ? 'Bu filtrede mesaj yok.' : 'Henüz @claude mesajı yok.')); $('more').hidden = true; return; }
+    vis.slice(0, shown).forEach(function (r) {
+      var st = r.status || 'new', it = el('article', 'item ' + st);
+      var meta = el('div', 'meta'); meta.append(el('b', '', r.name), el('span', '', fmtTime(r.at)), el('span', '', r.room === 'TEK' ? 'Tek oyunculu' : 'Oda ' + r.room));
+      it.append(meta, el('span', 'badge ' + st, STATUS[st] || st), el('div', 'text', r.text || '(boş mesaj)'));
+      var acts = el('div', 'acts'), btns = [];
+      var mk = function (cls, label, s) { var b = el('button', cls, label); b.type = 'button'; b.onclick = function () { decide(r, { status: s }, btns); }; btns.push(b); return b; };
+      if (st === 'new') acts.append(mk('ok', 'Onayla', 'approved'), mk('no', 'Reddet', 'rejected'));
+      else if (st === 'approved') acts.append(mk('dn', 'Yapıldı', 'done'), mk('', 'Geri al', 'new'));
+      else acts.append(mk('', 'Geri al', 'new'));
+      var note = el('input'); note.placeholder = 'Not (isteğe bağlı)'; note.value = r.note || ''; note.maxLength = 500; note.setAttribute('aria-label', 'Not');
+      note.addEventListener('change', function () { if ((r.note || '') !== note.value) decide(r, { note: note.value }, []); });
+      acts.append(note); it.append(acts); list.append(it);
+    });
+    $('more').hidden = vis.length <= shown;
+  }
+  function renderAll() { renderFilters(); renderList(); }
+
+  async function loadAll() {
+    $('list').textContent = ''; $('list').append(el('div', 'empty', 'Mesajlar yükleniyor…'));
+    var st = api('/mp/admin/stats').then(renderStats, function (e) { $('sync').textContent = 'İstatistik okunamadı: ' + e.message; });
+    try {
+      var f = await api('/mp/admin/feedback');
+      rows = f.items || [];
+      renderAll();
+    } catch (e) {
+      if (e.status === 401 || e.status === 403) { gate('Bu sayfa yalnızca oyunun sahibi içindir.'); return; }
+      $('list').textContent = ''; $('list').append(el('div', 'empty', 'Mesajlar okunamadı: ' + e.message));
+    }
+    await st;
+  }
+  $('q').addEventListener('input', function (e) { query = e.target.value; shown = 60; renderList(); });
+  $('more').onclick = function () { shown += 60; renderList(); };
+  $('reload').onclick = loadAll;
+
+  (async function () {
+    var t = null;
+    try { t = await getTicket(); } catch (e) { t = null; }
+    if (!t || !t.ticket) { gate('Giriş yapılmamış. Önce oyunda Google hesabınla giriş yap, sonra bu sayfayı yenile.'); return; }
+    if (!t.owner) { gate('Bu sayfa yalnızca oyunun sahibi içindir.'); return; }
+    ticket = t.ticket;
+    $('stats').hidden = false; $('fb').hidden = false;
+    loadAll();
+  })();
+})();
+</script>
+</body>
+</html>
