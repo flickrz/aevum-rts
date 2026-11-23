@@ -1,4 +1,5 @@
 // Aevum - application bootstrap and main loop.
+import { TEST_MODE, TEST_PROFILE } from './testmode.js';
 import { Game } from './sim/game.js';
 import { Renderer } from './render/renderer.js';
 import { UI } from './ui/ui.js';
@@ -276,7 +277,7 @@ const app = {
 
   // ---------- profile + match history (local only) ----------
   // memProfile: the profile of this session when localStorage is blocked / full (the game stays playable)
-  getProfile() { return memProfile || profile.loadProfile(LS); },
+  getProfile() { return memProfile || profile.loadProfile(LS) || (TEST_MODE ? TEST_PROFILE : null); },
   get cloud() { return cloud; },
   profileSaved() { return !memProfile; },
   createProfile(name) { const p = profile.createProfile(LS, name); memProfile = p.saved ? null : p; return p; },

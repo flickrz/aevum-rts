@@ -1035,9 +1035,9 @@ button.gbtn, button.gbtn .gbtn-t { color: #1f1f1f !important; text-shadow: none 
 /* phones (owner 2026-11-23): touch screen with little height -> the HUD shrinks so the map stays visible
    (html.touch is set by src/input.js; desktop never gets it) */
 @media (max-height: 520px) {
-  html.touch .hudbl { zoom: .58; }
-  html.touch .bottom { zoom: .62; left: 440px !important; }   /* (in its own zoomed px: just right of the shrunk .hudbl) */
-  html.touch .hudtop { zoom: .72; }
-  html.touch .chatdock { zoom: .7; }
+  html.touch .hudbl { zoom: .48; }
+  html.touch .bottom { zoom: .5; left: 440px !important; }   /* (in its own zoomed px: just right of the shrunk .hudbl) */
+  html.touch .hudtop { zoom: .6; }
+  html.touch .chatdock { zoom: .6; }
   html.touch .groupbar { display: none; }
 }

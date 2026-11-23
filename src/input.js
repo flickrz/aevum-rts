@@ -732,6 +732,15 @@ export class Input {
     this.dropBtn.style.cssText = 'position:fixed;right:12px;top:64px;z-index:40;display:none';
     this.dropBtn.onclick = () => { this.app.select([]); };
     document.body.appendChild(this.dropBtn);
+    // (owner 2026-11-23) bottom-right mode button: Gezin = one finger pans the map, Seç = one finger draws the selection box
+    this.boxMode = false;
+    this.modeBtn = document.createElement('button');
+    this.modeBtn.className = 'mbtn small touch-mode';
+    this.modeBtn.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:40;display:none;min-width:84px';
+    const showMode = () => { this.modeBtn.textContent = this.boxMode ? '▭ Seç' : '✋ Gezin'; this.modeBtn.classList.toggle('on', this.boxMode); };
+    showMode();
+    this.modeBtn.onclick = () => { this.boxMode = !this.boxMode; showMode(); };
+    document.body.appendChild(this.modeBtn);
     const opts = { passive: false };
     // html.touch: the compact phone layout in style.css (a touch screen, or the first touch)
     try { if (window.matchMedia && matchMedia('(pointer: coarse)').matches) document.documentElement.classList.add('touch'); } catch (err) { /* */ }
@@ -770,7 +779,12 @@ export class Input {
       }
       const t = e.changedTouches[0]; if (!t) return;
       this.mouse.x = t.clientX; this.mouse.y = t.clientY;
-      if (T.mode === 'tap' && Math.hypot(t.clientX - T.x0, t.clientY - T.y0) > 12) { clearTimeout(T.long); T.mode = this.placing ? 'place' : 'pan'; }
+      if (T.mode === 'tap' && Math.hypot(t.clientX - T.x0, t.clientY - T.y0) > 12) {
+        clearTimeout(T.long);
+        if (this.placing) T.mode = 'place';
+        else if (this.boxMode && !this.targeting) { T.mode = 'box'; this.drag = { x0: T.x0, y0: T.y0, active: true }; }
+        else T.mode = 'pan';
+      }
       if (T.mode === 'place') { this.updateGhost(); return; }
       if (T.mode === 'pan') {
         this.pan(-(t.clientX - T.lx), (t.clientY - T.ly), Math.max(10, cam.dist) * TP_PAN * 0.9);
@@ -818,6 +832,8 @@ export class Input {
     if (!this.dropBtn) return;
     const on = !!(this.touchMode && this.active && this.app.selection && this.app.selection.length);
     if (on !== this._dropOn) { this._dropOn = on; this.dropBtn.style.display = on ? 'block' : 'none'; }
+    const m = !!(this.touchMode && this.active);
+    if (m !== this._modeOn) { this._modeOn = m; this.modeBtn.style.display = m ? 'block' : 'none'; }
   }
   // move the camera target by (mx right, mz forward) * sp on the ground, clamped to the map
   pan(mx, mz, sp) {

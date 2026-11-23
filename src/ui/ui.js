@@ -1,4 +1,5 @@
 // Aevum UI: main menu, HUD, minimap, tooltips, overlays. DOM only, no three.js.
+import { TEST_MODE } from '../testmode.js';
 import { AGES, UNITS, BUILDINGS, TECHS, PLAYER_COLORS } from '../data.js';
 import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS, MINE_CAP, HEALER_R, HEALER_HP, PROD_B, PASTURE_IDLE_RATE, NO_ROTATE } from '../sim/game.js';
 import { firstLaunch, menuProfile } from './profile-ui.js';
@@ -343,7 +344,7 @@ export class UI {
     parent.append(b); return b;
   }
   // signed in with Google (required to play) and the account's profile is here
-  _signedIn() { return !!safe(() => this.app.cloud && this.app.cloud.loggedIn && this.app.getProfile(), false); }
+  _signedIn() { if (TEST_MODE) return true; return !!safe(() => this.app.cloud && this.app.cloud.loggedIn && this.app.getProfile(), false); }
   _menuMain(note) {
     // nothing is playable before signing in with Google (one account = one player)
     if (!this._signedIn()) { loginScreen(this); if (note) this._menuNote(note); return; }
