@@ -702,6 +702,7 @@ export class Input {
     if (!this.active) return;
     const r = this.app.renderer, cam = r.cam, K = this.keys;
     let mx = 0, mz = 0; // right, forward
+    if (this.stick && (this.stick.x || this.stick.y)) { mx += this.stick.x * 1.4; mz -= this.stick.y * 1.4; }   // touch stick (_bindTouch)
     if (K.has('KeyW') || K.has('ArrowUp')) mz += 1;
     if (K.has('KeyS') || K.has('ArrowDown')) mz -= 1;
     if (K.has('KeyD') || K.has('ArrowRight')) mx += 1;
@@ -732,15 +733,30 @@ export class Input {
     this.dropBtn.style.cssText = 'position:fixed;right:12px;top:64px;z-index:40;display:none';
     this.dropBtn.onclick = () => { this.app.select([]); };
     document.body.appendChild(this.dropBtn);
-    // (owner 2026-11-23) bottom-right mode button: Gezin = one finger pans the map, Seç = one finger draws the selection box
-    this.boxMode = false;
-    this.modeBtn = document.createElement('button');
-    this.modeBtn.className = 'mbtn small touch-mode';
-    this.modeBtn.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:40;display:none;min-width:84px';
-    const showMode = () => { this.modeBtn.textContent = this.boxMode ? '▭ Seç' : '✋ Gezin'; this.modeBtn.classList.toggle('on', this.boxMode); };
-    showMode();
-    this.modeBtn.onclick = () => { this.boxMode = !this.boxMode; showMode(); };
-    document.body.appendChild(this.modeBtn);
+    // (owner 2026-11-23: "a gamepad analog stick") bottom-right stick pans the map: direction and speed follow the thumb;
+    // with the stick for panning, a one-finger drag on the map is always the selection box
+    this.boxMode = true;
+    this.stick = { x: 0, y: 0, id: null };
+    const pad = this.modeBtn = document.createElement('div');
+    pad.className = 'touch-stick';
+    pad.style.cssText = 'position:fixed;right:18px;bottom:18px;width:112px;height:112px;border-radius:50%;z-index:40;display:none;' +
+      'background:radial-gradient(circle,rgba(20,26,38,.35),rgba(20,26,38,.6));border:1px solid rgba(230,200,120,.35);touch-action:none';
+    const knob = document.createElement('div');
+    knob.style.cssText = 'position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;' +
+      'background:rgba(230,200,120,.55);border:1px solid rgba(255,230,160,.8);box-shadow:0 2px 6px rgba(0,0,0,.5);pointer-events:none';
+    pad.appendChild(knob);
+    document.body.appendChild(pad);
+    const R = 40;
+    const setStick = (cx, cy) => {
+      const r = pad.getBoundingClientRect(), dx = cx - (r.left + r.width / 2), dy = cy - (r.top + r.height / 2), l = Math.hypot(dx, dy) || 1, k = Math.min(1, l / R);
+      this.stick.x = dx / l * k; this.stick.y = dy / l * k;
+      knob.style.transform = `translate(${this.stick.x * R}px,${this.stick.y * R}px)`;
+    };
+    const stop = () => { this.stick.x = this.stick.y = 0; this.stick.id = null; knob.style.transform = ''; };
+    pad.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); const t = e.changedTouches[0]; this.stick.id = t.identifier; setStick(t.clientX, t.clientY); }, { passive: false });
+    pad.addEventListener('touchmove', (e) => { e.preventDefault(); for (const t of e.changedTouches) if (t.identifier === this.stick.id) setStick(t.clientX, t.clientY); }, { passive: false });
+    pad.addEventListener('touchend', (e) => { e.preventDefault(); for (const t of e.changedTouches) if (t.identifier === this.stick.id) stop(); }, { passive: false });
+    pad.addEventListener('touchcancel', stop);
     const opts = { passive: false };
     // html.touch: the compact phone layout in style.css (a touch screen, or the first touch)
     try { if (window.matchMedia && matchMedia('(pointer: coarse)').matches) document.documentElement.classList.add('touch'); } catch (err) { /* */ }
