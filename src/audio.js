@@ -70,9 +70,9 @@ const SOUNDS = {
   board:     { files: ['step1', 'step2', 'step3'], vol: 0.14, minGap: 0.35, range: 24 },
   trainCoin: { files: ['coins2'], vol: 0.12, minGap: 5, range: 40 },
   // interface
-  ui_click:  { files: ['k_dclick', 'dclick7', 'k_dclick', 'dclick8', 'k_dclick', 'dclick1'], vol: 0.5, minGap: 0.04, range: 0, cat: 'ui', rotate: true, pitch: 0.02 },
+  ui_click:  { files: ['click_a', 'click_b'], vol: 0.5, minGap: 0.04, range: 0, cat: 'ui', rotate: true, pitch: 0.02 },
   ui_select: { files: ['k_tick'], vol: 0.2, minGap: 0.15, range: 0, cat: 'ui' },
-  ui_command:{ files: ['k_dclick', 'dclick7', 'k_dclick', 'dclick8', 'k_dclick', 'dclick1'], vol: 0.2, minGap: 0.18, rotate: true, pitch: 0.02, range: 0, cat: 'ui' },
+  ui_command:{ files: ['click_a', 'click_b'], vol: 0.2, minGap: 0.18, rotate: true, pitch: 0.02, range: 0, cat: 'ui' },
   ui_error:  { files: ['mclick'], vol: 0.6, minGap: 0.15, range: 0, cat: 'ui', rate: 0.75 },
   // laying a foundation (owner 2026-11-13: "güzel bir ses"): a deep thud, then earth and gravel settling (see ui())
   ui_place:  { files: ['k_hit'], vol: 0.62, minGap: 0.1, range: 0, cat: 'ui', pitch: 0.04 },

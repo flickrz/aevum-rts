@@ -77,6 +77,8 @@ Combat files are cut from the source recordings (onset-trimmed, 5 ms fade-in, co
 | amb_forest.mp3 | generated for the game (Mirelo text-to-audio via Higgsfield, 2026-11-23), looped | owner's generation |
 | amb_village.mp3 | generated for the game (Mirelo text-to-audio via Higgsfield, 2026-11-23), looped | owner's generation |
 | amb_meadow.mp3 | generated for the game (Mirelo text-to-audio via Higgsfield, 2026-11-23), looped | owner's generation |
+| click_a.mp3 | Pixabay: "mouse click" by DRAGON-STUDIO (346047), clip at 1.01 s (press + release) | Pixabay Content License |
+| click_b.mp3 | Pixabay: same file, clip at 2.84 s (press + release) | Pixabay Content License |
 
 ## Combat (rebuilt 2026-11-11)
 
