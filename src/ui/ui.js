@@ -1,7 +1,7 @@
 // Aevum UI: main menu, HUD, minimap, tooltips, overlays. DOM only, no three.js.
 import { TEST_MODE } from '../testmode.js';
 import { AGES, UNITS, BUILDINGS, TECHS, PLAYER_COLORS } from '../data.js';
-import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS, MINE_CAP, HEALER_R, HEALER_HP, PROD_B, PASTURE_IDLE_RATE, NO_ROTATE } from '../sim/game.js';
+import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS, MINE_CAP, healerStats, healerRate, PROD_B, PASTURE_IDLE_RATE, NO_ROTATE } from '../sim/game.js';
 import { firstLaunch, menuProfile } from './profile-ui.js';
 import { levelOf } from '../rank.js';
 import { menuHud, saveBadge, saveBadgeTitle, confirmDeleteSave, loginScreen, avatarEl, tpText } from './cloud-ui.js';
@@ -39,7 +39,7 @@ const NATURE = {
   tree: { name: 'Ağaç', icon: NATURE_ICONS.tree, res: 'wood' }, stone: { name: 'Taş Ocağı', icon: NATURE_ICONS.stone, res: 'stone' },
   gold: { name: 'Altın Madeni', icon: NATURE_ICONS.gold, res: 'gold' }, berries: { name: 'Böğürtlen Çalısı', icon: NATURE_ICONS.berries, res: 'food' },
   deer: { name: 'Geyik', icon: NATURE_ICONS.deer, res: 'food' },
-  wolf: { name: 'Kurt', icon: NATURE_ICONS.deer, res: 'food' }, bear: { name: 'Ayı', icon: NATURE_ICONS.deer, res: 'food' },
+  wolf: { name: 'Kurt', icon: NATURE_ICONS.wolf, res: 'food' }, bear: { name: 'Ayı', icon: NATURE_ICONS.bear, res: 'food' },
   fish: { name: 'Balık Sürüsü', icon: NATURE_ICONS.fish, res: 'food' },
 };
 const HOTKEYS = 'QERTYFGHJKZXCVB'; // W/A/S/D are camera-only (never a card slot)
@@ -604,7 +604,7 @@ export class UI {
       <b>Binalar:</b> <kbd>Shift</kbd>+tık ile aynı türden birden çok bina seç, çift tık ekrandaki tümünü seçer; üretim her binada aynı anda başlar. <kbd>Shift</kbd>+üret: 5 adet sıraya ekler. <kbd>Shift</kbd> basılıyken bina yerleştirmek araç açık kalır, birden çok temel atarsın. Yerleştirirken <kbd>R</kbd> binayı çevirir. Kendi binanı seçince <b>Döndür</b> düğmesi de çıkar.<br>
       <b>Sur kapısı:</b> Bitmiş bir sur parçasını seç, <b>Kapı Aç</b> (<kbd>Q</kbd>) ile 3 kare genişliğinde kapı yap. Kapıdan yalnızca sen ve müttefiklerin geçer.<br>
       <b>Ekonomi:</b> Köylülerle yiyecek, odun, taş ve altın topla; Taş Devri'nde ağıl, Tunç Devri'nden itibaren tarla kur (nüfus sınırı sabit 1000, ev gerekmez).<br>
-      <b>Büyücü:</b> Tapınakta (Taş Devri'nden itibaren) üretilir. Saldırmaz; çevresindeki (8 kare) yaralı dost birlikleri savaş sırasında da saniyede 2 can iyileştirir, tapınak araştırmaları bunu artırır. Bir birliği aynı anda yalnızca bir büyücü iyileştirir.<br>
+      <b>Büyücü:</b> Tapınakta (Taş Devri'nden itibaren) üretilir. Saldırmaz; yaralı dost birlikleri savaş sırasında da iyileştirir. Taş Devri'nde yalnızca en yaralı tek birliği (6 kare), Tunç Devri'nden itibaren çevresindeki herkesi iyileştirir; alanı (6 → 8 kare) ve hızı (2 → 6 can/sn) her çağda artar, tapınak araştırmaları hızı ayrıca artırır. Bir birliği aynı anda yalnızca bir büyücü iyileştirir.<br>
       <b>Çağ atlama:</b> Şehir Merkezinden yeterli kaynak ve bina ile sonraki çağa geç; yeni birimler ve binalar açılır.<br>
       <b>Zafer:</b> Rakiplerin birim üreten bütün binalarını yık: şehir merkezi, kışla, okçuluk alanı, ahır, kuşatma atölyesi, fabrika ve liman (inşaatına başlanmış temeller de sayılır). Geriye kalan askerler ve köylüler oyunu sürdürmez. Daha fazla binası olan bir rakibin elinde bunlardan 1-2 tane kalınca mini haritada yanıp söner.<br>
       <b>Diğer:</b> <kbd>Esc</kbd> iptal / duraklat, mini haritaya tıklayarak kamerayı taşı, sağ tıkla birimleri gönder.
@@ -1173,7 +1173,7 @@ export class UI {
     if (e.kind === 'unit') {
       s.push(`<span>${ico('x-atk')} <b>${d.atk ?? 0}</b></span>`, `<span>${ico('x-armor')} <b>${d.armor ?? 0}</b></span>`);
       if (d.range) s.push(`<span>${ico('x-range')} <b>${d.range}</b></span>`);
-      if (e.type === 'healer') { const hm = this.game?.players?.[e.owner]?.mods?.heal || 0; s.push(`<span>İyileştirme: <b>${Math.round(HEALER_HP * (1 + hm))} can/sn · ${HEALER_R} kare</b></span>`); }
+      if (e.type === 'healer') { const hp = this.game?.players?.[e.owner], st = healerStats(hp ? hp.age : 0); s.push(`<span>İyileştirme: <b>${healerRate(hp)} can/sn · ${st.one ? 'tek birlik, ' : ''}${st.r} kare</b></span>`); }
       s.push(`<span>${ico('x-speed')} <b>${d.speed ?? '-'}</b></span>`);
       if (e.type === 'transport' || Array.isArray(e.cargo)) s.push(`<span>${ico('u-transport')} <b>${(e.cargo || []).length}/10</b></span>`);
       if (e.carry && e.carry.amount > 0) s.push(`<span>${RES_ICON[e.carry.type] || ico('x-cargo')} <b>${Math.floor(e.carry.amount)}</b></span>`);

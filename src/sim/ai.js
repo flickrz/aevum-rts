@@ -6,7 +6,7 @@
 // Difficulty changes decision quality and tempo only (think interval, villager targets, how tightly it
 // follows its plan, counter quality, how often it leaves villagers idle, attack timing / sizes).
 import { UNITS, BUILDINGS, TECHS, AGES, FARM_SLOTS } from '../data.js';
-import { QUEUE_TIME_MUL, unitLos, buildingLos, forDisc, MINE_CAP, HEALER_R } from './game.js';
+import { QUEUE_TIME_MUL, unitLos, buildingLos, forDisc, MINE_CAP, healerStats } from './game.js';
 
 const MIN = 60;
 const DIFF = {
@@ -2085,7 +2085,7 @@ export class AIController {
       if (o && o.type === 'move' && o.hs) continue;   // walking to a wounded friend (Game._healerSeek)
       if (o && o.type === 'move' && d2(o.x, o.z, pt.x, pt.z) < 10 * 10) continue;   // already on the way
       if (d2(h.x, h.z, pt.x, pt.z) < 7 * 7) continue;
-      if (!o) { let busy = false; g._near(h.x, h.z, HEALER_R, e => { if (!busy && g._healable(h, e) && d2(e.x, e.z, h.x, h.z) <= HEALER_R * HEALER_R) busy = true; }); if (busy) continue; }
+      if (!o) { const R = healerStats(g.players[h.owner].age).r; let busy = false; g._near(h.x, h.z, R, e => { if (!busy && g._healable(h, e) && d2(e.x, e.z, h.x, h.z) <= R * R) busy = true; }); if (busy) continue; }
       ids.push(h.id);
     }
     if (ids.length) g.cmdMove(ids, pt.x, pt.z);

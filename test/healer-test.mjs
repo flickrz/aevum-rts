@@ -1,5 +1,5 @@
 // The healer (Büyücü, owner 2026-11-21) and the Stone Age temple: node test/healer-test.mjs
-import { Game, HEALER_R, HEALER_HP, PROD_B } from '../src/sim/game.js';
+import { Game, HEALER_R, HEALER_HP, HEALER_AGE, healerStats, healerRate, PROD_B } from '../src/sim/game.js';
 import { AIController } from '../src/sim/ai.js';
 import { UNITS, BUILDINGS } from '../src/data.js';
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m); console.log((c ? '  ok   ' : '  FAIL ') + m); };
@@ -168,6 +168,24 @@ const script = (saveAt) => {
   step(g, 20 * 60, () => hAt != null || !!g.over);
   ok(tAt != null && hAt != null, `AI vs AI: a temple (min ${tAt == null ? '-' : tAt.toFixed(1)}) and a healer (min ${hAt == null ? '-' : hAt.toFixed(1)}) within 20 min`);
   ok(g.ais.every(a => !Object.keys(a.errors).length), 'AIs without errors');
+}
+
+// 10) (owner 2026-11-23) she grows with the age: Stone Age = ONE target (the most hurt), then an area that widens, faster per age
+{
+  ok(HEALER_AGE.length === 5 && HEALER_AGE[0].one && !HEALER_AGE.slice(1).some(s => s.one), 'one target only in the Stone Age');
+  ok(HEALER_AGE.every((s, i) => !i || (s.r >= HEALER_AGE[i - 1].r && s.hp > HEALER_AGE[i - 1].hp)) && HEALER_AGE[4].r === HEALER_R, 'reach never shrinks, rate grows every age, widest = HEALER_R');
+  for (let age = 0; age < 5; age++) {
+    const g = mk(); g.players[0].age = age; const st = healerStats(age), h = g._addUnit('healer', 0, CX, CZ);
+    const a = g._addUnit('spearman', 0, CX + 2, CZ), b = g._addUnit('spearman', 0, CX - 2, CZ), far = g._addUnit('spearman', 0, CX, CZ + st.r + 1.5);
+    for (const u of [a, b, far]) u.stance = 'hold';
+    g.cmdStop([a.id, b.id, far.id]); a.hp = 20; b.hp = 8; far.hp = 12;
+    let pulses = 0; g.events.on('heal', e => { if (e.e === h) pulses++; });
+    step(g, 3.2);
+    const n = healerRate(g.players[0]);
+    if (st.one) ok(b.hp === 8 + pulses * n && a.hp === 20, `age ${age}: only the most hurt one is healed (b ${b.hp}, a ${a.hp}, ${n}/s)`);
+    else ok(b.hp === 8 + pulses * n && a.hp === 20 + pulses * n, `age ${age}: both in the area healed at ${n}/s (b ${b.hp}, a ${a.hp})`);
+    ok(far.hp === 12, `age ${age}: a friend at ${(st.r + 1.5).toFixed(1)} tiles is outside her ${st.r}-tile reach (${far.hp})`);
+  }
 }
 
 console.log(fails.length ? `\n${fails.length} FAILED` : '\nALL OK');

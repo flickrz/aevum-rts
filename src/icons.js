@@ -40,7 +40,7 @@ export const stripIcons = s => String(s).replace(/<svg class="gi[^]*?<\/svg>\s*/
 
 export const RES_ICONS = { food: ico('r-food', 'res-food'), wood: ico('r-wood', 'res-wood'), stone: ico('r-stone', 'res-stone'), gold: ico('r-gold', 'res-gold') };
 export const CAT_ICONS = { eco: ico('c-eco'), mil: ico('c-mil'), def: ico('c-def'), tra: ico('c-tra') };
-export const NATURE_ICONS = { tree: ico('n-tree'), stone: ico('r-stone', 'res-stone'), gold: ico('r-gold', 'res-gold'), berries: ico('n-berries'), deer: ico('n-deer'), fish: ico('n-fish') };
+export const NATURE_ICONS = { tree: ico('n-tree'), stone: ico('r-stone', 'res-stone'), gold: ico('r-gold', 'res-gold'), berries: ico('n-berries'), deer: ico('n-deer'), wolf: ico('n-wolf'), bear: ico('n-bear'), fish: ico('n-fish') };
 
 // the data's emoji icons become sprite icons (UI only: the simulation never reads `icon`)
 let applied = false;
