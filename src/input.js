@@ -440,6 +440,10 @@ export class Input {
         if (game.cmdAttack(units, target.id, queue)) { r.addMarker(target.x, target.z, C_ATTACK); this.flash(target.id, C_ATTACK); this.sfx('command'); }
         return;
       }
+      if (target.kind === 'resource' && target.live) {   // (a live wolf / bear: everyone who can fight goes for it)
+        if (game.cmdAttack(units, target.id, queue)) { r.addMarker(target.x, target.z, C_ATTACK); this.flash(target.id, C_ATTACK); this.sfx('command'); }
+        return;
+      }
       if (target.kind === 'resource') {
         if (villagers.length) {
           game.cmdGather(villagers, target.id, queue);

@@ -16,11 +16,19 @@ import { TutorialSystem } from './tutorial.js';
 // the buildings that train units: as long as a player has one, the player is in the game (see _checkWin). The temple
 // (it trains only the healer) does not count: the owner's rule is about the worker / soldier buildings.
 export const PROD_B = new Set(Object.keys(BUILDINGS).filter((k) => (BUILDINGS[k].trains || []).length && !BUILDINGS[k].legacy && k !== 'temple'));
-const RES_OF = { tree: 'wood', stone: 'stone', gold: 'gold', berries: 'food', deer: 'food', fish: 'food' };
-const RATE = { tree: 0.42, stone: 0.36, gold: 0.36, berries: 0.4, deer: 0.5 };
+const RES_OF = { tree: 'wood', stone: 'stone', gold: 'gold', berries: 'food', deer: 'food', fish: 'food', wolf: 'food', bear: 'food' };
+const RATE = { tree: 0.42, stone: 0.36, gold: 0.36, berries: 0.4, deer: 0.5, wolf: 0.5, bear: 0.5 };
+// animals that walk about (kept in this.deer, no tile of their own): deer, and the wild predators (2026-11-23 player
+// feedback). A predator is a resource like a deer, but alive (e.live) until units kill it: it wanders, bites units of
+// any player that come close (aggro tiles), follows them up to leash tiles from home, then lies as a carcass to hunt.
+export const PREY = { deer: 1, wolf: 1, bear: 1 };
+export const PRED = {
+  wolf: { name: 'Kurt', hp: 40, atk: 3, rof: 1.5, spd: 1.9, aggro: 3, leash: 7, food: 160 },
+  bear: { name: 'Ayı', hp: 150, atk: 8, rof: 2, spd: 1.5, aggro: 2.5, leash: 6, food: 320 },
+};
 // stand spots per resource tile (deer move: none) and their offsets from the tile centre (sides, then corners)
 const SPOTS = { stone: 4, gold: 4, tree: 3, berries: 3 }, SPOT_R = 6, SPOT_BOX = 8, SPOT_O = [0, 1.3, 1.3, 0, 0, -1.3, -1.3, 0, 1.12, 1.12, 1.12, -1.12, -1.12, -1.12, -1.12, 1.12];
-const ANIM_OF = { tree: 'chop', stone: 'mine', gold: 'mine', berries: 'forage', deer: 'forage' };
+const ANIM_OF = { tree: 'chop', stone: 'mine', gold: 'mine', berries: 'forage', deer: 'forage', wolf: 'forage', bear: 'forage' };
 const PSPEED = { arrow: 14, bullet: 30, stone: 9, cannonball: 14 };
 // lobbed arrows / crossbow bolts: [arc height base, arc height per tile, flight time base s, tiles per s] (see _fire)
 // (2026-11-17 playtest, owner: "the arrows don't fly, they drop": about twice as fast and flatter than the old
@@ -182,7 +190,7 @@ export class Game {
     this.events = new Events();
     this.time = 0; this.nextId = 1; this.over = null;
     this.rs = (this.cfg.seed | 0) || 1;
-    this.entities = new Map(); this.units = []; this.buildings = []; this.deer = [];
+    this.entities = new Map(); this.units = []; this.buildings = []; this.deer = []; this._angry = [];
     this.projectiles = []; this.players = [];
     this.fogVersion = 0; this._fogT = 0; this._winT = 2; this._uaT = 0; this._uaLast = -1e9; this._uaX = null; this._uaZ = 0; this._popWarnT = 0;
     const N = this.cfg.mapSize;
@@ -239,6 +247,8 @@ export class Game {
   }
   teamOf(pid) { return pid >= 0 && pid < this._tm.length ? this._tm[pid] : -1; }
   isAlly(a, b) { if (a === b) return a >= 0; if (!(a >= 0) || !(b >= 0)) return false; const ta = this.teamOf(a); return ta >= 0 && ta === this.teamOf(b); }
+  // u's owner may fight e: a rival, or a live wild predator (any player)
+  _foe(owner, e) { return this.isEnemy(owner, e.owner) || (!!e.live && owner >= 0); }
   isEnemy(a, b) { if (a === b || !(a >= 0) || !(b >= 0)) return false; const ta = this.teamOf(a), tb = this.teamOf(b); return ta >= 0 && tb >= 0 && ta !== tb; }
   _mpStarts(cp, N) {
     const np = cp.length, ring = np <= 4 ? RING4 : RING8, R = ring.length;
@@ -539,6 +549,17 @@ export class Game {
       else if (m === 2) cluster('berries', cx, cz, 3, 1.5, 800);
       else cluster('deer', cx, cz, 3, 3, 110);
     }
+    // wild predators (2026-11-23): wolf packs of 2-3 and lone bears, few, on land near trees and far from every start
+    {
+      const nearTree = (x, z) => { for (let j = -4; j <= 4; j++) for (let i = -4; i <= 4; i++) { const X = x + i, Z = z + j; if (X < 0 || Z < 0 || X >= N || Z >= N) continue; const id = this.resAt[Z * N + X]; if (id) { const r = this.entities.get(id); if (r && r.type === 'tree') return true; } } return false; };
+      let packs = this.cfg.tutorial ? 0 : Math.max(1, Math.round(N / 64)), bears = this.cfg.tutorial ? 0 : Math.max(1, Math.round(N / 96));
+      for (let k = 0, tries = (packs + bears) * 8; k < tries && packs + bears > 0; k++) {
+        const cx = (4 + this.rand() * (N - 8)) | 0, cz = (4 + this.rand() * (N - 8)) | 0;
+        if (!land(cx, cz) || sDist(cx + 0.5, cz + 0.5) < 24 || !nearTree(cx, cz)) continue;
+        if (packs > 0 && (bears <= 0 || k % 2 === 0)) { const n = 2 + (this.rand() * 2 | 0); for (let a = 0, put = 0; a < n * 6 && put < n; a++) { const x = cx + (this.rand() * 3 | 0) - 1, z = cz + (this.rand() * 3 | 0) - 1; if (land(x, z)) { this._addRes('wolf', x, z, PRED.wolf.food); put++; } } packs--; }
+        else { this._addRes('bear', cx, cz, PRED.bear.food); bears--; }
+      }
+    }
     try { this._navGenFish(); } catch (err) { console.error('fish gen', err); }
     this._ensureWalkable(starts.slice(0, this.players.length));
     // no stray trees: a tree with fewer than two others touching it (left by a pass cut through a grove, or a start
@@ -739,7 +760,7 @@ export class Game {
     const N = this.map.size;
     const e = { id: this.nextId++, kind: 'resource', type, owner: -1, x: tx + 0.5, z: tz + 0.5, rot: this.rand() * 6.283, hp: 1, maxHp: 1, dead: false, amount, maxAmount: amount, variant: (this.rand() * 4) | 0, scale: 0.8 + this.rand() * 0.5 };
     this.entities.set(e.id, e);
-    if (type === 'deer') { e.wt = this.rand() * 5; e.wx = e.x; e.wz = e.z; e.hunted = false; this.deer.push(e); }
+    if (PREY[type]) { e.wt = this.rand() * 5; e.wx = e.x; e.wz = e.z; e.hunted = false; this.deer.push(e); const q = PRED[type]; if (q) { e.live = true; e.hp = e.maxHp = q.hp; e.hx = e.x; e.hz = e.z; e.cd = 0; e.tid = 0; e.st = 0; } }
     else { this.resAt[tz * N + tx] = e.id; if (type !== 'fish') { this.map.blocked[tz * N + tx] = 1; this._blkMark(tx, tz, 1, 1); } else this._navFishC = null; }
     return e;
   }
@@ -783,7 +804,7 @@ export class Game {
     const N = this.map.size; let best = null, bd = r * r;
     const x0 = Math.max(0, Math.floor(x - r)), x1 = Math.min(N - 1, Math.floor(x + r)), z0 = Math.max(0, Math.floor(z - r)), z1 = Math.min(N - 1, Math.floor(z + r));
     for (let tz = z0; tz <= z1; tz++) for (let tx = x0; tx <= x1; tx++) { const id = this.resAt[tz * N + tx]; if (!id) continue; const e = this.entities.get(id); if (!e || e.dead || (type && e.type !== type)) continue; const d = (e.x - x) ** 2 + (e.z - z) ** 2; if (d <= bd) { bd = d; best = e; } }
-    if (!type || type === 'deer') for (const e of this.deer) { if (e.dead) continue; const d = (e.x - x) ** 2 + (e.z - z) ** 2; if (d <= bd) { bd = d; best = e; } }
+    if (!type || PREY[type]) for (const e of this.deer) { if (e.dead || e.live || (type && e.type !== type)) continue; const d = (e.x - x) ** 2 + (e.z - z) ** 2; if (d <= bd) { bd = d; best = e; } }
     return best;
   }
   tradeRate(sell, buy, owner = 0) {
@@ -1026,7 +1047,7 @@ export class Game {
   // fishing; patrols) never finishes on its own, so nothing queued behind it would ever run. Queuing behind one ends it now
   // (queued open-ended orders are dropped the same way); a villager walking to drop off a load delivers it first.
   _setOrder(u, o, queue) { u.explore = false; if (u.hsId) u.hsId = 0; if (queue && u.order && !u.order.auto) { const open = q => !!q && (q.type === 'gather' || q.type === 'trade' || q.type === 'fish' || (q.type === 'move' && !!q.pat)); for (let i = u.queue.length - 1; i >= 0; i--) if (open(u.queue[i])) u.queue.splice(i, 1); u.queue.push(o); if (open(u.order)) this._next(u); else if (u.order.type === 'return') u.order.resume = null; return; } if (u.order && u.order.type === 'gather') this._unhunt(u.order); u.queue.length = 0; u.order = o; u.targetId = o.targetId || null; u.path = null; u.pk = null; u.rpT = 0; }
-  _unhunt(o) { const t = this.entities.get(o.targetId); if (t && t.type === 'deer') t.hunted = false; }
+  _unhunt(o) { const t = this.entities.get(o.targetId); if (t && PREY[t.type] && !t.live && t.anim !== 'die') t.hunted = false; }
   // mode 'am' (attack-move) / 'pat' (patrol): only units that can fight get the marks (see the move case); villagers,
   // carts, healers and unarmed ships of the selection walk there as on a plain move, in the same formation
   cmdMove(ids, x, z, queue = false, mode = null) {
@@ -1120,10 +1141,10 @@ export class Game {
     return out;
   }
   cmdAttack(ids, targetId, queue = false) {
-    const t = this.entities.get(targetId); if (!t || t.dead || t.kind === 'resource') return false;
+    const t = this.entities.get(targetId); if (!t || t.dead || (t.kind === 'resource' && !t.live)) return false;
     const us = this._live(ids); let ok = false; const hl = [];
     for (const u of us) { if (u.type === 'healer') { if (this.isEnemy(u.owner, t.owner)) hl.push(u.id); continue; }   /* (a healer never attacks: she walks there) */
-      if (!this.isEnemy(u.owner, t.owner) || UNITS[u.type].atk <= 0) continue; if (u.type === 'ram' && t.kind !== 'building') continue; if (t.naval && !(UNITS[u.type].range > 0)) continue; this._setOrder(u, { type: 'attack', targetId }, queue); ok = true; }
+      if (!this._foe(u.owner, t) || UNITS[u.type].atk <= 0) continue; if (u.type === 'ram' && t.kind !== 'building') continue; if (t.naval && !(UNITS[u.type].range > 0)) continue; this._setOrder(u, { type: 'attack', targetId }, queue); ok = true; }
     if (hl.length && this.cmdMove(hl, t.x, t.z, queue)) ok = true;
     return ok;
   }
@@ -1138,6 +1159,7 @@ export class Game {
       return true;
     }
     if (t.kind !== 'resource') return false;
+    if (t.live) return this.cmdAttack(us.map(u => u.id), targetId, queue);   // (a live predator is fought first, then hunted)
     for (const u of us) this._setOrder(u, { type: 'gather', targetId, res: RES_OF[t.type], rt: t.type, x: t.x, z: t.z, acc: 0, tick: 0 }, queue);
     return true;
   }
@@ -1467,7 +1489,7 @@ export class Game {
     }
   }
   _edge(u, t) {
-    const half = t.kind === 'building' ? t.size / 2 : (t.kind === 'resource' && t.type !== 'deer') ? 0.5 : 0;
+    const half = t.kind === 'building' ? t.size / 2 : (t.kind === 'resource' && !PREY[t.type]) ? 0.5 : 0;
     const dx = Math.max(Math.abs(u.x - t.x) - half, 0), dz = Math.max(Math.abs(u.z - t.z) - half, 0);
     return Math.hypot(dx, dz);
   }
@@ -1475,7 +1497,7 @@ export class Game {
   _approach(u, t, dt, reach) {
     if (this._edge(u, t) <= reach) { u.path = null; u.pk = null; return true; }
     u.state = 'move'; u.anim = 'walk';
-    const half = t.kind === 'building' ? t.size / 2 : (t.kind === 'resource' && t.type !== 'deer') ? 0.5 : 0;
+    const half = t.kind === 'building' ? t.size / 2 : (t.kind === 'resource' && !PREY[t.type]) ? 0.5 : 0;
     const key = t.id + ':' + (t.x | 0) + ':' + (t.z | 0);
     if (!u.path || (u.pk !== key && this.time >= u.rpT)) {
       const p = this._reqPath(u, t.x, t.z, half);
@@ -1500,6 +1522,7 @@ export class Game {
   _dmg(atk, bonus, isSiege, target) {
     let mult, armor = 0;
     if (target.kind === 'building') { mult = bonus.building || (isSiege ? 1 : 0.4); }
+    else if (target.kind === 'resource') mult = 1;
     else { const d = UNITS[target.type]; mult = bonus[d.cls] || 1; armor = d.armor + (this.players[target.owner].mods.armor[d.cls] || 0); }
     return Math.max(1, Math.round(atk * mult - armor));
   }
@@ -1533,6 +1556,7 @@ export class Game {
       if (this.time - this._uaLast > 30 || (far && this.time > this._uaT)) { this._uaT = this.time + 15; this._uaX = target.x; this._uaZ = target.z; this.events.emit('underAttack', { x: target.x, z: target.z }); this.events.emit('notify', { text: 'Saldırı altındasın!', type: 'warn', x: target.x, z: target.z }); }
       this._uaLast = this.time;
     }
+    if (target.hp <= 0 && target.live) { target.live = false; target.hp = target.maxHp = 1; target.tid = 0; target.anim = 'die'; target.deathTime = this.time; target.wx = target.x; target.wz = target.z; target.hunted = true; this.events.emit('death', { e: target, killer: killer || null }); return; }
     if (target.hp <= 0) { this._kill(target, killer); return; }
     if (target.kind === 'unit' && target.type === 'villager' && killer && !killer.dead && killer.kind === 'unit' && target.order && (target.order.type === 'gather' || target.order.type === 'return')) {
       // gathering villager under attack with no friendly military nearby: run to the town center, resume afterwards
@@ -1627,11 +1651,31 @@ export class Game {
       this.entities.delete(e.id); this.events.emit('remove', { e }); this._popCap(p); if (e.type === 'rail' || e.type === 'station') this._railDirty = true;
     } else {
       const N = this.map.size;
-      if (e.type === 'deer') { const i = this.deer.indexOf(e); if (i >= 0) this.deer.splice(i, 1); }
+      if (PREY[e.type]) { const i = this.deer.indexOf(e); if (i >= 0) this.deer.splice(i, 1); }
       else { const k = (e.z | 0) * N + (e.x | 0); this.resAt[k] = 0; this.map.blocked[k] = 0; this._blkMark(e.x | 0, e.z | 0, 1, 1); }
       if (e.type === 'tree') this.events.emit('treeFelled', { e });
       this.entities.delete(e.id); this.events.emit('remove', { e });
     }
+  }
+  // a live predator: true while it hunts a unit (the deer wander is skipped then)
+  _predTick(d, dt) {
+    const q = PRED[d.type]; if (d.cd > 0) d.cd -= dt;
+    let t = d.tid ? this.entities.get(d.tid) : null;
+    if (t && (t.dead || t.aboard || Math.hypot(t.x - d.hx, t.z - d.hz) > q.leash)) { t = null; d.tid = 0; d.wx = d.hx; d.wz = d.hz; d.wt = this.time + 4; }
+    d.st -= dt;
+    if (!t && d.st <= 0) {
+      d.st = 0.5; const r = this.time - (d.hitT == null ? -9 : d.hitT) < 3 ? 7 : q.aggro; let bd = r * r;
+      this._near(d.x, d.z, r, e => { if (e.dead || !(e.owner >= 0) || e.kind !== 'unit' || e.aboard || e.naval) return; const k = (e.x - d.x) ** 2 + (e.z - d.z) ** 2; if (k < bd || (k === bd && t && e.id < t.id)) { bd = k; t = e; } });
+      if (t && Math.hypot(t.x - d.hx, t.z - d.hz) > q.leash) t = null;
+      if (t) d.tid = t.id;
+    }
+    if (!t) return false;
+    this._angry.push(d);
+    const dx = t.x - d.x, dz = t.z - d.z, L = Math.hypot(dx, dz); d.rot = Math.atan2(dx, dz);
+    if (L > 0.85) { const s = Math.min(L - 0.8, q.spd * dt), nx = d.x + dx / L * s, nz = d.z + dz / L * s; if (this.map.isWalkable(nx | 0, nz | 0)) { d.x = nx; d.z = nz; } }
+    else if (d.cd <= 0) { d.cd = q.rof; d.attackT = this.time; this._applyDamage(t, q.atk, d, null); }
+    d.wx = d.x; d.wz = d.z;
+    return true;
   }
   _nearestB(u, pred) { let best = null, bd = 1e9; for (const b of this.buildings) { if (b.owner !== u.owner || !b.done || b.dead || !pred(b)) continue; const d = (b.x - u.x) ** 2 + (b.z - u.z) ** 2; if (d < bd) { bd = d; best = b; } } return best; }
   _near(x, z, r, fn) {
@@ -1668,6 +1712,7 @@ export class Game {
       if (melee && d < 9 && d < bd && this._walled(src.x, src.z, e.x, e.z, null)) return;   // (just across a wall / gate: no blow lands there, owner 2026-11-15)
       if (d < bd) { if (far) far.push([d, e]); else { bd = d; best = e; } }
     });
+    if (!noUnits && src.owner >= 0) for (const e of this._angry) { if (!e.live) continue; const d = (e.x - src.x) ** 2 + (e.z - src.z) ** 2; if (d >= bd && !(wr && d <= wr2)) continue; if (wr && d <= wr2) { if (!near || d < nd) { nd = d; near = e; } } else if (far) far.push([d, e]); else { bd = d; best = e; } }
     if (near) return near;
     if (far && far.length) { far.sort((a, b) => a[0] - b[0] || a[1].id - b[1].id); for (let i = 0; i < far.length && i < WALL_TRY; i++) if (!this._walled(src.x, src.z, far[i][1].x, far[i][1].z, null)) { best = far[i][1]; break; } }
     if (best || unitsOnly) return best;
@@ -1800,7 +1845,7 @@ export class Game {
   }
   _uAttack(u, o, dt) {
     const t = this.entities.get(o.targetId), d = UNITS[u.type];
-    if (!t || t.dead || !this.isEnemy(u.owner, t.owner) || t.kind === 'resource') return this._autoEnd(u, o);
+    if (!t || t.dead || !this._foe(u.owner, t) || (t.kind === 'resource' && !t.live)) return this._autoEnd(u, o);
     const m = this.players[u.owner].mods;
     const leash = o.mv ? MOVE_LEASH : o.auto && u.stance === 'defensive' ? DEF_LEASH : (o.lr || d.los) + 5;
     if (o.auto && Math.hypot(u.x - o.ox, u.z - o.oz) > leash) return this._autoEnd(u, o);
@@ -1901,7 +1946,7 @@ export class Game {
         }
       }
     } else if (!this._approach(u, t, dt, 1.0)) return;
-    if (t.type === 'deer') t.hunted = true;
+    if (PREY[t.type]) t.hunted = true;
     u.state = 'gather'; u.anim = ANIM_OF[t.type]; u.rot = Math.atan2(t.x - u.x, t.z - u.z);
     o.acc += RATE[t.type] * p.mods.gather[o.res] * dt;
     while (o.acc >= 1 && t.amount > 0) { o.acc -= 1; if (t.type !== 'stone' && t.type !== 'gold') t.amount--; /* mines never run out */ if (!u.carry) u.carry = { type: o.res, amount: 0 }; u.carry.amount++; }
@@ -2209,8 +2254,10 @@ export class Game {
       }
     }
     // deer wander
+    this._angry.length = 0;
     for (const d of this.deer) {
       if (d.hunted || d.dead) continue;
+      if (d.live && this._predTick(d, dt)) continue;
       // flee briefly from an approaching hunter (once per 9 s so it can still be caught)
       if (!(this.time < d.fleeCd)) {
         let hx = 0, hz = 0, hit = false;
@@ -2763,7 +2810,7 @@ export class Game {
       }
       if (e.kind === 'unit') { if (!e.queue) e.queue = []; this.units.push(e); }
       else if (e.kind === 'building') this.buildings.push(e);
-      else if (e.type === 'deer') this.deer.push(e);
+      else if (PREY[e.type]) this.deer.push(e);
       else this.resAt[(e.z | 0) * N + (e.x | 0)] = e.id;
     }
     // saves from before 2026-11-14: an unfinished foundation blocked its tiles like a finished building; now it is

@@ -15,9 +15,9 @@ const DT = 1 / 30;
 {
   const g = new Game({ mapSize: 96, enemies: 1, difficulty: 'normal', seed: 5, mapType: 'plains', fog: 'explored' });
   ok(g.ais.length === 1 && !(g.quests instanceof TutorialSystem) && g.quests.list.length === 0, 'normal game: AI, no quests');
-  ok(g.hash() === 1742197387, 'normal game: initial hash unchanged ' + g.hash());
+  ok(g.hash() === 558537198, 'normal game: initial hash unchanged ' + g.hash());
   for (let i = 0; i < 3600; i++) g.update(DT);
-  ok(g.hash() === 420490582, 'normal game: hash after 2 min unchanged ' + g.hash());
+  ok(g.hash() === 1570166554, 'normal game: hash after 2 min unchanged ' + g.hash());
   const m = new Game({ mapSize: 96, seed: 3, mp: true, me: 0, tutorial: true, players: [{ kind: 'human', team: 1 }, { kind: 'ai', team: 2 }] });
   ok(!('tutorial' in m.cfg) && m.ais.length === 1 && m.quests.list.length === 0, 'multiplayer forces the tutorial off');
 }
