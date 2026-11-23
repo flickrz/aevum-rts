@@ -933,6 +933,14 @@ export class Game {
       if (ux < b.tx || ux >= b.tx + s || uz < b.tz || uz >= b.tz + s || this._pass(ux, uz, u.owner)) continue;
       const f = this._freeNear(u.x, u.z, u.owner); u.x = f.x; u.z = f.z; u.path = null; u.pk = null;
     }
+    // animals too: since hunting (a carcass never moves) a deer / wolf / bear left inside a finished footprint could
+    // never be reached again, and gatherers sent to it stood idle forever (sim-smoke 2026-11-23)
+    for (const a of this.deer) {
+      if (a.dead) continue;
+      const ax = a.x | 0, az = a.z | 0;
+      if (ax < b.tx || ax >= b.tx + s || az < b.tz || az >= b.tz + s || this._pass(ax, az, -1)) continue;
+      const f = this._freeNear(a.x, a.z, -1); a.x = a.wx = f.x; a.z = a.wz = f.z; if (a.hx !== undefined) { a.hx = f.x; a.hz = f.z; }
+    }
   }
   // Place a line of 1-tile segments (walls). Pays per segment, stops when resources run out.
   // Builders get the whole line as their job; several builders are spread along it.
