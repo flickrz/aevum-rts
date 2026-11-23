@@ -730,7 +730,7 @@ export class Input {
     this.dropBtn = document.createElement('button');
     this.dropBtn.textContent = 'Bırak';
     this.dropBtn.className = 'mbtn small touch-drop';
-    this.dropBtn.style.cssText = 'position:fixed;right:12px;top:64px;z-index:40;display:none';
+    this.dropBtn.style.cssText = 'position:fixed;right:calc(12px + env(safe-area-inset-right));top:52px;z-index:40;display:none';
     this.dropBtn.onclick = () => { this.app.select([]); };
     document.body.appendChild(this.dropBtn);
     // (owner 2026-11-23: "a gamepad analog stick") bottom-right stick pans the map: direction and speed follow the thumb;
@@ -739,7 +739,7 @@ export class Input {
     this.stick = { x: 0, y: 0, id: null };
     const pad = this.modeBtn = document.createElement('div');
     pad.className = 'touch-stick';
-    pad.style.cssText = 'position:fixed;right:18px;bottom:18px;width:112px;height:112px;border-radius:50%;z-index:40;display:none;' +
+    pad.style.cssText = 'position:fixed;left:calc(14px + env(safe-area-inset-left));bottom:165px;width:112px;height:112px;border-radius:50%;z-index:40;display:none;' +
       'background:radial-gradient(circle,rgba(20,26,38,.35),rgba(20,26,38,.6));border:1px solid rgba(230,200,120,.35);touch-action:none';
     const knob = document.createElement('div');
     knob.style.cssText = 'position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;' +
