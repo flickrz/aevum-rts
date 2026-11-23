@@ -1038,6 +1038,19 @@ button.gbtn, button.gbtn .gbtn-t { color: #1f1f1f !important; text-shadow: none 
   html.touch .hudbl { zoom: .48; }
   html.touch .bottom { zoom: .5; left: 440px !important; }   /* (in its own zoomed px: just right of the shrunk .hudbl) */
   html.touch .hudtop { zoom: .6; }
-  html.touch .chatdock { zoom: .6; }
   html.touch .groupbar { display: none; }
+  html.touch .selpanel { width: 330px !important; min-width: 330px; }
+}
+
+/* phones: the page itself never zooms (no pinch / double-tap page zoom, and iOS zooms into any input under 16px) */
+html.touch, html.touch body { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+html.touch input, html.touch textarea, html.touch select { font-size: 16px !important; }
+@media (max-height: 520px) {
+  /* chat: a small button top left; no pop-up lines over the HUD while closed; opened, a panel at the top left */
+  html.touch .chatdock { top: 36px; bottom: auto; left: 8px; width: min(360px, 46vw); height: auto; max-height: calc(100vh - 150px); min-height: 0; }
+  html.touch .chatdock:not(.open) .cl { display: none; }
+  html.touch .chatdock.open { height: calc(100vh - 150px); }
+  /* main menu and its screens: smaller, scrollable */
+  html.touch .menu { align-items: flex-start; overflow-y: auto; }
+  html.touch .menu-box { zoom: .62; max-height: none; margin: 8px auto; padding: 16px 22px; }
 }
