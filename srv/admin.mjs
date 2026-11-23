@@ -69,22 +69,24 @@ export function decisionFields(d, now = Date.now()) {
 }
 
 // store: {query(collectionId, opts), count(collectionId), patch(docPath, fields)}
-// ttlMs: how long one Firestore read of the lines and decisions is reused (keeps reads cheap: the page may be
-// reloaded often; a decision made here updates the cache at once)
-export function createAdmin({ store, now = () => Date.now(), ttlMs = 45000, countTtlMs = 10 * 60000 } = {}) {
+// ttlMs: how long one Firestore read of the lines is reused (keeps reads cheap: the page may be reloaded often; a
+// decision made here updates the cache at once). The decisions are read once (they are written here) and again only
+// with fresh (the page's Yenile button), which reads the lines again too.
+export function createAdmin({ store, now = () => Date.now(), ttlMs = 10 * 60000, countTtlMs = 10 * 60000 } = {}) {
   let cache = null, cacheT = 0, loading = null;   // {rows, decisions}
   const recent = new Map();   // id -> {next, t}: decisions made here lately (a read already under way may predate them)
   let accounts = null, accountsT = 0;
-  async function load() {
-    if (cache && now() - cacheT < ttlMs) return cache;
+  async function load(fresh = false) {
+    if (!fresh && cache && now() - cacheT < ttlMs && now() >= cacheT) return cache;
     if (!loading) {
+      const old = !fresh && cache ? cache.decisions : null;
       loading = (async () => {
         const t0 = now();
         const [chat, dec] = await Promise.all([
           store.query(FEEDBACK_COLLECTION, { allDescendants: true, fields: ['at', 't', 'room', 'name', 'text'] }),
-          store.query(COLLECTION),
+          old ? null : store.query(COLLECTION),
         ]);
-        cache = { rows: feedbackRows(chat), decisions: decisionMap(dec) };
+        cache = { rows: feedbackRows(chat), decisions: old || decisionMap(dec) };
         for (const [id, w] of recent) { if (w.t >= t0) cache.decisions.set(id, w.next); else recent.delete(id); }
         cacheT = now();
         return cache;
@@ -94,8 +96,8 @@ export function createAdmin({ store, now = () => Date.now(), ttlMs = 45000, coun
   }
   return {
     // -> {at, items: [{id, at, room, name, text, status, note, decidedAt}]} newest first
-    async feedback() {
-      const c = await load();
+    async feedback(opts = {}) {
+      const c = await load(!!(opts && opts.fresh));
       return { at: new Date(cacheT).toISOString(), items: merge(c.rows, c.decisions) };
     },
     // d: a cleanDecision result -> the merged decision

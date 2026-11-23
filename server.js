@@ -482,7 +482,7 @@
     }
     if (url.pathname !== '/mp/admin/feedback') { req.resume(); reply(res, 404, J, '{"error":"not found"}'); return; }
     if (!ADMIN) { req.resume(); reply(res, 503, J, '{"error":"Veri deposu yok (AEVUM_SA)."}'); return; }
-    if (req.method === 'GET') { ADMIN.feedback().then((r) => reply(res, 200, J, JSON.stringify(r)), (e) => fail(e, 'feedback')); return; }
+    if (req.method === 'GET') { ADMIN.feedback({ fresh: url.searchParams.get('fresh') === '1' }).then((r) => reply(res, 200, J, JSON.stringify(r)), (e) => fail(e, 'feedback')); return; }
     if (req.method !== 'POST') { req.resume(); reply(res, 405, J, '{"error":"method"}'); return; }
     readBody(req, 4096, (err, buf) => {
       if (err) { reply(res, err === 'big' ? 413 : 400, J, '{"error":"bad body"}'); return; }
@@ -674,7 +674,12 @@
         if (!me) { fail(401, 'Bilet geçersiz.'); return; }
         try {
           if (url.pathname === '/mp/tp/start') { reply(res, 200, J, JSON.stringify(ID.matchStart(me, body, body.mode === 'mp' ? mpRoomOf(me.fb, body.room) : null))); STATS.match(body.mode === 'mp' ? 'mp' : 'sp', typeof body.room === 'string' ? body.room.slice(0, 16) : null, me.fb); }
-          else if (url.pathname === '/mp/tp/claim') reply(res, 200, J, JSON.stringify(ID.matchClaim(me, body)));
+          else if (url.pathname === '/mp/tp/claim') {
+            // a credited match: the new TP comes with a new relay ticket (the client needs no /mp/auth, 3-4 reads)
+            const r = ID.matchClaim(me, body);
+            if (r && r.ok && r.gained) Object.assign(r, ID.reticket(me, r.tp));
+            reply(res, 200, J, JSON.stringify(r));
+          }
           else if (url.pathname === '/mp/tp/info') reply(res, 200, J, JSON.stringify(ID.ledgerInfo(me, body.ledger)));
           else reply(res, 404, {}, '');
         } catch (e) { logErr('tp', e); fail(500, 'Sunucu hatası.'); }

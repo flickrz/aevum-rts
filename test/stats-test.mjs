@@ -49,6 +49,20 @@ const rep = await S2.report(30);
 assert.deepEqual(rep.days.map((d) => [d.day, d.visitors]), [['2026-11-20', 1], ['2026-11-19', 4]]);
 assert.equal(rep.persisted, true);
 
+// (2026-11-23) the owner's screen asks every minute: the stored past days are read once a day, not on every report
+{
+  let lists = 0;
+  const cs = Object.assign({}, store, { list: async (n) => { lists++; return store.list(n); } });
+  const S3 = createStats({ now, store: cs });
+  await S3.report(30); await S3.report(30); t += 60 * 1000; const r3 = await S3.report(30);
+  assert.equal(lists, 1);
+  assert.deepEqual(r3.days.map((d) => d.day), ['2026-11-20', '2026-11-19']);
+  t = Date.UTC(2026, 10, 20, 22, 0);   // a new day: read again
+  await S3.report(30);
+  assert.equal(lists, 2);
+  t = Date.UTC(2026, 10, 19, 22, 0);
+}
+
 // round trip of a stored day
 const back = decodeDay('x', encodeDay(decodeDay('x', { v: 'a,b', p: 'c', r: '', sp: 2, mp: 1, peak: 5 })));
 assert.equal(back.v.size, 2); assert.equal(back.p.size, 1); assert.equal(back.peak, 5);

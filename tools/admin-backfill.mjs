@@ -2,7 +2,8 @@
 // small collection the admin page reads (srv/admin.mjs; new lines are written there by CloudSync.logChat). The copy
 // keeps the line's admin id (srv/admin.mjs lineId), so decisions already made still match.
 // This reads EVERY chat line once (one read per document): run it once, never on a schedule.
-//   node tools/admin-backfill.mjs [--dry]
+//   node tools/admin-backfill.mjs --i-know [--dry]
+// (the backfill was done on 2026-11-23: it refuses to run again without --i-know)
 // Needs the Firebase service-account key: $AEVUM_SA (a file path), else ~/.aevum/firebase-sa.json. Never commit it.
 import fs from 'fs';
 import os from 'os';
@@ -10,6 +11,7 @@ import path from 'path';
 import { createSaStore } from '../srv/firestore-sa.mjs';
 
 const dry = process.argv.includes('--dry');
+if (!process.argv.includes('--i-know')) { console.error('One-shot backfill (already done): it reads every chat line ever written (one Firestore read each). Pass --i-know to run it anyway.'); process.exit(2); }
 const saPath = process.env.AEVUM_SA || path.join(os.homedir(), '.aevum', 'firebase-sa.json');
 if (!fs.existsSync(saPath)) { console.error('Service-account key not found: ' + saPath); process.exit(2); }
 // (PR #5 by anupam-orbisai) refuse a key file other users can read. POSIX only: Windows keeps no such mode bits (it always reports 0o666).

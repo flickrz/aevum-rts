@@ -189,8 +189,9 @@ export function menuProfile(ui, note, bad) {
     renderBody(body, history, prof);
   }).catch(() => { body.textContent = 'Maç geçmişi okunamadı.'; });
   load();
-  // logged in: fetch the matches played on other PCs (incremental; the local cache shows first)
-  if (online) cloud.flush({ pull: true }).then((r) => { if (r && r.added && body.isConnected) load(); }).catch(() => {});
+  // logged in: fetch the matches played on other PCs (incremental; the local cache shows first; 'lazy': not again
+  // when this browser pulled in the last 20 minutes)
+  if (online) cloud.flush({ pull: 'lazy' }).then((r) => { if (r && r.added && body.isConnected) load(); }).catch(() => {});
 }
 
 function card(label, value, sub) {
