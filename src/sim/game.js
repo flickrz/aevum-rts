@@ -20,6 +20,9 @@ const RES_OF = { tree: 'wood', stone: 'stone', gold: 'gold', berries: 'food', de
 const RATE = { tree: 0.42, stone: 0.36, gold: 0.36, berries: 0.4, deer: 0.5 };
 // stand spots per resource tile (deer move: none) and their offsets from the tile centre (sides, then corners)
 const SPOTS = { stone: 4, gold: 4, tree: 3, berries: 3 }, SPOT_R = 6, SPOT_BOX = 8, SPOT_O = [0, 1.3, 1.3, 0, 0, -1.3, -1.3, 0, 1.12, 1.12, 1.12, -1.12, -1.12, -1.12, -1.12, 1.12];
+// hunting (owner 2026-11-23 "önce öldürsün"): a live animal resource (e.alive) is first brought down with spear
+// throws from HUNT_RANGE, one every HUNT_ROF s, ANIMAL_HP throws; only the carcass is gathered
+const HUNT_RANGE = 2.6, HUNT_ROF = 1.1, ANIMAL_HP = 2;
 const ANIM_OF = { tree: 'chop', stone: 'mine', gold: 'mine', berries: 'forage', deer: 'forage' };
 const PSPEED = { arrow: 14, bullet: 30, stone: 9, cannonball: 14 };
 // lobbed arrows / crossbow bolts: [arc height base, arc height per tile, flight time base s, tiles per s] (see _fire)
@@ -739,7 +742,7 @@ export class Game {
     const N = this.map.size;
     const e = { id: this.nextId++, kind: 'resource', type, owner: -1, x: tx + 0.5, z: tz + 0.5, rot: this.rand() * 6.283, hp: 1, maxHp: 1, dead: false, amount, maxAmount: amount, variant: (this.rand() * 4) | 0, scale: 0.8 + this.rand() * 0.5 };
     this.entities.set(e.id, e);
-    if (type === 'deer') { e.wt = this.rand() * 5; e.wx = e.x; e.wz = e.z; e.hunted = false; this.deer.push(e); }
+    if (type === 'deer') { e.wt = this.rand() * 5; e.wx = e.x; e.wz = e.z; e.hunted = false; e.alive = true; e.hp = e.maxHp = ANIMAL_HP; this.deer.push(e); }
     else { this.resAt[tz * N + tx] = e.id; if (type !== 'fish') { this.map.blocked[tz * N + tx] = 1; this._blkMark(tx, tz, 1, 1); } else this._navFishC = null; }
     return e;
   }
@@ -1875,6 +1878,16 @@ export class Game {
       if (u.carry && u.carry.amount > 0) { u.order = { type: 'return', res: o.res, resume: null }; u.path = null; u.pk = null; return; }
       return this._next(u);
     }
+    if (t.alive) { // a live animal: hunt it first (it flees as before), gather the carcass once it is down
+      if (!this._approach(u, t, dt, HUNT_RANGE)) return;
+      u.state = 'attack'; u.anim = 'attack'; u.rot = Math.atan2(t.x - u.x, t.z - u.z);
+      if (!(u.cd > 0)) {
+        u.cd = HUNT_ROF; u.attackT = this.time;
+        this.events.emit('attack', { attacker: u, target: t, ranged: false });
+        if (--t.hp <= 0) { t.hp = 0; t.alive = false; t.hunted = true; t.fleeT = 0; t.wx = t.x; t.wz = t.z; this.events.emit('animalKilled', { e: t, by: u }); }
+      }
+      return;
+    }
     if (SPOTS[t.type]) {
       // stationary resource: every worker stands on its own spot around the tile instead of all stacking on one point
       if (o.sp === t.id && !this._pass(o.sx | 0, o.sz | 0, u.owner)) o.sp = 0;
@@ -2210,7 +2223,7 @@ export class Game {
     }
     // deer wander
     for (const d of this.deer) {
-      if (d.hunted || d.dead) continue;
+      if (d.hunted || d.dead || d.alive === false) continue;   // (a carcass stays put)
       // flee briefly from an approaching hunter (once per 9 s so it can still be caught)
       if (!(this.time < d.fleeCd)) {
         let hx = 0, hz = 0, hit = false;
@@ -2763,7 +2776,7 @@ export class Game {
       }
       if (e.kind === 'unit') { if (!e.queue) e.queue = []; this.units.push(e); }
       else if (e.kind === 'building') this.buildings.push(e);
-      else if (e.type === 'deer') this.deer.push(e);
+      else if (e.type === 'deer') { if (e.alive === undefined) e.alive = !e.hunted && e.amount >= e.maxAmount; this.deer.push(e); }   // (saves from before hunting: an untouched deer is alive)
       else this.resAt[(e.z | 0) * N + (e.x | 0)] = e.id;
     }
     // saves from before 2026-11-14: an unfinished foundation blocked its tiles like a finished building; now it is

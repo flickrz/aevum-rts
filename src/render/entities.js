@@ -2246,6 +2246,7 @@ export class EntityView {
     const root = v.root, inner = v.inner, P = v.P, t = time + v.phase;
     root.position.set(v.x, y, v.z); root.rotation.y = v.rot;
     if (v.rig === 'ship' || v.rig === 'train') { try { return seaAnimUnit(this, v, e, dt, t, gt, y); } catch (err) { return y; } }
+    if (e.kind === 'resource' && e.alive === false && !e.dead) { inner.rotation.z = PI / 2; inner.position.y = .12; return y; }   // a hunted animal's carcass lies on its side
     if (e.dead || e.anim === 'die') {
       const d = Math.max(0, gt - (e.deathTime == null ? gt : e.deathTime)), p = Math.min(1, d / .5);
       if (v.rig === 'human') { inner.rotation.x = -PI / 2 * p; inner.position.y = .08 * p - (d > 2 ? (d - 2) * .22 : 0); }
