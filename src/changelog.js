@@ -2,6 +2,15 @@
 // release (Turkish, player-facing: what changed in the game, not how). Shown by src/ui/updates-ui.js.
 export const CHANGELOG = [
   {
+    v: '0.9.7', date: '2026-11-23', title: 'Büyücü çağlarla güçleniyor',
+    items: [
+      'Büyücü çağ atladıkça gelişir: Taş Devrinde en yaralı tek birliği iyileştirir, sonraki çağlarda alanı genişler ve daha hızlı iyileştirir.',
+      'Kurt ve ayının kendi resimleri var.',
+      'Seçili binanın etrafında artık ince kare yerine yumuşak bir hale.',
+      'İnşaat başlarken zemin sert bir kahverengi kareye dönmüyor, hafif bir toprak izi kalıyor.',
+    ],
+  },
+  {
     v: '0.9.6', date: '2026-11-23', title: 'Kurtlar, ayılar ve telefonda oynama',
     items: [
       'Haritada kurt sürüleri ve ayılar: yaklaşanlara saldırır, öldürülünce bol yiyecek verir.',
