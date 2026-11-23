@@ -34,6 +34,17 @@
     log: (t, e) => logErr(t, e),
   });
   if (!SA) console.warn('AEVUM_SA yok: istatistikler yalnizca bellekte tutulur.');
+  // the owner's admin page (/admin, /mp/admin/*, srv/admin.mjs): the @claude lines and the decisions on them, live
+  // from Firestore. Without a service account only local tests have one (AEVUM_NO_AUTH: an in-memory store, seeded
+  // from the JSON file AEVUM_ADMIN_FAKE names).
+  const ADM = await import(pathToFileURL(path.join(ROOT, 'srv', 'admin.mjs')).href);
+  let adminStore = SA_STORE;
+  if (!adminStore && NO_AUTH) {
+    let seed = {};
+    try { if (process.env.AEVUM_ADMIN_FAKE) seed = JSON.parse(fs.readFileSync(process.env.AEVUM_ADMIN_FAKE, 'utf8')); } catch (e) { console.warn('AEVUM_ADMIN_FAKE okunamadi: ' + e.message); }
+    adminStore = ADM.createMemoryAdminStore(seed);
+  }
+  const ADMIN = adminStore ? ADM.createAdmin({ store: adminStore }) : null;
   setInterval(() => { STATS.flush().catch(() => {}); }, 3 * 60 * 1000).unref();
   // ---- update notices (owner 2026-11-20: players are told before an update and continue where they left off) ----
   // How a release goes:
@@ -453,6 +464,60 @@
     }, () => { clearInterval(hb); pe.dead = true; removePeer(room, peer, pe); });
   }
 
+  // GET /mp/admin/feedback, POST /mp/admin/feedback {id, status?, note?}, GET /mp/admin/stats (see srv/admin.mjs)
+  const adminWrites = new Map();   // fb -> times of its recent writes (at most 120 a minute)
+  function handleAdmin(req, res, url) {
+    const tk = req.headers['x-aevum-ticket'];
+    const code = ownerCheck(tk ? ID.checkTicket(String(tk)) : null);
+    if (code) { req.resume(); reply(res, code, J, code === 401 ? '{"error":"ticket"}' : '{"error":"owner"}'); return; }
+    const me = ID.checkTicket(String(tk));
+    const fail = (e, tag) => { logErr('admin ' + tag, e); reply(res, 503, J, '{"error":"Veriler şu an okunamadı."}'); };
+    if (url.pathname === '/mp/admin/stats' && req.method === 'GET') {
+      let peers = 0; for (const r of rooms.values()) peers += r.size;
+      const live = { rooms: rooms.size, peers, ver: BUILD_VER, uptime: Math.round(process.uptime()) };
+      Promise.all([STATS.report(30), ADMIN ? ADMIN.accounts().catch((e) => { logErr('admin accounts', e); return null; }) : null]).then(([r, accounts]) => {
+        reply(res, 200, J, JSON.stringify({ accounts, live, online: r.online, daily: r.days, persisted: r.persisted }));
+      }, (e) => fail(e, 'stats'));
+      return;
+    }
+    if (url.pathname !== '/mp/admin/feedback') { req.resume(); reply(res, 404, J, '{"error":"not found"}'); return; }
+    if (!ADMIN) { req.resume(); reply(res, 503, J, '{"error":"Veri deposu yok (AEVUM_SA)."}'); return; }
+    if (req.method === 'GET') { ADMIN.feedback().then((r) => reply(res, 200, J, JSON.stringify(r)), (e) => fail(e, 'feedback')); return; }
+    if (req.method !== 'POST') { req.resume(); reply(res, 405, J, '{"error":"method"}'); return; }
+    readBody(req, 4096, (err, buf) => {
+      if (err) { reply(res, err === 'big' ? 413 : 400, J, '{"error":"bad body"}'); return; }
+      let body; try { body = JSON.parse(buf.toString('utf8') || '{}'); } catch { reply(res, 400, J, '{"error":"bad json"}'); return; }
+      const d = ADM.cleanDecision(body);
+      if (d.error) { reply(res, 400, J, JSON.stringify({ error: d.error })); return; }
+      const now = Date.now(), recent = (adminWrites.get(me.fb) || []).filter((t) => now - t < 60000);
+      if (recent.length >= 120) { reply(res, 429, J, '{"error":"Çok hızlı; biraz bekle."}'); return; }
+      recent.push(now); adminWrites.set(me.fb, recent);
+      ADMIN.decide(d).then((r) => reply(res, 200, J, JSON.stringify(Object.assign({ ok: true }, r))), (e) => fail(e, 'decide'));
+    }, 5000);
+  }
+  // the admin page itself (GET /admin): public HTML that holds no data; it signs in with the game's stored session
+  // (same origin) and reads everything from /mp/admin/*. Firebase's web API key (public, src/cloud/config.js) goes in.
+  let adminPage = null;   // {buf, etag, csp}
+  function servedAdminPage() {
+    if (adminPage) return adminPage;
+    let key = '';
+    try { const m = /apiKey:\s*'([^']+)'/.exec(fs.readFileSync(path.join(ROOT, 'src', 'cloud', 'config.js'), 'utf8')); if (m) key = m[1]; } catch { /* no key: the page says it cannot sign in */ }
+    const html = fs.readFileSync(path.join(ROOT, 'srv', 'admin-page.html'), 'utf8').replace('__API_KEY__', key.replace(/[^A-Za-z0-9_-]/g, ''));
+    const buf = Buffer.from(html, 'utf8');
+    const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/gi)].map((m) => "'sha256-" + crypto.createHash('sha256').update(m[1].replace(/\r\n?/g, '\n'), 'utf8').digest('base64') + "'").join(' ');
+    const csp = ["default-src 'none'", 'script-src ' + scriptHashes(html), 'style-src ' + styles, "img-src 'self' data:", "connect-src 'self' https://securetoken.googleapis.com", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'"].join('; ');
+    adminPage = { buf, etag: 'W/"a' + crypto.createHash('sha1').update(buf).digest('hex').slice(0, 16) + '"', csp };
+    return adminPage;
+  }
+  function serveAdmin(req, res) {
+    let p; try { p = servedAdminPage(); } catch (e) { logErr('admin page', e); res.writeHead(500); res.end(); return; }
+    const head = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', ETag: p.etag, 'Content-Security-Policy': p.csp, 'X-Frame-Options': 'DENY', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex' };
+    if (String(req.headers['if-none-match'] || '') === p.etag) { res.writeHead(304, head); res.end(); return; }
+    head['Content-Length'] = p.buf.length;
+    res.writeHead(200, head);
+    res.end(req.method === 'HEAD' ? undefined : p.buf);
+  }
+
   function handleMp(req, res, url) {
     const room = (url.searchParams.get('room') || '').toUpperCase(), peer = url.searchParams.get('peer') || '';
     if (url.pathname === '/mp/ping') { reply(res, 200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }, 'aevum-mp'); return; }
@@ -507,6 +572,9 @@
       STATS.report(30).then(r => reply(res, 200, J, JSON.stringify(r)), e => { logErr('stats', e); reply(res, 500, J, '{"error":"stats"}'); });
       return;
     }
+    // ---- the owner's admin page data: owner only, the ticket in the X-Aevum-Ticket header only (never the query or a
+    // cookie, so another site cannot make a browser call these) ----
+    if (url.pathname.startsWith('/mp/admin/')) { handleAdmin(req, res, url); return; }
     // ---- friends: online status + room invites (an inbox per verified account; memory only) ----
     if (url.pathname === '/mp/inbox' && req.method === 'GET') {
       const me = identOf(req, url);
@@ -764,6 +832,7 @@
       let url; try { url = new URL(req.url, 'http://x'); } catch { res.writeHead(400); res.end(); return; }
       handleMp(req, res, url); return;
     }
+    if (/^\/admin\/?(\?.*)?$/.test(req.url || '') && (req.method === 'GET' || req.method === 'HEAD')) { serveAdmin(req, res); return; }
     let rel;
     try { rel = decodeURIComponent((req.url || '/').split('?')[0].split('#')[0]); }
     catch { res.writeHead(400); res.end('Bad request'); return; }

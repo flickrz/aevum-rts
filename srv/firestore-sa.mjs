@@ -79,6 +79,34 @@ export function createSaStore({ sa, projectId, fetch: fetchFn = globalThis.fetch
     async put(day, fields) {
       await call(`${base}/stats/${day}`, { method: 'PATCH', body: JSON.stringify({ fields: toFields(fields) }) });
     },
+    // ---- generic helpers for the owner's admin page (srv/admin.mjs): raw Firestore REST documents ----
+    // every document of a collection (allDescendants: a collection group), ordered by name, pageSize at a time;
+    // fields: an optional field mask
+    async query(collectionId, { allDescendants = false, fields = null, pageSize = 300 } = {}) {
+      const out = []; let last = null;
+      for (;;) {
+        const q = { structuredQuery: { from: [{ collectionId, allDescendants }], orderBy: [{ field: { fieldPath: '__name__' } }], limit: pageSize } };
+        if (fields) q.structuredQuery.select = { fields: fields.map((f) => ({ fieldPath: f })) };
+        if (last) q.structuredQuery.startAt = { values: [{ referenceValue: last }], before: false };
+        const r = await call(base + ':runQuery', { method: 'POST', body: JSON.stringify(q) });
+        const docs = (Array.isArray(r) ? r : []).filter((x) => x && x.document).map((x) => x.document);
+        out.push(...docs);
+        if (docs.length < pageSize) break;
+        last = docs[docs.length - 1].name;
+      }
+      return out;
+    },
+    // the number of documents of a collection group (one aggregation: about one read per 1000 documents)
+    async count(collectionId) {
+      const r = await call(base + ':runAggregationQuery', { method: 'POST', body: JSON.stringify({ structuredAggregationQuery: { structuredQuery: { from: [{ collectionId, allDescendants: true }] }, aggregations: [{ alias: 'n', count: {} }] } }) });
+      const x = (Array.isArray(r) ? r : []).find((o) => o && o.result);
+      return x ? Number(x.result.aggregateFields.n.integerValue) || 0 : 0;
+    },
+    // merges raw Firestore fields into {collection}/{id} (only the given fields change)
+    async patch(docPath, fields) {
+      const mask = Object.keys(fields).map((k) => 'updateMask.fieldPaths=' + encodeURIComponent(k)).join('&');
+      await call(base + '/' + docPath + '?' + mask, { method: 'PATCH', body: JSON.stringify({ fields }) });
+    },
     // the last n days (Turkey time, today first), counts only: the id lists are not downloaded (no index needed)
     async list(n) {
       const names = [];

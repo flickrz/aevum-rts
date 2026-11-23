@@ -1,0 +1,34 @@
+// Aevum - the owner's admin queue for Claude: the @claude feedback lines with the owner's decisions (the same data as
+// the /admin page, srv/admin.mjs), read straight from Firestore; can mark a line done.
+//   node tools/read-admin.mjs [--status approved|new|rejected|done|all] [--json]   (default: approved)
+//   node tools/read-admin.mjs --done <id> ["note"]
+// Needs the Firebase service-account key: $AEVUM_SA (a file path), else ~/.aevum/firebase-sa.json. Never commit it.
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { createSaStore } from '../srv/firestore-sa.mjs';
+import { createAdmin, cleanDecision, STATUSES } from '../srv/admin.mjs';
+
+const argv = process.argv.slice(2);
+const arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
+const saPath = process.env.AEVUM_SA || path.join(os.homedir(), '.aevum', 'firebase-sa.json');
+if (!fs.existsSync(saPath)) { console.error('Service-account key not found: ' + saPath); process.exit(2); }
+const sa = JSON.parse(fs.readFileSync(saPath, 'utf8'));
+const admin = createAdmin({ store: createSaStore({ sa }) });
+
+if (argv.includes('--done')) {
+  const id = arg('--done'), note = argv[argv.indexOf('--done') + 2];
+  const d = cleanDecision(note != null ? { id, status: 'done', note } : { id, status: 'done' });
+  if (d.error) { console.error(d.error); process.exit(1); }
+  const r = await admin.decide(d);
+  console.log(`${r.id} -> ${r.status}${r.note ? '  (' + r.note + ')' : ''}`);
+} else {
+  const want = arg('--status') || 'approved';
+  if (want !== 'all' && !STATUSES.includes(want)) { console.error('--status: ' + STATUSES.join('|') + '|all'); process.exit(1); }
+  const items = (await admin.feedback()).items.filter((x) => want === 'all' || x.status === want);
+  if (argv.includes('--json')) process.stdout.write(JSON.stringify(items, null, 1) + '\n');
+  else {
+    for (const x of items) console.log(`${x.id}  ${x.at}  [${x.room || '-'}]  ${x.name}: ${x.text}${x.note ? '\n    note: ' + x.note : ''}${want === 'all' ? '\n    status: ' + x.status : ''}`);
+    console.log(items.length + ' ' + want);
+  }
+}
