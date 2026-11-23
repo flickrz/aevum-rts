@@ -1027,3 +1027,7 @@ button.gbtn, button.gbtn .gbtn-t { color: #1f1f1f !important; text-shadow: none 
 .agebtn.aging { opacity: .6; cursor: default !important; }
 .agebtn.ready { border-color: var(--gold); animation: idlePulse 1.4s ease-in-out infinite; }
 .agebtn.ready .gi { fill: var(--gold); }
+/* ---- open rooms list in the multiplayer menu (ui._mpRooms, server.js /mp/rooms); rows as in the online players panel ---- */
+.mp-rooms { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 4px; padding: 10px 8px; border: 1px solid var(--line); border-radius: 10px; background: rgba(0,0,0,.18); text-align: left; }
+.mp-rooms .op-list { max-height: 210px; }
+.mp-rooms .mbtn.small.op-inv { flex: none; margin: 0; width: auto; padding: 5px 12px; font-size: 12px; letter-spacing: .5px; }

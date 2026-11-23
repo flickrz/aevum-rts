@@ -655,6 +655,17 @@ export class CloudSync {
     const j = await r.json();
     return { total: j.total | 0, players: Array.isArray(j.players) ? j.players : [] };
   }
+  // the open rooms still in their lobby (server.js /mp/rooms) -> {total, rooms: [{code, host, uid, av, tp, n, slots, max, map, size}]}
+  async openRooms() {
+    if (!this.loggedIn) return { total: 0, rooms: [] };
+    const t = await this.relayTicket();
+    let r;
+    try { r = await this.relayFetch(this.relayBase + '/mp/rooms', { cache: 'no-store', headers: { 'X-Aevum-Ticket': t.ticket } }); } catch (e) { throw new CloudError('network', 'NETWORK', 'Oyun sunucusuna ulaşılamadı.'); }
+    if (r.status === 401) this._tkt = null;
+    if (!r.ok) throw new CloudError('server', 'ROOMS_' + r.status, 'Oda listesi alınamadı (' + r.status + ').', r.status);
+    const j = await r.json();
+    return { total: j.total | 0, rooms: Array.isArray(j.rooms) ? j.rooms : [] };
+  }
   // invite everyone online who is not in a match into my room (code); skip: accounts already in the room -> {sent}
   async inviteAll(code, skip = []) {
     const t = await this.relayTicket();

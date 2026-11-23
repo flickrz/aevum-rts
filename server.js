@@ -379,6 +379,39 @@
       end() { this.dead = true; try { socket.end(wsFrame(8, Buffer.alloc(0))); } catch { /* ignore */ } setTimeout(() => { try { socket.destroy(); } catch { /* ignore */ } }, 1000).unref(); },
     };
   }
+  // ---- public room list (GET /mp/rooms): the relay reads its host's lobby broadcasts (src/net/session.js, every 2 s)
+  // and keeps a small card of each room still in its lobby. A room is not listed once its host started the match, for a
+  // continued match or an invite-only room, when its card is older than ROOM_CARD_MS, the host left, or it is full.
+  const LOBBY_MAX = 8, ROOM_CARD_MS = 15000, ROOMS_LISTED = 50;   // (LOBBY_MAX = MAX_PLAYERS of src/net/session.js)
+  function noteLobby(r, d, sender) {
+    if (!d || typeof d !== 'object') return;
+    if (d.k === 'start') { r.started = true; r.lobby = null; return; }
+    if (d.k !== 'state' || r.started) return;
+    const st = d.state;
+    if (!st || typeof st !== 'object' || !Array.isArray(st.slots) || !st.settings || typeof st.settings !== 'object') return;
+    if (st.listed === false || st.resume) { r.lobby = null; return; }
+    const set = st.settings, hs = st.slots.find(s => s && s.kind === 'human' && s.peer === r.host);
+    const id = sender && sender.ident;
+    r.lobby = {
+      host: String((id && id.name) || (hs && hs.name) || 'Oyuncu').slice(0, 20),
+      uid: id ? id.uid : null, av: id ? id.av : null, tp: id ? id.tp | 0 : 0,
+      n: st.slots.filter(s => s && s.kind === 'human').length, slots: Math.min(st.slots.length, 99),
+      map: typeof set.mapType === 'string' && /^[a-z_-]{1,20}$/.test(set.mapType) ? set.mapType : null,
+      size: Number.isInteger(set.mapSize) && set.mapSize > 0 && set.mapSize <= 4096 ? set.mapSize : null,
+      t0: (r.lobby && r.lobby.t0) || Date.now(), t: Date.now(),
+    };
+  }
+  function openRooms() {
+    const now = Date.now(), out = [];
+    for (const [code, r] of rooms) {
+      const l = r.lobby;
+      if (!l || r.started || now - l.t > ROOM_CARD_MS || l.slots >= LOBBY_MAX || !/^[A-Z0-9]{5}$/.test(code)) continue;
+      const h = r.get(r.host); if (!h || h.dead) continue;
+      out.push({ code, host: l.host, uid: l.uid, av: l.av, tp: l.tp, n: l.n, slots: l.slots, max: LOBBY_MAX, map: l.map, size: l.size, t0: l.t0 });
+    }
+    out.sort((a, b) => (b.n - a.n) || (b.t0 - a.t0));
+    return out.slice(0, ROOMS_LISTED).map(({ t0, ...o }) => o);
+  }
   // relays one {topic, data} message of `peer` to the rest of its room (shared by POST /mp/send and WebSocket)
   function relay(room, peer, m, n) {
     const r = rooms.get(room);
@@ -387,6 +420,7 @@
     if (!sender && !NO_AUTH) return;   // (only a peer that is in the room may post; its verified identity travels with the message)
     if (sender && sender.dead) return;
     if (n != null && !rateOk(sender, n)) { if (sender && sender.dead) removePeer(room, peer, sender); return; }
+    if (m.topic === 'lobby' && peer === r.host) noteLobby(r, m.data, sender);
     const msg = { type: 'msg', topic: m.topic, data: m.data, from: peer, id: pub(sender && sender.ident) };
     for (const [p, o] of r) if (p !== peer) tell(o, msg);
   }
@@ -521,6 +555,14 @@
       const order = { menu: 0, sp: 1, mp: 2 };
       const list = onlinePlayers(me.fb).sort((a, b) => (order[a.s] - order[b.s]) || String(a.name).localeCompare(String(b.name), 'tr'));
       reply(res, 200, J, JSON.stringify({ total: list.length, players: list.slice(0, 200) }));
+      return;
+    }
+    // ---- the open rooms (still in their lobby, joinable) for the multiplayer screen's room list ----
+    if (url.pathname === '/mp/rooms' && req.method === 'GET') {
+      const me = identOf(req, url);
+      if (!me) { reply(res, 401, J, '{"error":"ticket"}'); return; }
+      const list = openRooms();
+      reply(res, 200, J, JSON.stringify({ total: list.length, rooms: list }));
       return;
     }
     if (url.pathname === '/mp/invite-all' && req.method === 'POST') {
