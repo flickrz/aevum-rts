@@ -2,6 +2,19 @@
 // release (Turkish, player-facing: what changed in the game, not how). Shown by src/ui/updates-ui.js.
 export const CHANGELOG = [
   {
+    v: '0.9.5', date: '2026-11-23', title: 'Müzik, ortam sesleri ve açık odalar',
+    items: [
+      'Savaş müziği: düşman saldırınca yavaşça giriyor, savaş bitince bir süre sonra kısılarak susuyor. Ana menüde de kendi müziği çalıyor.',
+      'Ortam sesleri: kameranın baktığı yere göre çok kısık orman, köy ve çayır sesleri.',
+      'Ayarlarda yeni Müzik ses düzeyi. Arayüzde yeni, daha yumuşak tıklama sesi.',
+      'Çok Oyunculu menüsünde Açık Odalar listesi: açık odaları görüp tek tıkla katıl. Oda kuran isterse odayı Sadece davetle yapabilir.',
+      'Toplanma noktası Oduncu Kampına, Maden Ocağına ya da Değirmene konursa yeni köylüler en yakın kaynakta işe başlar.',
+      'Ağıl ve tarlada işçi sayısı artık sadece orada çalışanları sayıyor; yoldakiler ayrıca gösteriliyor.',
+      'Geyikler yürürken bacaklarını oynatıyor.',
+      'Savunma sayfasındaki ayrı Kapı kartı kalktı: kapı, bitmiş suru seçip Kapı Aç ile yapılır.',
+    ],
+  },
+  {
     v: '0.9.4', date: '2026-11-22', title: 'Yeni yerleşim, bina döndürme ve birçok düzeltme',
     items: [
       'Yeni yerleşim: kaynaklar mini haritanın yanında; her kaynakta miktar, dakikalık gelir ve çalışan köylü sayısı. Boştaki köylü ve nüfus da orada.',
