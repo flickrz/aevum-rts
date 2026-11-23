@@ -1237,7 +1237,7 @@ export class Game {
     if (t && !t.dead && t.kind === 'building') {
       if (t.type === 'farm' || t.type === 'pasture') return t;
       // flag on a drop-off camp (lumber camp, mining camp, mill): work the nearest matching resource around it
-      const bd0 = BUILDINGS[t.type], drop = bd0 && !(bd0.trains || []).length ? bd0.dropoff : null; if (!drop) return null;
+      const bd0 = BUILDINGS[t.type], drop = bd0 && t.owner === b.owner && !(bd0.trains || []).length ? bd0.dropoff : null; if (!drop) return null;
       let best = null, bd = 1e9;
       for (const e of this.entities.values()) { if (e.kind !== 'resource' || e.dead || !(e.amount > 0) || e.type === 'fish' || !drop.includes(RES_OF[e.type])) continue; const d = Math.hypot(e.x - t.x, e.z - t.z); if (d < 16 && d < bd) { bd = d; best = e; } }
       return best;
