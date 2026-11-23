@@ -1,7 +1,7 @@
 // Aevum audio manager. Web Audio API, real recorded samples only (see assets/sfx/LICENSES.md).
 // Never throws: missing files / missing AudioContext simply result in silence.
 
-import { fetchAsset } from './cdn.js';
+import { fetchAsset, assetUrls, cdnFailed } from './cdn.js';
 
 const BASE = 'sfx/';   // (under assets/: from jsDelivr on the live site, src/cdn.js)
 
@@ -82,8 +82,12 @@ const SOUNDS = {
 
 // (wind removed 2026-11-13: the owner did not want the constant wind bed - its crackle was the "gırç" too)
 const AMBIENT = { water: 'amb_water' };
-const CATS = ['master', 'sfx', 'ambient', 'ui'];
-const DEFAULT_VOL = { master: 0.8, sfx: 0.9, ambient: 0.5, ui: 0.7 };
+const CATS = ['master', 'sfx', 'ambient', 'ui', 'music'];
+const DEFAULT_VOL = { master: 0.8, sfx: 0.9, ambient: 0.5, ui: 0.7, music: 0.7 };
+// battle music (owner 2026-11-23): starts when an enemy attacks you, stays under the game, fades out a while after the
+// fighting stops. MUSIC_LEVEL is the track's own level under the 'music' volume; the file streams (no 60 MB decode).
+const BATTLE_TRACK = 'music/empires-at-war.m4a';
+const MUSIC_LEVEL = 0.32, MUSIC_IN = 2.0, MUSIC_OUT = 3.5, MUSIC_HOLD = 25;
 const LS_KEY = 'aevum.volume';
 const MAX_VOICES = 14;
 const MAX_COMBAT = 6;   // simultaneous small combat voices (combat: 1); a big fight reads as a battle, not noise
@@ -141,7 +145,7 @@ export class AudioManager {
         out = comp;
       } catch (e) { /* ignore */ }
       this.gains.master.connect(out);
-      for (const c of ['sfx', 'ambient', 'ui']) {
+      for (const c of ['sfx', 'ambient', 'ui', 'music']) {
         this.gains[c] = ctx.createGain();
         this.gains[c].connect(this.gains.master);
       }
@@ -199,7 +203,54 @@ export class AudioManager {
     this.listener.z = +z || 0;
     if (dist > 0) this.listener.dist = dist;
     this._updateAmbient();
+    this._updateMusic();
   }
+
+  // ---------- battle music ----------
+  _musicEnsure() {
+    if (this._mus || !this.ctx || typeof Audio === 'undefined') return this._mus || null;
+    try {
+      const urls = assetUrls(BATTLE_TRACK);
+      const el = new Audio(); el.crossOrigin = 'anonymous'; el.loop = true; el.preload = 'auto';
+      let i = 0;
+      el.addEventListener('error', () => { if (i + 1 < urls.length) { if (i === 0 && urls.length > 1) cdnFailed(); el.src = urls[++i]; } });
+      el.src = urls[0];
+      const g = this.ctx.createGain(); g.gain.value = 0;
+      this.ctx.createMediaElementSource(el).connect(g); g.connect(this.gains.music);
+      this._mus = { el, g, on: false, stopT: 0 };
+    } catch (e) { this._mus = null; }
+    return this._mus;
+  }
+  // a fight between you (or an ally) and an enemy player: start the music if this is the start of one, keep it going
+  _fight(start) {
+    try {
+      if (!this.ctx || !this.game || this.game.over) return;
+      this._lastFight = this.ctx.currentTime;
+      if (!start) return;
+      const m = this._musicEnsure(); if (!m) return;
+      if (!m.on) {
+        m.on = true; m.stopT = 0;
+        if (m.el.paused) { try { m.el.currentTime = 0; } catch (e) { /* */ } const p = m.el.play(); if (p && p.catch) p.catch(() => { m.on = false; }); }
+      }
+      m.g.gain.cancelScheduledValues(this.ctx.currentTime);
+      m.g.gain.setTargetAtTime(MUSIC_LEVEL, this.ctx.currentTime, MUSIC_IN / 3);
+    } catch (e) { /* never break the game for music */ }
+  }
+  _musicStop(fast) {
+    const m = this._mus; if (!m || !this.ctx) return;
+    m.on = false; m.stopT = this.ctx.currentTime + (fast ? 1.5 : MUSIC_OUT * 3);
+    m.g.gain.cancelScheduledValues(this.ctx.currentTime);
+    m.g.gain.setTargetAtTime(0, this.ctx.currentTime, fast ? 0.4 : MUSIC_OUT);
+  }
+  _updateMusic() {
+    try {
+      const m = this._mus; if (!m || !this.ctx) return;
+      const now = this.ctx.currentTime;
+      if (m.on && (!this.game || this.game.over || now - (this._lastFight || 0) > MUSIC_HOLD)) this._musicStop(!this.game || this.game.over);
+      if (!m.on && m.stopT && now > m.stopT) { m.stopT = 0; try { m.el.pause(); } catch (e) { /* */ } }
+    } catch (e) { /* ignore */ }
+  }
+
 
   ui(name) {
     this.play('ui_' + name);
@@ -400,6 +451,7 @@ export class AudioManager {
         for (const [n, fn] of this._subs) { try { this.game.events.off(n, fn); } catch (e) { /* */ } }
       }
       this._subs = [];
+      if (this._mus && this._mus.on) this._musicStop(true);
       this.game = game;
       if (!game || !game.events || !game.events.on) return;
       const on = (name, fn) => {
@@ -430,6 +482,13 @@ export class AudioManager {
 
       on('attack', ({ attacker, target, ranged }) => {
         if (!attacker) return;
+        // battle music: an enemy player attacking you or an ally starts it; your side fighting back keeps it going
+        if (target && !this.game?.cfg?.tutorial && !this.demo) {
+          const pl = this.game?.players || [], a = attacker.owner, b = target.owner;
+          const side = (o) => (o == null || !pl[o] ? 0 : this._isMine(o) || this._isAllyOwner(o) ? 1 : 2);
+          const sa = side(a), sb = side(b);
+          if (sa === 2 && sb === 1) this._fight(true); else if (sa === 1 && sb === 2) this._fight(false);
+        }
         if (attacker.kind === 'unit' && attacker.anim === 'build') { this._at('hammer', attacker); return; }
         const t = attacker.type;
         if (ranged) {
@@ -496,7 +555,7 @@ export class AudioManager {
       on('questDone', () => { this.play('quest'); this.play('questBell', { delay: 0.25 }); });
       on('underAttack', () => { this.play('alarm'); });   // (one horn, 2026-11-17: the three-part alarm was too much)
       on('notify', ({ type, text }) => { if (type === 'warn' && text !== 'Saldırı altındasın!') this.play('notify'); });   // (the attack has its own alarm)
-      on('gameOver', ({ won }) => { this.play(won ? 'gameWon' : 'gameLost'); });
+      on('gameOver', ({ won }) => { this._musicStop(true); this.play(won ? 'gameWon' : 'gameLost'); });
     } catch (e) { /* never throw */ }
   }
 }

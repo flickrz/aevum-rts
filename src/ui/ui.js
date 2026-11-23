@@ -579,7 +579,7 @@ export class UI {
     this._mbtn(box, 'Geri', () => this._menuMain());
   }
   _settingsBody(parent) {
-    const vols = [['master', 'Ana Ses'], ['sfx', 'Efektler'], ['ambient', 'Ortam'], ['ui', 'Arayüz']];
+    const vols = [['master', 'Ana Ses'], ['sfx', 'Efektler'], ['ambient', 'Ortam'], ['music', 'Müzik'], ['ui', 'Arayüz']];
     for (const [cat, label] of vols) {
       const cur = Math.round((this.settings.vol[cat] ?? 0.8) * 100);
       const row = el('div', 'frow', `<label>${label}</label><input type="range" min="0" max="100" value="${cur}"><span class="val">${cur}</span>`);
@@ -619,7 +619,7 @@ export class UI {
     this._mbtn(box, 'Geri', () => this._menuMain());
   }
   _loadSettings() {
-    const def = { vol: { master: 0.8, sfx: 0.8, ambient: 0.5, ui: 0.6 }, quality: 'high', touchpad: false };
+    const def = { vol: { master: 0.8, sfx: 0.8, ambient: 0.5, music: 0.7, ui: 0.6 }, quality: 'high', touchpad: false };
     try { const o = JSON.parse(localStorage.getItem('aevum.settings')); if (o && o.vol) return { ...def, ...o, vol: { ...def.vol, ...o.vol } }; } catch (e) { /* ignore */ }
     return def;
   }
