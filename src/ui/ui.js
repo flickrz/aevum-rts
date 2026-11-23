@@ -277,6 +277,20 @@ export class UI {
     node.addEventListener('mouseenter', () => { this._tipNode = node; if (performance.now() < (this._cardGuardT || 0) && this.cardEl.contains(node)) return; this._showTip(node, specFn()); });
     node.addEventListener('mouseleave', () => { if (this._tipNode === node) this._tipNode = null; this.tipEl.classList.add('hidden'); });
   }
+  // the age box's cost chips: name, what you have and what the next age needs (a tap shows it on touch screens)
+  _chipTip(node, r) {
+    this._tip(node, () => {
+      const p = this.game?.players?.[this._me()], na = p && AGES[p.age + 1];
+      if (!na) return null;
+      if (r === 'bld') {
+        const n = new Set((safe(() => this.game.buildingsOf(this._me()), []) || []).filter((b) => b.done && !b.dead && !['house', 'wall', 'gate', 'towncenter'].includes(b.type)).map((b) => b.type)).size;
+        return { name: ico('x-buildings') + ' Farklı bina türü', desc: `${Math.min(n, na.reqBuildings)} / ${na.reqBuildings} — ${na.name} için bu kadar farklı türde bitmiş bina gerekli (ev, sur, kapı ve Şehir Merkezi sayılmaz).` };
+      }
+      const have = Math.floor(p.res[r] || 0), need = na.cost?.[r] || 0;
+      return { name: RES_ICON[r] + ' ' + RES_NAME[r], desc: `${Math.min(have, need)} / ${need} — ${na.name} için gereken ${RES_NAME[r].toLowerCase()}.` + (have < need ? ` ${need - have} eksik.` : ' Yeterli.') };
+    });
+    node.addEventListener('pointerup', (e) => { if (e.pointerType === 'touch') { this._tipNode = node; this._showTip(node, safe(node._tipSpec, null)); } });
+  }
   // a tooltip hidden on purpose (a click, a page switch): it comes back only on the next mouseenter
   _hideTip() { this._tipNode = null; this.tipEl.classList.add('hidden'); }
   _tipKeep() {
@@ -296,7 +310,7 @@ export class UI {
     for (const r of RES_LIST) {
       const v = cost[r]; if (!v) continue;
       const no = p && (p.res[r] || 0) < v;
-      h += `<span class="${no ? 'no' : ''}">${RES_ICON[r]} ${v}</span>`;
+      h += `<span class="${no ? 'no' : ''}" data-r="${r}">${RES_ICON[r]} ${v}</span>`;
     }
     return h;
   }
@@ -913,7 +927,7 @@ export class UI {
     const frac = aging ? this._qprog(aging) : (parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : 1);
     // the cost as chips (red: not enough yet) and the building types count
     let cost = this._costHtml(next.cost);
-    if (next.reqBuildings > 0) cost += `<span class="${types.size < next.reqBuildings ? 'no' : ''}">${ico('x-buildings')} ${Math.min(types.size, next.reqBuildings)}/${next.reqBuildings}</span>`;
+    if (next.reqBuildings > 0) cost += `<span class="${types.size < next.reqBuildings ? 'no' : ''}" data-r="bld">${ico('x-buildings')} ${Math.min(types.size, next.reqBuildings)}/${next.reqBuildings}</span>`;
     const hasTc = blds.some((b) => b.type === 'towncenter' && b.done && !b.dead);
     const mtxt = aging ? 'Çağ atlanıyor…' : miss.length ? 'Eksik: ' + miss.join(' · ') : !hasTc ? 'Çağ atlamak için bir Şehir Merkezi gerekli' : 'Hazır! Sağdaki düğmeyle çağ atla';
     const sig = steps.map((s) => (s[1] ? 1 : 0)).join('') + '|' + p.age + '|' + mtxt + '|' + cost;
@@ -924,7 +938,9 @@ export class UI {
     this.stepsEl.innerHTML = steps.map((s, i) => `<span class="${s[1] ? 'done' : i === cur ? 'cur' : ''}">${s[1] ? '✔ ' : ''}${esc(s[0])}</span>`).join('<em>→</em>');
     this.stepsEl.classList.toggle('hidden', !steps.length);
     this.objEl.querySelector('.ot').textContent = next.name;
-    this.objEl.querySelector('.acost').innerHTML = cost;
+    const acost = this.objEl.querySelector('.acost'); acost.innerHTML = cost;
+    // (player 2026-11-23: "the materials in the age bar have no names") each chip names itself on hover / tap
+    for (const ch of acost.querySelectorAll('[data-r]')) this._chipTip(ch, ch.dataset.r);
     /* (owner 2026-11-22) no 'Eksik: …' line: the cost chips show what is short and the age button's tooltip lists the rest */
     const om = this.objEl.querySelector('.om'); om.innerHTML = ''; om.classList.remove('ready'); void mtxt;
     // what is missing besides resources (building types, named buildings, the minimum stay) for the age button's tooltip
