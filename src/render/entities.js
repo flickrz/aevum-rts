@@ -106,7 +106,28 @@ const SELM = [
   // [3] ally (same team, not controllable)
   new THREE.MeshBasicMaterial({ color: 0x4aa8ff, transparent: true, opacity: .95, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, fog: false }),
 ];
-const SELB = SELM.map(m => { const c = m.clone(); c.opacity = .7; return c; });
+// (owner 2026-11-23: the thin square "sırıtıyor") a selected building gets a soft glow pad instead: a rounded square
+// of light under it, brightest along the edge, fading inward and out. One texture (alpha only), tinted per material.
+let _glowTex = null;
+function glowTex() {
+  if (_glowTex) return _glowTex;
+  const S = 128, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d'), img = g.createImageData(S, S), d = img.data;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const u = Math.abs(x / (S - 1) * 2 - 1), v = Math.abs(y / (S - 1) * 2 - 1);
+    const r = Math.pow(Math.pow(u, 6) + Math.pow(v, 6), 1 / 6);   // rounded square, 1 at the edge
+    const edge = Math.exp(-Math.pow((r - .86) / .07, 2));            // the bright band
+    const fill = r < .86 ? .6 : 0;                                    // a gentle wash inside
+    const out = r >= .86 ? Math.max(0, 1 - (r - .86) / .14) : 1;      // fades to nothing at the border
+    const a = Math.min(1, Math.max(fill, edge)) * out;
+    const k = (y * S + x) * 4; d[k] = d[k + 1] = d[k + 2] = 255; d[k + 3] = a * 255;
+  }
+  g.putImageData(img, 0, 0);
+  _glowTex = new THREE.CanvasTexture(c);
+  return _glowTex;
+}
+const SELB = SELM.map(m => { const c = m.clone(); c.opacity = 1; c.map = glowTex(); return c; });
+const GLOW_G = new THREE.PlaneGeometry(1, 1).rotateX(-PI / 2);
 const PROXY_M = new THREE.MeshBasicMaterial({ visible: false });
 const HPM = {
   bg: new THREE.SpriteMaterial({ color: 0x151515, depthTest: false }),
@@ -2002,7 +2023,8 @@ export class EntityView {
       const b = e.kind === 'building';
       const me = this._me();
       const ML = b ? SELB : SELM, m = e.owner === me ? ML[0] : (e.owner == null || e.owner < 0) ? ML[2] : this._isAlly(e.owner) ? ML[3] : ML[1];
-      v.ring = new THREE.Mesh(b ? sqGeo(e.size || 1) : G.ring, m);
+      v.ring = new THREE.Mesh(b ? GLOW_G : G.ring, m);
+      if (b) { const sz = (e.size || 1) * 1.35; v.ring.scale.set(sz, 1, sz); v.ringGlow = sz; }
       // (a building's ring is a child of the model root, which is scaled by v.k: undo that so the outline sits on the footprint)
       const s = b ? 1 / (v.k || 1) : v.rig === 'human' ? .75 * USCALE : v.rig ? 1.25 * USCALE : 1.2;
       v.ringS = s; v.ring.position.y = b ? .14 : .1; v.ring.renderOrder = 5;
@@ -2011,7 +2033,7 @@ export class EntityView {
     }
     v.ring.visible = true;
     if (v.P && v.P.ringE) { const q = 1 + Math.sin(this.t * 5.5 + v.phase) * .03; v.ring.scale.set(v.P.ringE[0] * q, 1, v.P.ringE[1] * q); v.ring.rotation.y = 0; return; }
-    const pu = e.kind === 'building' ? 1 / (v.k || 1) : v.ringS * (1 + Math.sin(this.t * 5.5 + v.phase) * .05);
+    const pu = e.kind === 'building' ? (v.ringGlow || 1) / (v.k || 1) : v.ringS * (1 + Math.sin(this.t * 5.5 + v.phase) * .05);
     v.ring.scale.set(pu, 1, pu);
     if (e.kind !== 'building') v.ring.rotation.y = -v.root.rotation.y;
   }
