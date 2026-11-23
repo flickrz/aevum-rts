@@ -90,6 +90,13 @@ export const TEMPLE_HEAL_R = 7;
 // HEALER_R tiles (centre distance) by HEALER_HP x (1 + the temple heal techs), in combat too; a unit gets at most one
 // healer's heal per second (no stacking). An idle healer walks to a wounded friend she sees and stops HEALER_STOP off.
 export const HEALER_R = 8, HEALER_HP = 2, HEALER_STOP = 5;   /* (owner 2026-11-22: 5 was "çok dar") */
+// (owner 2026-11-23) the healer grows with her owner's age: in the Stone Age she heals ONE friend (the most hurt within
+// r: lowest hp share, then lowest id), from the Bronze Age everyone wounded within r; r and hp/s grow per age (HEALER_R =
+// the widest, HEALER_HP = the Stone Age rate). hp is before the temple techs and rounded after them.
+export const HEALER_AGE = [{ r: 6, hp: 2, one: true }, { r: 6, hp: 3 }, { r: 7, hp: 4 }, { r: 8, hp: 5 }, { r: 8, hp: 6 }];
+export const healerStats = age => HEALER_AGE[Math.max(0, Math.min(HEALER_AGE.length - 1, age | 0))];
+export const healerRate = p => { const s = healerStats(p ? p.age : 0); return Math.round(s.hp * (1 + ((p && p.mods && p.mods.heal) || 0))); };
+const healerStop = r => Math.min(HEALER_STOP, r - 1.5);
 // the castle shoots a volley at up to this many targets every 2 s, its attack +4 per age (2026-11-17 playtest)
 export const CASTLE_VOLLEY = 3, CASTLE_AGE_ATK = 4;
 // from the Gunpowder Age on, towers fire cannonballs (with their splash) instead of arrows
@@ -1824,9 +1831,11 @@ export class Game {
     let done = null;
     for (const h of this.units) {
       if (h.type !== 'healer' || h.dead || h.aboard) continue;
-      const p = this.players[h.owner], n = Math.round(HEALER_HP * (1 + ((p && p.mods && p.mods.heal) || 0))), R2 = HEALER_R * HEALER_R, got = [];
-      this._near(h.x, h.z, HEALER_R, e => { if ((done && done.has(e.id)) || !this._healable(h, e)) return; const dx = e.x - h.x, dz = e.z - h.z; if (dx * dx + dz * dz <= R2) got.push(e); });
+      const p = this.players[h.owner], st = healerStats(p ? p.age : 0), n = healerRate(p), R2 = st.r * st.r;
+      let got = [];
+      this._near(h.x, h.z, st.r, e => { if ((done && done.has(e.id)) || !this._healable(h, e)) return; const dx = e.x - h.x, dz = e.z - h.z; if (dx * dx + dz * dz <= R2) got.push(e); });
       if (!got.length) continue;
+      if (st.one) { let b = got[0]; for (const e of got) { const a = e.hp * b.maxHp, c = b.hp * e.maxHp; if (a < c || (a === c && e.id < b.id)) b = e; } got = [b]; }   // (integer cross-multiply: no float ties)
       if (!done) done = new Set();
       for (const e of got) { done.add(e.id); e.hp = Math.min(e.maxHp, e.hp + n); }
       this.events.emit('heal', { e: h, targets: got });   // (view only)
@@ -1838,7 +1847,7 @@ export class Game {
   // retrying every second.
   _healerSeek(u) {
     if (u.hsT > this.time) return;
-    const R2 = HEALER_R * HEALER_R, los = unitLos(u.type); let best = null, bd = los * los, busy = false;
+    const p = this.players[u.owner], R = healerStats(p ? p.age : 0).r, R2 = R * R, los = unitLos(u.type); let best = null, bd = los * los, busy = false;
     if (u.hsId) {
       const t = this.entities.get(u.hsId); u.hsId = 0;
       if (t && this._healable(u, t)) { const dx = t.x - u.x, dz = t.z - u.z; if (dx * dx + dz * dz > R2) { u.hsT = this.time + 10; return; } }
@@ -1850,7 +1859,7 @@ export class Game {
       if (d < bd || (d === bd && best && e.id < best.id)) { bd = d; best = e; }
     });
     if (busy || !best) return;
-    const L = Math.sqrt(bd), k = (L - HEALER_STOP) / L;   /* (L > HEALER_R > HEALER_STOP) */
+    const L = Math.sqrt(bd), k = (L - healerStop(R)) / L;   /* (L > R > the stop distance) */
     if (!this.cmdMove([u.id], u.x + (best.x - u.x) * k, u.z + (best.z - u.z) * k)) return;
     if (u.order && u.order.type === 'move') { u.order.hs = 1; u.hsId = best.id; }
   }

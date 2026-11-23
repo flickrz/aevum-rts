@@ -10,7 +10,7 @@
 //    A selected own / allied healer (Büyücü) shows her healing circle round her.
 import * as THREE from 'three';
 import { BUILDINGS } from '../data.js';
-import { towerAgeBonus, TEMPLE_HEAL_R, HEALER_R } from '../sim/game.js';
+import { towerAgeBonus, TEMPLE_HEAL_R, HEALER_R, healerStats } from '../sim/game.js';
 
 const MAX_Q = 1600;          // quads per ribbon mesh (rally / waypoints)
 const MAX_MARK = 96;         // waypoint markers
@@ -175,7 +175,8 @@ export class OrderLines {
         const e = game.getEntity(selected.values().next().value);
         if (e && !e.dead && e.kind === 'unit' && e.type === 'healer' && (e.owner === game.me || (game.isAlly && game.isAlly(e.owner, game.me)))) he = e;
       }
-      this.halo.update(dt, he, HEALER_R, hf);
+      const hp = he && game.players ? game.players[he.owner] : null;
+      this.halo.update(dt, he, he ? healerStats(hp ? hp.age : 0).r : HEALER_R, hf);   // (her reach grows with the age)
     }
     this._t -= dt;
     if (this._t > 0) return;
