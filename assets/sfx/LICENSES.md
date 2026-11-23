@@ -74,6 +74,9 @@ Combat files are cut from the source recordings (onset-trimmed, 5 ms fade-in, co
 | k_whoosh2.mp3 | KIT: whoosh2.wav | owner's library licence |
 | amb_wind.mp3 | LIB: WIND AMBIENT (4).wav (looped) | owner's library licence |
 | amb_water.mp3 | LIB: WATER 1.wav (looped) | owner's library licence |
+| amb_forest.mp3 | generated for the game (Mirelo text-to-audio via Higgsfield, 2026-11-23), looped | owner's generation |
+| amb_village.mp3 | generated for the game (Mirelo text-to-audio via Higgsfield, 2026-11-23), looped | owner's generation |
+| amb_meadow.mp3 | generated for the game (Mirelo text-to-audio via Higgsfield, 2026-11-23), looped | owner's generation |
 
 ## Combat (rebuilt 2026-11-11)
 

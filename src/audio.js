@@ -81,7 +81,10 @@ const SOUNDS = {
 };
 
 // (wind removed 2026-11-13: the owner did not want the constant wind bed - its crackle was the "gırç" too)
-const AMBIENT = { water: 'amb_water' };
+// (owner 2026-11-23: "oyunu daha canlı hissettir", very quiet, like soft white noise) the world's beds: they follow what
+// the camera looks at: woods, your own village, open grass, water. AMB_MAX: each bed's top level under the ambient volume.
+const AMBIENT = { water: 'amb_water', forest: 'amb_forest', village: 'amb_village', meadow: 'amb_meadow' };
+const AMB_MAX = { forest: 0.16, village: 0.13, meadow: 0.1 };
 const CATS = ['master', 'sfx', 'ambient', 'ui', 'music'];
 const DEFAULT_VOL = { master: 0.8, sfx: 0.9, ambient: 0.5, ui: 0.7, music: 0.7 };
 // battle music (owner 2026-11-23): starts when an enemy attacks you, stays under the game, fades out a while after the
@@ -375,7 +378,7 @@ export class AudioManager {
         this._amb[key] = { src, g, vol };
       };
       // (no wind bed: owner decision 2026-11-13)
-      mk('water', 0);
+      mk('water', 0); mk('forest', 0); mk('village', 0); mk('meadow', 0);
       // occasional real bird recording
       const birdLoop = () => {
         try {
@@ -412,6 +415,26 @@ export class AudioManager {
       const zoom = Math.min(1, Math.max(0.25, 40 / (this.listener.dist + 10)));
       const wa = this._amb.water, wi = this._amb.wind;
       if (wa) wa.g.gain.setTargetAtTime(Math.min(0.8, frac * 1.6) * zoom, now, 0.6);
+      // woods / own village / open grass around the camera (trees and buildings within ~12 tiles)
+      const g = this.game, L2 = this.listener;
+      let trees = 0, homes = 0;
+      if (g && !this.demo) {
+        // trees: a coarse 8-tile density grid, rebuilt every 15 s (the trees are thousands of entities); own buildings: a direct count
+        const N = g.map && g.map.size;
+        if (N && (!this._treeG || this._treeG.g !== g || now - this._treeG.t > 15)) {
+          const C = Math.ceil(N / 8), a = new Uint16Array(C * C);
+          if (g.entities) for (const e of g.entities.values()) if (e && e.type === 'tree' && !e.dead) { const i = ((e.z / 8) | 0) * C + ((e.x / 8) | 0); if (i >= 0 && i < a.length) a[i]++; }
+          this._treeG = { g, t: now, C, a };
+        }
+        const T = this._treeG;
+        if (T) { const cx = (L2.x / 8) | 0, cz = (L2.z / 8) | 0; for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) { const x = cx + dx, z = cz + dz; if (x >= 0 && z >= 0 && x < T.C && z < T.C) trees += T.a[z * T.C + x]; } }
+        const me = this._me();
+        for (const b of g.buildings || []) if (b && !b.dead && b.owner === me && (b.x - L2.x) ** 2 + (b.z - L2.z) ** 2 < 144) homes++;
+      }
+      const fo = Math.min(1, trees / 40), vi = Math.min(1, homes / 5), me2 = Math.max(0, 1 - fo - frac) * (1 - vi * 0.5);
+      const near = Math.min(1, Math.max(0.35, 30 / (L2.dist + 6)));   // (a little quieter when zoomed far out)
+      const set = (k, v) => { const b = this._amb[k]; if (b) b.g.gain.setTargetAtTime(v * near, now, 1.2); };
+      set('forest', fo * AMB_MAX.forest); set('village', vi * AMB_MAX.village); set('meadow', (this.demo ? 0 : me2) * AMB_MAX.meadow);
       // more wind when zoomed far out
       if (wi) wi.g.gain.setTargetAtTime(0.3 + 0.4 * (1 - zoom), now, 0.8);
     } catch (e) { /* ignore */ }
