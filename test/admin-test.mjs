@@ -88,6 +88,20 @@ const ID1 = feedbackId(CHAT[0].name), ID3 = feedbackId(CHAT[2].name);
   ok(store.calls.query === 4, 'admin: the cache expires');
   ok((await A.accounts()) === 7 && (await A.accounts()) === 7 && store.calls.count === 1, 'admin: the account count is cached');
 }
+// a decision made while a read is under way (the read saw the old state) is not lost when that read lands
+{
+  let t = 1000000, release = null;
+  const base = createMemoryAdminStore({ chat: CHAT });
+  const old = await base.query('adminFeedback');
+  const slow = Object.assign({}, base, { async query(c) { if (c === 'chatlog') { await new Promise((r) => { release = r; }); return CHAT; } return old; } });
+  const A = createAdmin({ store: slow, now: () => t });
+  const p = A.feedback();
+  await new Promise((r) => setImmediate(r));
+  t += 5; await A.decide({ id: ID1, status: 'approved' });
+  release();
+  const f = await p;
+  ok(f.items.find((x) => x.id === ID1).status === 'approved', 'admin: a decision during a read survives it');
+}
 
 // ---- the server: /admin page, owner checks, validation, merge ----
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));

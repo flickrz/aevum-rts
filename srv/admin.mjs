@@ -68,16 +68,19 @@ export function decisionFields(d, now = Date.now()) {
 // reloaded often; a decision made here updates the cache at once)
 export function createAdmin({ store, now = () => Date.now(), ttlMs = 45000, countTtlMs = 10 * 60000 } = {}) {
   let cache = null, cacheT = 0, loading = null;   // {rows, decisions}
+  const recent = new Map();   // id -> {next, t}: decisions made here lately (a read already under way may predate them)
   let accounts = null, accountsT = 0;
   async function load() {
     if (cache && now() - cacheT < ttlMs) return cache;
     if (!loading) {
       loading = (async () => {
+        const t0 = now();
         const [chat, dec] = await Promise.all([
           store.query('chatlog', { allDescendants: true, fields: ['at', 't', 'room', 'name', 'text'] }),
           store.query(COLLECTION),
         ]);
         cache = { rows: feedbackRows(chat), decisions: decisionMap(dec) };
+        for (const [id, w] of recent) { if (w.t >= t0) cache.decisions.set(id, w.next); else recent.delete(id); }
         cacheT = now();
         return cache;
       })().finally(() => { loading = null; });
@@ -97,6 +100,7 @@ export function createAdmin({ store, now = () => Date.now(), ttlMs = 45000, coun
       const prev = (cache && cache.decisions.get(d.id)) || { status: 'new', note: '', decidedAt: '' };
       const next = { status: d.status !== undefined ? d.status : prev.status, note: d.note !== undefined ? d.note : prev.note, decidedAt: fields.decidedAt ? fields.decidedAt.stringValue : prev.decidedAt };
       if (cache) cache.decisions.set(d.id, next);
+      recent.set(d.id, { next, t: now() });
       return Object.assign({ id: d.id }, next);
     },
     // the number of accounts (profiles), counted at most every countTtlMs
