@@ -84,7 +84,8 @@ const SOUNDS = {
 // (owner 2026-11-23: "oyunu daha canlı hissettir", very quiet, like soft white noise) the world's beds: they follow what
 // the camera looks at: woods, your own village, open grass, water. AMB_MAX: each bed's top level under the ambient volume.
 const AMBIENT = { water: 'amb_water', forest: 'amb_forest', village: 'amb_village', meadow: 'amb_meadow' };
-const AMB_MAX = { forest: 0.16, village: 0.13, meadow: 0.1 };
+// (owner 2026-11-23: the meadow's wind got tiring after a while) meadow halved
+const AMB_MAX = { forest: 0.16, village: 0.13, meadow: 0.05 };
 const CATS = ['master', 'sfx', 'ambient', 'ui', 'music'];
 const DEFAULT_VOL = { master: 0.8, sfx: 0.9, ambient: 0.5, ui: 0.7, music: 0.7 };
 // battle music (owner 2026-11-23): starts when an enemy attacks you, stays under the game, fades out a while after the
@@ -368,14 +369,13 @@ export class AudioManager {
       const mk = (key, vol) => {
         const buf = this.buffers.get(AMBIENT[key]);
         if (!buf) return;
-        const src = this.ctx.createBufferSource();
-        src.buffer = buf; src.loop = true;
         const g = this.ctx.createGain();
         g.gain.value = 0;
         g.gain.setTargetAtTime(vol, this.ctx.currentTime, 1.5);
-        src.connect(g); g.connect(this.gains.ambient);
-        src.start();
-        this._amb[key] = { src, g, vol };
+        g.connect(this.gains.ambient);
+        const bed = { g, vol, buf, next: 0, off: -99 };
+        this._amb[key] = bed;
+        this._bedFill(bed);
       };
       // (no wind bed: owner decision 2026-11-13)
       mk('water', 0); mk('forest', 0); mk('village', 0); mk('meadow', 0);
@@ -390,9 +390,38 @@ export class AudioManager {
     } catch (e) { /* ignore */ }
   }
 
+  // (owner 2026-11-23: "a short loop, you can tell it repeats") a bed is not looped as one file: it is played as
+  // overlapping chunks of 7-13 s from random places in it, each slightly faster or slower, with equal-power
+  // crossfades, so the 17 s recording never comes round in the same order. Scheduled ~4 s ahead.
+  _bedFill(bed) {
+    const ctx = this.ctx, d = bed.buf.duration, X = 1.6;
+    if (!this._xIn) {
+      const n = 64; this._xIn = new Float32Array(n); this._xOut = new Float32Array(n);
+      for (let i = 0; i < n; i++) { const p = i / (n - 1); this._xIn[i] = Math.sin(p * Math.PI / 2); this._xOut[i] = Math.cos(p * Math.PI / 2); }
+    }
+    let guard = 0;
+    while (bed.next < ctx.currentTime + 4 && guard++ < 4) {
+      const len = Math.min(d - 0.05, 7 + Math.random() * 6);
+      let off = Math.random() * Math.max(0, d - len);
+      if (Math.abs(off - bed.off) < 3 && d - len > 6) off = (off + (d - len) / 2) % (d - len);   // not the same stretch twice in a row
+      bed.off = off;
+      const rate = 0.95 + Math.random() * 0.1, dur = len / rate;
+      const t0 = Math.max(bed.next, ctx.currentTime + 0.02);
+      const s = ctx.createBufferSource(); s.buffer = bed.buf; s.playbackRate.value = rate;
+      const cg = ctx.createGain(); cg.gain.value = 0;
+      cg.gain.setValueCurveAtTime(this._xIn, t0, X);
+      cg.gain.setValueCurveAtTime(this._xOut, t0 + dur - X, X);
+      s.connect(cg); cg.connect(bed.g);
+      s.start(t0, off, len);
+      s.onended = () => { try { s.disconnect(); cg.disconnect(); } catch (e) { /* */ } };
+      bed.next = t0 + dur - X;
+    }
+  }
+
   _updateAmbient() {
     try {
       if (!this.ctx || !this._ambStarted) return;
+      for (const k in this._amb) { const b = this._amb[k]; if (b && b.buf) this._bedFill(b); }
       const now = this.ctx.currentTime;
       if (this._ambT !== undefined && now - this._ambT < 0.4) return;
       this._ambT = now;
