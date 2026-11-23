@@ -51,6 +51,7 @@ export class Input {
       // one and ends it, Esc / right click end it as before
       if (e.key === 'Shift' && this.shiftPlaced) this.shiftPlaced = false;
     });
+    this._bindTouch(c);
     window.addEventListener('blur', () => { this.keys.clear(); this.shift = false; this.mouse.inside = false; this.endDrag(); this.rot = null; });
     document.addEventListener('mouseleave', () => { this.mouse.inside = false; });
     // only trust "inside" together with real coordinates (a bare mouseenter left x/y at 0,0 -> edge scroll to the corner)
@@ -697,6 +698,7 @@ export class Input {
 
   // ---------- per frame ----------
   update(dt) {
+    this.touchTick();
     if (!this.active) return;
     const r = this.app.renderer, cam = r.cam, K = this.keys;
     let mx = 0, mz = 0; // right, forward
@@ -704,7 +706,7 @@ export class Input {
     if (K.has('KeyS') || K.has('ArrowDown')) mz -= 1;
     if (K.has('KeyD') || K.has('ArrowRight')) mx += 1;
     if (K.has('KeyA') || K.has('ArrowLeft')) mx -= 1;
-    if (this.mouse.inside && document.hasFocus() && !this.rot && !this.app.paused) {
+    if (!this.touchMode && this.mouse.inside && document.hasFocus() && !this.rot && !this.app.paused) {
       const w = window.innerWidth, h = window.innerHeight, m = this.mouse;
       if (m.x >= 0 && m.y >= 0 && m.x <= w && m.y <= h) {
         const ramp = (d) => EDGE_MIN + (1 - EDGE_MIN) * Math.min(1, Math.max(0, 1 - d / EDGE_PX));
@@ -715,6 +717,107 @@ export class Input {
     // Shift held: pan PAN_FAST times faster (keys and screen edge); a diagonal is no faster than a straight pan
     if (mx || mz) this.pan(mx, mz, Math.max(10, cam.dist * 0.9) * (this.shift ? PAN_FAST : 1) * dt / Math.max(1, Math.hypot(mx, mz)));
     if (this.placing) this.updateGhost();
+  }
+  // ---------- touch (phones / tablets; owner 2026-11-23: players want to play on the phone) ----------
+  // One finger drags the map, two fingers pinch-zoom (and pan), a tap selects, a tap with own units selected gives the
+  // order a right click would (move, gather, attack, build...), a long press then drag is the selection box, a double
+  // tap selects all of that type on screen. The "Bırak" button drops the selection (a ground tap would be an order).
+  _bindTouch(c) {
+    const T = { pts: new Map(), mode: null, x0: 0, y0: 0, t0: 0, long: 0, pinch: null, lastTap: 0, lx: 0, ly: 0 };
+    const fake = (x, y, button) => ({ clientX: x, clientY: y, button, shiftKey: false, altKey: false, ctrlKey: false, preventDefault() {} });
+    const mid = () => { const p = [...T.pts.values()]; return { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) }; };
+    this.dropBtn = document.createElement('button');
+    this.dropBtn.textContent = 'Bırak';
+    this.dropBtn.className = 'mbtn small touch-drop';
+    this.dropBtn.style.cssText = 'position:fixed;right:12px;top:64px;z-index:40;display:none';
+    this.dropBtn.onclick = () => { this.app.select([]); };
+    document.body.appendChild(this.dropBtn);
+    const opts = { passive: false };
+    // html.touch: the compact phone layout in style.css (a touch screen, or the first touch)
+    try { if (window.matchMedia && matchMedia('(pointer: coarse)').matches) document.documentElement.classList.add('touch'); } catch (err) { /* */ }
+    c.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      this.touchMode = true; this.mouse.inside = false;
+      document.documentElement.classList.add('touch');
+      for (const t of e.changedTouches) T.pts.set(t.identifier, { x: t.clientX, y: t.clientY });
+      if (T.pts.size === 1) {
+        const t = e.changedTouches[0];
+        T.mode = 'tap'; T.x0 = T.lx = t.clientX; T.y0 = T.ly = t.clientY; T.t0 = performance.now();
+        this.mouse.x = t.clientX; this.mouse.y = t.clientY;
+        if (this.placing) { this.updateGhost(); }
+        clearTimeout(T.long);
+        T.long = setTimeout(() => {   // long press: box select
+          if (T.mode !== 'tap' || !this.active || this.placing || this.targeting) return;
+          T.mode = 'box'; this.drag = { x0: T.x0, y0: T.y0, active: true };
+          if (navigator.vibrate) try { navigator.vibrate(15); } catch (err) { /* */ }
+        }, 450);
+      } else if (T.pts.size === 2) {
+        clearTimeout(T.long);
+        if (T.mode === 'box') this.endDrag();
+        T.mode = 'pinch'; T.pinch = mid();
+      }
+    }, opts);
+    c.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      for (const t of e.changedTouches) if (T.pts.has(t.identifier)) T.pts.set(t.identifier, { x: t.clientX, y: t.clientY });
+      if (!this.active) return;
+      const cam = this.app.renderer.cam;
+      if (T.mode === 'pinch' && T.pts.size >= 2) {
+        const m = mid(), p = T.pinch;
+        if (p.d > 0 && m.d > 0) cam.dist = Math.max(8, Math.min(110, cam.dist * p.d / m.d));
+        this.pan(-(m.x - p.x), (m.y - p.y), Math.max(10, cam.dist) * TP_PAN * 0.9);
+        T.pinch = m; return;
+      }
+      const t = e.changedTouches[0]; if (!t) return;
+      this.mouse.x = t.clientX; this.mouse.y = t.clientY;
+      if (T.mode === 'tap' && Math.hypot(t.clientX - T.x0, t.clientY - T.y0) > 12) { clearTimeout(T.long); T.mode = this.placing ? 'place' : 'pan'; }
+      if (T.mode === 'place') { this.updateGhost(); return; }
+      if (T.mode === 'pan') {
+        this.pan(-(t.clientX - T.lx), (t.clientY - T.ly), Math.max(10, cam.dist) * TP_PAN * 0.9);
+      } else if (T.mode === 'box') {
+        this.onMove(fake(t.clientX, t.clientY, 0));
+      }
+      T.lx = t.clientX; T.ly = t.clientY;
+    }, opts);
+    const end = (e) => {
+      e.preventDefault();
+      clearTimeout(T.long);
+      const t = e.changedTouches[0];
+      for (const x of e.changedTouches) T.pts.delete(x.identifier);
+      if (T.mode === 'pinch') { if (T.pts.size === 0) T.mode = null; return; }
+      if (T.pts.size) return;
+      const mode = T.mode; T.mode = null;
+      if (!t || e.type === 'touchcancel') { this.endDrag(); return; }
+      const x = t.clientX, y = t.clientY;
+      if (mode === 'box') { this.onUp(fake(x, y, 0)); return; }
+      if (mode === 'place') { this.onDown(fake(x, y, 0)); this.onUp(fake(x, y, 0)); return; }
+      if (mode !== 'tap') return;
+      this.app.audio?.resume?.();
+      this.mouse.x = x; this.mouse.y = y;
+      const now = performance.now();
+      if (now - T.lastTap < 320 && Math.hypot(x - T.tx, y - T.ty) < 30) { T.lastTap = 0; this.onDbl(fake(x, y, 0)); return; }
+      T.lastTap = now; T.tx = x; T.ty = y;
+      this._tap(x, y, fake);
+    };
+    c.addEventListener('touchend', end, opts);
+    c.addEventListener('touchcancel', end, opts);
+  }
+  _tap(x, y, fake) {
+    if (!this.active) return;
+    if (this.placing || this.targeting || this.flareArmed) { this.onDown(fake(x, y, 0)); this.onUp(fake(x, y, 0)); return; }
+    const app = this.app, own = this.ownUnits();
+    const target = this.ent(app.renderer.pick(x, y));
+    const isOwnUnit = target && !target.dead && target.owner === this.me() && target.kind === 'unit';
+    // own units selected and the tap is not on another own unit: that is an order (the desktop right click)
+    if (own.length && !isOwnUnit) { this.contextCommand(fake(x, y, 2)); return; }
+    this.drag = { x0: x, y0: y, active: false };
+    this.onUp(fake(x, y, 0));
+  }
+  // the touch "Bırak" button shows while something is selected (called by the UI loop)
+  touchTick() {
+    if (!this.dropBtn) return;
+    const on = !!(this.touchMode && this.active && this.app.selection && this.app.selection.length);
+    if (on !== this._dropOn) { this._dropOn = on; this.dropBtn.style.display = on ? 'block' : 'none'; }
   }
   // move the camera target by (mx right, mz forward) * sp on the ground, clamped to the map
   pan(mx, mz, sp) {

@@ -12,7 +12,7 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #0a0d13; color: var(--ink); font-family: var(--font); user-select: none; }
-#game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+#game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; touch-action: none; }
 #ui { position: fixed; inset: 0; pointer-events: none; z-index: 10; font-size: 14px; }
 #ui button { font-family: inherit; color: inherit; cursor: pointer; }
 .hidden { display: none !important; }
@@ -1031,3 +1031,13 @@ button.gbtn, button.gbtn .gbtn-t { color: #1f1f1f !important; text-shadow: none 
 .mp-rooms { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 4px; padding: 10px 8px; border: 1px solid var(--line); border-radius: 10px; background: rgba(0,0,0,.18); text-align: left; }
 .mp-rooms .op-list { max-height: 210px; }
 .mp-rooms .mbtn.small.op-inv { flex: none; margin: 0; width: auto; padding: 5px 12px; font-size: 12px; letter-spacing: .5px; }
+
+/* phones (owner 2026-11-23): touch screen with little height -> the HUD shrinks so the map stays visible
+   (html.touch is set by src/input.js; desktop never gets it) */
+@media (max-height: 520px) {
+  html.touch .hudbl { zoom: .58; }
+  html.touch .bottom { zoom: .62; left: 440px !important; }   /* (in its own zoomed px: just right of the shrunk .hudbl) */
+  html.touch .hudtop { zoom: .72; }
+  html.touch .chatdock { zoom: .7; }
+  html.touch .groupbar { display: none; }
+}
