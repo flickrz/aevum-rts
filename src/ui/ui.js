@@ -1508,17 +1508,17 @@ export class UI {
       for (const r of ['food', 'wood', 'stone']) {
         put({
           icon: RES_ICON[r], lbl: tr('Sat'), name: `${RES_NAME[r]} Sat`,
-          get desc() { return tr('100 {0} karşılığında {1} Altın al.', RES_NAME[r], Math.floor(safe(() => g.tradeRate(r, 'gold', p.id ?? 0), 0))); },
+          get desc() { return tr('100 {0} karşılığında {1} Altın al. Shift: 5 kez (500).', RES_NAME[r], Math.floor(safe(() => g.tradeRate(r, 'gold', p.id ?? 0), 0))); },
           check: () => ((p.res[r] || 0) >= 100 ? { ok: true } : { ok: false, reason: tr('Yetersiz ') + RES_NAME[r].toLowerCase() }),
-          run: () => safe(() => g.trade(this._me(), r, 'gold'), false),
+          run: () => { let ok = false; for (let i = many(); i > 0; i--) if (safe(() => g.trade(this._me(), r, 'gold'), false)) ok = true; return ok; },
         });
       }
       for (const r of ['food', 'wood', 'stone']) {
         put({
           icon: RES_ICON[r], lbl: tr('Al'), name: `${RES_NAME[r]} Al`,
-          get desc() { return tr('100 Altın karşılığında {0} {1} al.', Math.floor(safe(() => g.tradeRate('gold', r, p.id ?? 0), 0)), RES_NAME[r]); },
+          get desc() { return tr('100 Altın karşılığında {0} {1} al. Shift: 5 kez (500 Altın).', Math.floor(safe(() => g.tradeRate('gold', r, p.id ?? 0), 0)), RES_NAME[r]); },
           check: () => ((p.res.gold || 0) >= 100 ? { ok: true } : { ok: false, reason: tr('Yetersiz altın') }),
-          run: () => safe(() => g.trade(this._me(), 'gold', r), false),
+          run: () => { let ok = false; for (let i = many(); i > 0; i--) if (safe(() => g.trade(this._me(), 'gold', r), false)) ok = true; return ok; },
         });
       }
       // barter (owner playtest 2026-11-14): resource for resource on its own page
