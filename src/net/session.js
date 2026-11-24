@@ -1,5 +1,6 @@
 import { logChat } from '../chatlog.js';
 import { hashParts } from './hashparts.js';
+import { tr } from '../i18n.js';
 // Aevum - multiplayer session: lobby + deterministic lockstep over an abstract transport.
 // Transport: { id, async connect(room), send(topic, data), on(topic, fn(data, from, ident)), peers(), onPeers(fn), close() }
 // A transport with `verified` (the node relay with tickets) hands every message the sender's identity as the relay
@@ -60,8 +61,8 @@ const cleanAv = a => (typeof a === 'string' && /^[a-z0-9-]{1,24}$/.test(a) ? a :
 const cleanTp = t => (Number.isInteger(t) && t >= 0 && t < 1e7 ? t : null);
 
 // the build id of this tab (the server's /mp/notice ver, src/net/notice.js): a host refuses joiners on another build
-export const VER_TEXT = 'Oyun sürümün farklı. Sayfayı yenileyip tekrar katıl.';
-export const HOST_OLD_TEXT = 'Odayı kuranın oyunu eski sürümde: kurucu sayfayı yenileyip odayı yeniden açmalı.';
+export const VER_TEXT = tr('Oyun sürümün farklı. Sayfayı yenileyip tekrar katıl.');
+export const HOST_OLD_TEXT = tr('Odayı kuranın oyunu eski sürümde: kurucu sayfayı yenileyip odayı yeniden açmalı.');
 const cleanVer = v => (typeof v === 'string' && /^[A-Za-z0-9._-]{1,40}$/.test(v) ? v : null);
 
 // the host's lobby state / start message as a guest takes it: slot names short strings, teams 1-8, settings one of the
@@ -180,7 +181,7 @@ export class NetSession {
       // local/LAN: SSE. Through a tunnel/proxy (non-LAN host that answers /mp/ping): long-polling, because some tunnels do not pass SSE.
       transport = lan ? await sse() : ok ? await poll() : await tryRoom();
     }
-    if (!transport) throw new Error('Çok oyunculu bağlantı kurulamadı: yerel sunucu (node server.js) ya da oda servisi bulunamadı.');
+    if (!transport) throw new Error(tr('Çok oyunculu bağlantı kurulamadı: yerel sunucu (node server.js) ya da oda servisi bulunamadı.'));
     return new NetSession(transport, opts);
   }
 
@@ -231,7 +232,7 @@ export class NetSession {
       this.emit('flare', { pid, name: this.start0.slots[pid].name, x: +d.x, z: +d.z });
     });
     this.t.onPeers(ch => this._onPeers(ch));
-    if (typeof this.t.onStatus === 'function') this.t.onStatus(st => { if (st && st.dup) { this.emit('notice', { text: 'Bu hesap bu odaya başka bir sekmeden girdi; bu sekmenin bağlantısı kapatıldı.' }); this.close('dup'); return; } this._onStatus(st); });
+    if (typeof this.t.onStatus === 'function') this.t.onStatus(st => { if (st && st.dup) { this.emit('notice', { text: tr('Bu hesap bu odaya başka bir sekmeden girdi; bu sekmenin bağlantısı kapatıldı.') }); this.close('dup'); return; } this._onStatus(st); });
     this._every(100, () => this._pump());
   }
 
@@ -282,7 +283,7 @@ export class NetSession {
 
   async join(code) {
     code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
-    if (code.length !== 5) throw new Error('Oda kodu 5 karakter olmalı.');
+    if (code.length !== 5) throw new Error(tr('Oda kodu 5 karakter olmalı.'));
     await this.t.connect(code); this.room = code;
     this.isHost = false; this.phase = 'lobby';
     this._wire();
@@ -293,7 +294,7 @@ export class NetSession {
       const h = this.clock.setInterval(() => {
         if (this._inLobby()) { this.clock.clearInterval(h); this._joined = true; resolve(this.state.code); return; }
         if (this._rejected) { this.clock.clearInterval(h); const why = this._rejected; this.close('rejected'); reject(new Error(why)); return; }
-        if (this.clock.now() - t0 > 12000) { this.clock.clearInterval(h); reject(new Error('Odaya bağlanılamadı: kurucu bulunamadı (kod doğru mu?).')); return; }
+        if (this.clock.now() - t0 > 12000) { this.clock.clearInterval(h); reject(new Error(tr('Odaya bağlanılamadı: kurucu bulunamadı (kod doğru mu?).'))); return; }
         hello();
       }, 400);
       this._timers.push(h);
@@ -365,7 +366,7 @@ export class NetSession {
       this.close('kicked');
     } else if (d.k === 'full' && d.to === this.t.id) {
       // (a joiner checked its own build against the server before joining: a different host build means the host is behind)
-      this._rejected = d.why === 'ver' ? (this.ver && d.ver && cleanVer(d.ver) !== this.ver ? HOST_OLD_TEXT : VER_TEXT) : 'Oda dolu (en fazla 8 oyuncu).';
+      this._rejected = d.why === 'ver' ? (this.ver && d.ver && cleanVer(d.ver) !== this.ver ? HOST_OLD_TEXT : VER_TEXT) : tr('Oda dolu (en fazla 8 oyuncu).');
     } else if (d.k === 'start' && cleanLobby(d.start)) {
       if (d.start.resume && !(isObj(d.start.blob) && typeof d.start.blob.id === 'string')) return;
       this._verifySlots(d.start.slots);
@@ -373,7 +374,7 @@ export class NetSession {
       if (d.start.resume) {
         // continue a saved match: only a player who has a slot can come in
         if (!d.start.slots.some(s => s.kind === 'human' && s.peer === this.t.id)) {
-          if (this.phase === 'lobby' && !this._loading) { this.emit('notice', { text: 'Maç sensiz başladı: sana bir oyuncu yeri ayrılmadı.' }); this.close('notInMatch'); }
+          if (this.phase === 'lobby' && !this._loading) { this.emit('notice', { text: tr('Maç sensiz başladı: sana bir oyuncu yeri ayrılmadı.') }); this.close('notInMatch'); }
           return;
         }
         this._send('lobby', { k: 'ack' });
@@ -388,8 +389,8 @@ export class NetSession {
   // ---------- continue a saved match ----------
   // rec: a save record from storage ({mp:true, code, me, players, data: game.serialize()})
   async hostResume(rec) {
-    if (!rec || !rec.data || !Array.isArray(rec.data.players)) throw new Error('Kayıt okunamadı.');
-    if (typeof this.t.putBlob !== 'function') throw new Error(this.t.noBlob || 'Kayıtlı maça devam etmek bu bağlantı türünde desteklenmiyor.');
+    if (!rec || !rec.data || !Array.isArray(rec.data.players)) throw new Error(tr('Kayıt okunamadı.'));
+    if (typeof this.t.putBlob !== 'function') throw new Error(this.t.noBlob || tr('Kayıtlı maça devam etmek bu bağlantı türünde desteklenmiyor.'));
     const code = randCode();
     await this.t.connect(code); this.room = code;
     this.isHost = true; this.phase = 'lobby';
@@ -412,7 +413,7 @@ export class NetSession {
     if (mine < 0) mine = this._nameSlot(slots, this.name, this.uid);
     if (mine < 0 && rec.me != null && slots[rec.me] && slots[rec.me].kind === 'human') mine = rec.me;
     if (mine < 0) mine = slots.findIndex(s => s.kind === 'human');
-    if (mine < 0) throw new Error('Bu kayıtta insan oyuncu yok.');
+    if (mine < 0) throw new Error(tr('Bu kayıtta insan oyuncu yok.'));
     Object.assign(slots[mine], { peer: this.t.id, mode: 'play', ready: true, uid: this.uid || slots[mine].savedUid || null, av: cleanAv(this.ident && this.ident.av), tp: cleanTp(this.ident && this.ident.tp) });
     this.state = {
       code, hostPeer: this.t.id,
@@ -509,7 +510,7 @@ export class NetSession {
     const json = JSON.stringify(rec.data);
     const h = strHash32(json);
     this._resumeStarting = true;
-    this.emit('loading', { text: 'Kayıt diğer oyunculara gönderiliyor…' });
+    this.emit('loading', { text: tr('Kayıt diğer oyunculara gönderiliyor…') });
     let id;
     try { id = await this.t.putBlob(json); }
     finally { this._resumeStarting = false; }
@@ -529,11 +530,11 @@ export class NetSession {
 
   async _loadResume(start) {
     this._loading = true;
-    this.emit('loading', { text: 'Kayıt indiriliyor…' });
+    this.emit('loading', { text: tr('Kayıt indiriliyor…') });
     try {
-      if (typeof this.t.getBlob !== 'function') throw new Error(this.t.noBlob || 'Bu bağlantı türü kayıt aktaramıyor.');
+      if (typeof this.t.getBlob !== 'function') throw new Error(this.t.noBlob || tr('Bu bağlantı türü kayıt aktaramıyor.'));
       const txt = await this.t.getBlob(start.blob.id);
-      if (strHash32(txt) !== (start.blob.h >>> 0)) throw new Error('İndirilen kayıt bozuk (özet tutmadı).');
+      if (strHash32(txt) !== (start.blob.h >>> 0)) throw new Error(tr('İndirilen kayıt bozuk (özet tutmadı).'));
       const data = JSON.parse(txt);
       // the host could send any save under the match's name: a client that saved this match at that tick itself
       // compares (the app's hook: its own record's state hash against the downloaded one; null = no copy, not checked)
@@ -546,7 +547,7 @@ export class NetSession {
       this._beginGame(start);
     } catch (err) {
       console.warn('[net] resume load', err);
-      if (this.phase === 'lobby') { this.emit('notice', { text: 'Kayıt yüklenemedi: ' + (err && err.message || err) }); this.close('loadFailed'); }
+      if (this.phase === 'lobby') { this.emit('notice', { text: tr('Kayıt yüklenemedi: {0}', err && err.message || err) }); this.close('loadFailed'); }
     } finally { this._loading = false; }
   }
 
@@ -582,7 +583,7 @@ export class NetSession {
   setReady(b) { this._req('setReady', b); }
 
   _hostOnly() { if (!this.isHost || this.phase !== 'lobby') throw new Error('Bunu sadece oda kurucusu yapabilir.'); }
-  _notResume() { if (this.state && this.state.resume) throw new Error('Kayıtlı maçta oyuncu dizilişi kayıttan gelir.'); }
+  _notResume() { if (this.state && this.state.resume) throw new Error(tr('Kayıtlı maçta oyuncu dizilişi kayıttan gelir.')); }
   addAI(team = 2, difficulty = 'normal') {
     this._hostOnly(); this._notResume();
     if (this.state.slots.length >= MAX_PLAYERS) return false;
@@ -624,18 +625,18 @@ export class NetSession {
   // host: show this room in the public open rooms list (true) or keep it invite / code only (false)
   setListed(on) { this._hostOnly(); this._notResume(); this.state.listed = on !== false; this._broadcastLobby(); }
   canStart() {
-    if (!this.isHost || this.phase !== 'lobby') return { ok: false, reason: 'Sadece kurucu başlatabilir.' };
+    if (!this.isHost || this.phase !== 'lobby') return { ok: false, reason: tr('Sadece kurucu başlatabilir.') };
     const sl = this.state.slots;
     if (this.state.resume) {
-      if (this._resumeStarting) return { ok: false, reason: 'Kayıt gönderiliyor…' };
+      if (this._resumeStarting) return { ok: false, reason: tr('Kayıt gönderiliyor…') };
       const nr = sl.filter(s => s.kind === 'human' && s.peer && s.peer !== this.t.id && !s.ready);
-      if (nr.length) return { ok: false, reason: 'Hazır olmayan: ' + nr.map(s => s.name).join(', ') };
+      if (nr.length) return { ok: false, reason: tr('Hazır olmayan: {0}', nr.map(s => s.name).join(', ')) };
       return { ok: true };
     }
-    if (sl.length < 2) return { ok: false, reason: 'En az 2 oyuncu gerekli.' };
-    if (new Set(sl.map(s => s.team)).size < 2) return { ok: false, reason: 'En az iki farklı takım olmalı.' };
+    if (sl.length < 2) return { ok: false, reason: tr('En az 2 oyuncu gerekli.') };
+    if (new Set(sl.map(s => s.team)).size < 2) return { ok: false, reason: tr('En az iki farklı takım olmalı.') };
     const nr = sl.filter((s, i) => i > 0 && s.kind === 'human' && !s.ready);
-    if (nr.length) return { ok: false, reason: 'Hazır olmayan: ' + nr.map(s => s.name).join(', ') };
+    if (nr.length) return { ok: false, reason: tr('Hazır olmayan: {0}', nr.map(s => s.name).join(', ')) };
     return { ok: true };
   }
   start() {
@@ -1040,7 +1041,7 @@ export class NetSession {
       }
     } else if (this.state) {
       if (this._hostGoneAt != null && peers.has(this.state.hostPeer)) this._hostGoneAt = null;
-      if (this._hostGoneAt != null && now - this._hostGoneAt >= LOBBY_GONE_MS && this.relayUp && !this._loading) { this.emit('peerLeft', { name: 'Kurucu' }); this.close('hostLeft'); return; }
+      if (this._hostGoneAt != null && now - this._hostGoneAt >= LOBBY_GONE_MS && this.relayUp && !this._loading) { this.emit('peerLeft', { name: tr('Kurucu') }); this.close('hostLeft'); return; }
       // a slot claim (continue lobby) is re-sent until the host shows it, or someone else got that slot
       if (this._claim != null) {
         const s = this.state.slots[this._claim];
@@ -1143,14 +1144,14 @@ export class NetSession {
       if (now - this.stallSince >= 1000) {
         const relayDown = !up;
         let text;
-        if (relayDown) text = 'Sunucuya yeniden bağlanılıyor…';
+        if (relayDown) text = tr('Sunucuya yeniden bağlanılıyor…');
         else {
           const names = miss.map(p => this.start0.slots[p].name);
           const left = Math.max(0, Math.ceil((DROP_SILENT_MS - Math.max(0, ...miss.map(p => this.silentAcc.get(p) || 0))) / 1000));
           const quiet = miss.some(p => (this.silentAcc.get(p) || 0) >= 5000);
           const held = !quiet && miss.some(p => (this.withheld.get(p) || 0) >= 15000);
           const hleft = Math.max(0, Math.ceil((DROP_STALL_MS - Math.max(0, ...miss.map(p => this.withheld.get(p) || 0))) / 1000));
-          text = 'Bekleniyor: ' + names.join(', ') + (quiet ? ' — bağlantı yok, ' + left + ' sn sonra oyundan çıkarılacak' : held ? ' — hamle göndermiyor, ' + hleft + ' sn sonra oyundan çıkarılacak' : '');
+          text = tr('Bekleniyor: {0}', names.join(', ')) + (quiet ? tr(' — bağlantı yok, {0} sn sonra oyundan çıkarılacak', left) : held ? tr(' — hamle göndermiyor, {0} sn sonra oyundan çıkarılacak', hleft) : '');
         }
         // one 'stall' per stall period ('resume' ends it); text changes meanwhile come as 'stallUpdate'
         if (!this._stallEmitted || text !== this._stallText) {

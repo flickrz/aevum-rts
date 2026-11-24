@@ -3,9 +3,10 @@
 // screen. The rules live in sim/tutorial.js; this only reads game.quests.s and reports UI facts through ack().
 import { UNITS, BUILDINGS } from '../data.js';
 import { TUT_CFG, SPEAKER } from '../sim/tutorial.js';
+import { tr } from '../i18n.js';
 
-const CAT_NAMES = { eco: 'İnşa: Ekonomi', mil: 'İnşa: Askeri', def: 'İnşa: Savunma' };
-const STANCE_NAMES = { aggressive: 'Saldırgan', defensive: 'Savunma', hold: 'Mevzi Koru' };
+const CAT_NAMES = { eco: tr('İnşa: Ekonomi'), mil: tr('İnşa: Askeri'), def: tr('İnşa: Savunma') };
+const STANCE_NAMES = { aggressive: tr('Saldırgan'), defensive: tr('Savunma'), hold: tr('Mevzi Koru') };
 const INFO_MS = 6000;      // an info line (Aferin, raid warning) closes by itself after this long
 const MARKER_MS = 2500;    // chapter 2: a ground pulse on the marker this often
 const GOLD = 0xffd84a;
@@ -22,7 +23,7 @@ export class TutorialUI {
     p.append(mk('h4', null, SPEAKER), this.lineEl = mk('div', 'tl'), this.hintEl = mk('div', 'th'));
     const row = mk('div', 'tb');
     this.pageEl = mk('span', 'tp');
-    this.btn = mk('button', 'mbtn small primary', 'Devam');
+    this.btn = mk('button', 'mbtn small primary', tr('Devam'));
     this.btn.onclick = () => { this.ui._click?.(); this._next(); };
     row.append(this.pageEl, this.btn); p.append(row);
     // (the panel must not take the clicks meant for the map under it, but its button must work)
@@ -44,7 +45,7 @@ export class TutorialUI {
     this.lineEl.textContent = this.lines[this.page] || '';
     const n = this.lines.length;
     this.pageEl.textContent = n > 1 ? (this.page + 1) + '/' + n : '';
-    this.btn.textContent = this.kind === 'hint' || this.kind === 'info' ? 'Tamam' : 'Devam';
+    this.btn.textContent = this.kind === 'hint' || this.kind === 'info' ? tr('Tamam') : tr('Devam');
     if (this.kind === 'info' && this.page < n - 1) this.btn.textContent = 'Devam';
   }
   _next() {
@@ -58,9 +59,9 @@ export class TutorialUI {
     if (this.kind === 'intro' || this.kind === 'end') return;
     this.kind = 'hint'; this.lines = [];
     this.lineEl.classList.add('hidden'); this.hintEl.classList.remove('hidden');
-    this.hintEl.textContent = h.text; this.pageEl.textContent = ''; this.btn.textContent = 'Tamam';
+    this.hintEl.textContent = h.text; this.pageEl.textContent = ''; this.btn.textContent = tr('Tamam');
     this.el.classList.remove('hidden');
-    if (h.x != null && h.z != null) { this._ping(h.x, h.z); this.ui.toast?.('Bilge Ayaz bir yer gösterdi. Gitmek için tıkla.','info', h.x, h.z); }
+    if (h.x != null && h.z != null) { this._ping(h.x, h.z); this.ui.toast?.(tr('Bilge Ayaz bir yer gösterdi. Gitmek için tıkla.'),'info', h.x, h.z); }
   }
   // (several pings at once - the gather chapter points at three resources - play the flare sound once)
   _ping(x, z) {
@@ -83,11 +84,11 @@ export class TutorialUI {
       else if (a === 'grp') add(this.ui.grpEl);
       else {
         if (a === 'age') add(this.ui.ageBtn);   // (the age-up button of the next age box, bottom left)
-        const name = a === 'cat' ? CAT_NAMES[b] : a === 'b' ? BUILDINGS[b]?.name : a === 'u' ? UNITS[b]?.name : a === 'st' ? STANCE_NAMES[b] : null;
+        const name = a === 'cat' ? CAT_NAMES[b] : a === 'b' ? tr(BUILDINGS[b]?.name || '') : a === 'u' ? tr(UNITS[b]?.name || '') : a === 'st' ? STANCE_NAMES[b] : null;
         for (const btn of this.ui.buttons || []) {
           if (!btn || !btn.spec) continue;
           const nm = String(btn.spec.name || '');
-          if ((name && nm === name) || (a === 'age' && nm.startsWith('Çağ Atla')) || (a === 'form' && nm.startsWith('Diziliş'))) add(btn.node);
+          if ((name && nm === name) || (a === 'age' && (nm.startsWith('Çağ Atla') || nm.startsWith(tr('Çağ Atla')))) || (a === 'form' && (nm.startsWith('Diziliş') || nm.startsWith(tr('Diziliş'))))) add(btn.node);
         }
       }
     }
@@ -148,7 +149,7 @@ export class TutorialUI {
     objEl.classList.remove('hidden');
     const steps = objEl.querySelector('.osteps'), ot = objEl.querySelector('.ot'), om = objEl.querySelector('.om'), bar = objEl.querySelector('.obar i');
     const cost = objEl.querySelector('.acost'); if (cost && cost.innerHTML) cost.innerHTML = '';   // (no age cost in the chapter line)
-    const head = 'Öğretici · Bölüm ' + o.n + '/' + o.of + ' · ' + o.title, txt = o.done ? '✔ ' + o.text : o.text, prog = o.done ? 'Tamamlandı' : o.progress;
+    const head = tr('Öğretici · Bölüm {0}/{1}', o.n, o.of) + ' · ' + o.title, txt = o.done ? '✔ ' + o.text : o.text, prog = o.done ? tr('Tamamlandı') : o.progress;
     if (steps.textContent !== head) steps.textContent = head;
     if (ot.textContent !== txt) ot.textContent = txt;
     if (om.textContent !== prog) om.textContent = prog;
@@ -161,17 +162,17 @@ export class TutorialUI {
     const ui = this.ui;
     this.el.classList.add('hidden'); this._clearHl();
     const m = mk('div', 'modal panel');
-    m.append(mk('h1', won ? 'win' : 'lose', won ? 'ZAFER' : 'YENİLGİ'));
-    const d = mk('div', null, won ? 'Öğretici tamamlandı! Artık gerçek bir maça hazırsın. · Süre: ' + fmtTime(this.game.time || 0) : 'Şehir Merkezin düştü. Bilge Ayaz seni bekliyor: yeniden dene.');
+    m.append(mk('h1', won ? 'win' : 'lose', won ? tr('ZAFER') : tr('YENİLGİ')));
+    const d = mk('div', null, won ? tr('Öğretici tamamlandı! Artık gerçek bir maça hazırsın. · Süre: {0}', fmtTime(this.game.time || 0)) : tr('Şehir Merkezin düştü. Bilge Ayaz seni bekliyor: yeniden dene.'));
     d.style.color = 'var(--dim)'; m.append(d);
     const btn = (t, fn, cls = '') => { const b = mk('button', 'mbtn small ' + cls, t); b.onclick = () => { ui._click?.(); fn(); }; m.append(b); };
     const toMenu = () => { ui._closeModal(true); try { this.app.toMenu?.(); } catch (err) { /* ignore */ } ui.showMenu(); };
     if (won) {
-      btn('Ana Menü', toMenu, 'primary');
+      btn(tr('Ana Menü'), toMenu, 'primary');
       btn('Yeni Oyun Kur', () => { toMenu(); try { ui._menuSetup(); } catch (err) { /* ignore */ } });
     } else {
-      btn('Yeniden Başla', () => { ui._closeModal(true); this.app.newGame({ ...TUT_CFG }); }, 'primary');
-      btn('Ana Menü', toMenu);
+      btn(tr('Yeniden Başla'), () => { ui._closeModal(true); this.app.newGame({ ...TUT_CFG }); }, 'primary');
+      btn(tr('Ana Menü'), toMenu);
     }
     return m;
   }

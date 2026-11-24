@@ -1,7 +1,8 @@
+import { tr } from '../i18n.js';
 // Aevum - @claude in the chat inputs (lobby and in-game): typing "@" opens a small list with @claude (arrow keys +
 // Enter/Tab, or a click), and while typing, @claude is highlighted inside the input itself (a mirror of the text
 // drawn over the input, whose own text is made transparent). A line with @claude is feedback for the developer.
-const OPTIONS = [{ tag: '@claude', label: 'Geliştiriciye hata / öneri gönder' }];
+const OPTIONS = [{ tag: '@claude', label: tr('Geliştiriciye hata / öneri gönder') }];
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 export const hasClaude = (t) => /@claude/i.test(String(t || ''));
 

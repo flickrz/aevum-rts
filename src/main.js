@@ -16,6 +16,7 @@ import { AUTH_KEY } from './cloud/auth.js';
 import { GoogleSignIn } from './cloud/google.js';
 import { createNotice, markInterrupted, clearInterrupted } from './net/notice.js';
 import { mountNoticeBanner, hostNameOf } from './ui/notice-ui.js';
+import { tr } from './i18n.js';
 
 const STEP = 1 / 30;
 const AUTOSAVE_EVERY = 90;
@@ -51,7 +52,7 @@ function showError(err) {
       'font:14px/1.5 monospace;padding:12px 16px;white-space:pre-wrap;max-height:50vh;overflow:auto;pointer-events:auto';
     document.body.appendChild(el);
   }
-  el.textContent = 'Aevum bir hatayla karşılaştı:\n' + (err && (err.stack || err.message) || String(err));
+  el.textContent = tr('Aevum bir hatayla karşılaştı:\n') + (err && (err.stack || err.message) || String(err));
 }
 
 const app = {
@@ -146,14 +147,14 @@ const app = {
           map: { size: game.cfg && game.cfg.mapSize, type: game.cfg && game.cfg.mapType, seed: game.cfg && game.cfg.seed } });
       } catch (err) { console.warn('[desync log]', err); }
     };
-    on('saveMismatch', ev => { logDesync('save', ev); notify('⚠ Kayıt ' + ((ev && ev.name) || 'diğer oyuncu') + ' ile farklı çıktı (senkron sorunu olabilir).', 'warn'); });
-    on('desync', ev => { logDesync('desync', ev); status('desync', 'Senkron bozuldu (tik ' + (ev && ev.tick) + '). Oyunlar farklılaştı; durum kayda geçti.', ev); });
+    on('saveMismatch', ev => { logDesync('save', ev); notify(tr('⚠ Kayıt {0} ile farklı çıktı (senkron sorunu olabilir).', (ev && ev.name) || tr('diğer oyuncu')), 'warn'); });
+    on('desync', ev => { logDesync('desync', ev); status('desync', tr('Senkron bozuldu (tik {0}). Oyunlar farklılaştı; durum kayda geçti.', ev && ev.tick), ev); });
     on('peerLeft', ev => {
-      status('peerLeft', ((ev && ev.name) || 'Bir oyuncu') + ' oyundan ayrıldı.', ev);   // netStatus toasts it
+      status('peerLeft', tr('{0} oyundan ayrıldı.', (ev && ev.name) || tr('Bir oyuncu')), ev);   // netStatus toasts it
     });
     on('chat', ev => status('chat', (ev ? ev.name + ': ' + ev.text : ''), ev));
     // the match was paused / resumed for everybody (the menu shows itself while paused)
-    on('pause', ev => { try { app.ui.toast?.((ev.paused ? '⏸ ' : '▶ ') + (ev.by || 'Bir oyuncu') + (ev.paused ? ' oyunu duraklattı' : ' oyunu devam ettirdi'), 'info'); if (!ev.paused) app.ui.menuOpen = false; app.ui._syncPauseMenu?.(); } catch (err) { console.warn(err); } });
+    on('pause', ev => { try { app.ui.toast?.((ev.paused ? '⏸ ' : '▶ ') + (ev.paused ? tr('{0} oyunu duraklattı', ev.by || tr('Bir oyuncu')) : tr('{0} oyunu devam ettirdi', ev.by || tr('Bir oyuncu'))), 'info'); if (!ev.paused) app.ui.menuOpen = false; app.ui._syncPauseMenu?.(); } catch (err) { console.warn(err); } });
     // a teammate's map flare (enemies' flares are not shown)
     on('flare', ev => { try { if (app.game === game && ev && game.isAlly?.(game.me, ev.pid) !== false) app.ui.showFlare?.(ev); } catch (err) { console.warn(err); } });
     on('closed', ev => {
@@ -161,7 +162,7 @@ const app = {
       if (app.net === session) {
         app.net = null;
         if (app.game === game) app.paused = true;   // the match cannot continue without the lockstep
-        status('closed', ev && ev.reason === 'dropped' ? 'Bağlantı koptu, oyundan düşürüldün.' : 'Çok oyunculu oturum kapandı.', ev);
+        status('closed', ev && ev.reason === 'dropped' ? tr('Bağlantı koptu, oyundan düşürüldün.') : tr('Çok oyunculu oturum kapandı.'), ev);
       }
     });
     return game;
@@ -173,7 +174,7 @@ const app = {
     const N = game.map ? game.map.size : 0;
     x = Math.max(0, Math.min(N, x)); z = Math.max(0, Math.min(N, z));
     if (app.net && game.mp) { if (!app.net.flare(x, z)) return false; }
-    try { app.ui.showFlare?.({ pid: game.me, name: 'Sen', x, z, mine: true }); } catch (err) { console.warn(err); }
+    try { app.ui.showFlare?.({ pid: game.me, name: tr('Sen'), x, z, mine: true }); } catch (err) { console.warn(err); }
     return true;
   },
 
@@ -199,7 +200,7 @@ const app = {
     if (app.game && app.game.mp) return !!(app.net && app.net.phase === 'game' && app.net.requestSave(key === 'auto'));
     if (!app.game || app.demo || app.game.mp) return false;
     // the tutorial is never saved (autosave, F5, hidden tab): closing it starts it again from the menu
-    if (app.game.cfg.tutorial) { if (key !== 'auto') app.game.events.emit('notify', { text: 'Öğretici modunda kayıt kapalı.', type: 'info' }); return false; }
+    if (app.game.cfg.tutorial) { if (key !== 'auto') app.game.events.emit('notify', { text: tr('Öğretici modunda kayıt kapalı.'), type: 'info' }); return false; }
     const auto = key === 'auto';
     const time = Date.now();
     const k = key || ('manual-' + time);
@@ -210,13 +211,13 @@ const app = {
       const hc = histCtx.get(app.game);
       // the autosave slot still holds another match that has not reached the cloud yet: keep it (see keepAutoSlot)
       if (auto && cloudOn()) { try { await cloud.keepAutoSlot(hc && hc.matchId); } catch (err) { console.warn('[save]', err); } }
-      ok = await storage.put(k, { name: (auto ? 'Otomatik Kayıt — ' : 'Kayıt — ') + stamp, time, matchId: hc && hc.matchId, owner: ownerUid(), data: app.game.serialize() });
+      ok = await storage.put(k, { name: (auto ? tr('Otomatik Kayıt — ') : tr('Kayıt — ')) + stamp, time, matchId: hc && hc.matchId, owner: ownerUid(), data: app.game.serialize() });
       if (ok) cloudSafe(c => c.onSaved(k, { auto, game: hc && hc.matchId }));
     } catch (err) { console.warn('[save]', err); }
     if (!auto || !ok) {
       app.game.events.emit('notify', ok
-        ? { text: 'Oyun kaydedildi.', type: 'good' }
-        : { text: 'Oyun kaydedilemedi!', type: 'warn' });
+        ? { text: tr('Oyun kaydedildi.'), type: 'good' }
+        : { text: tr('Oyun kaydedilemedi!'), type: 'warn' });
     }
     return ok;
   },
@@ -225,9 +226,9 @@ const app = {
     if (app.net) return false;
     app.lastLoadError = '';
     let rec;
-    try { rec = await app.getSave(key); } catch (err) { app.lastLoadError = (err && err.message) || 'Kayıt indirilemedi.'; return false; }
+    try { rec = await app.getSave(key); } catch (err) { app.lastLoadError = (err && err.message) || tr('Kayıt indirilemedi.'); return false; }
     try {
-      if (!rec || !rec.data || rec.mp) { app.lastLoadError = 'Kayıt okunamadı.'; return false; }   // multiplayer saves continue through "Kayıtlı Maça Devam Et"
+      if (!rec || !rec.data || rec.mp) { app.lastLoadError = tr('Kayıt okunamadı.'); return false; }   // multiplayer saves continue through "Kayıtlı Maça Devam Et"
       attachGame(Game.deserialize(rec.data), false);
       // the same match id as before the save: finishing a loaded game updates its one history record
       if (!app.game.cfg.sandbox && !app.game.cfg.tutorial) histCtx.set(app.game, { mode: 'sp', matchId: /^[0-9a-f]{16}$/.test(rec.matchId || '') ? rec.matchId : profile.newMatchId(), mt: tpStart('sp') });
@@ -247,7 +248,7 @@ const app = {
       try { const rec = await cloud.downloadSave(it.ck, key); saveIndex.set(key, Object.assign({}, it, { cloud: 'synced' })); return rec; } catch (err) {
         const local = it.cloud === 'newer' ? await storage.get(key) : null;
         if (local) { console.warn('[cloud] download failed, using the local copy', err); return local; }
-        throw new Error('Buluttaki kayıt indirilemedi: ' + ((err && err.message) || err));
+        throw new Error(tr('Buluttaki kayıt indirilemedi: {0}', (err && err.message) || err));
       }
     }
     return storage.get(key);
@@ -256,7 +257,7 @@ const app = {
   async deleteSave(key, opts = {}) {
     const it = saveIndex.get(key);
     if (opts.cloud && it && it.ck && cloudOn()) {
-      try { await cloud.deleteCloudSave(it.ck); } catch (err) { return { ok: false, error: 'Buluttan silinemedi (' + (err && err.kind === 'network' ? 'çevrimdışı' : (err && err.message) || err) + ').' }; }
+      try { await cloud.deleteCloudSave(it.ck); } catch (err) { return { ok: false, error: tr('Buluttan silinemedi ({0}).', err && err.kind === 'network' ? tr('çevrimdışı') : (err && err.message) || err) }; }
     }
     if (!it || it.cloud !== 'only') await storage.del(key);
     saveIndex.delete(key);
@@ -285,7 +286,7 @@ const app = {
   createProfile(name) { const p = profile.createProfile(LS, name); memProfile = p.saved ? null : p; return p; },
   renameProfile(name) {
     // the account profile's name is unique in the cloud: it is renamed through the Profil screen (cloud.rename)
-    if (cloudOn()) return { ok: false, profile: app.getProfile(), error: 'Hesabına bağlı adını Profil ekranından değiştirebilirsin.', saved: false };
+    if (cloudOn()) return { ok: false, profile: app.getProfile(), error: tr('Hesabına bağlı adını Profil ekranından değiştirebilirsin.'), saved: false };
     const r = profile.renameProfile(LS, name, memProfile);
     if (r.ok && (memProfile || !r.saved)) memProfile = r.saved && profile.loadProfile(LS) ? null : r.profile;
     return r;
@@ -306,7 +307,7 @@ const app = {
   async clearHistory() {
     if (!cloud || (!cloud.loggedIn && !cloud.accountUids().length)) return storage.historyClear();
     const ids = (await app.listHistory()).map(r => r.id);
-    if (cloud.loggedIn) { try { await cloud.deleteHistory(ids); } catch (err) { return 'Buluttaki geçmiş silinemedi (' + (err && err.kind === 'network' ? 'çevrimdışı' : (err && err.message) || err) + ').'; } }
+    if (cloud.loggedIn) { try { await cloud.deleteHistory(ids); } catch (err) { return tr('Buluttaki geçmiş silinemedi ({0}).', err && err.kind === 'network' ? tr('çevrimdışı') : (err && err.message) || err); } }
     return storage.historyDelete(ids);
   },
   recordGame(game, final) { return recordGame(game || app.game, !!final); },
@@ -345,17 +346,17 @@ function saveMpRecord(session, game, ev) {
     const humans = game.players.filter(p => !p.isAI).map(p => p.name).join(', ');
     const mins = Math.floor(game.tick / 1800);
     rec = {
-      name: (ev.auto ? 'Çok Oyunculu Otomatik — ' : 'Çok Oyunculu — ') + stamp + ' · ' + humans + ' · ' + mins + '. dk',
+      name: (ev.auto ? tr('Çok Oyunculu Otomatik — ') : tr('Çok Oyunculu — ')) + stamp + ' · ' + humans + ' · ' + tr('{0}. dk', mins),
       time, mp: true, code: match, tick: game.tick, me: game.me, hash: ev.hash, by: ev.by, owner: ownerUid(),
       // uid: profile identity of the human in that slot (save metadata only; matched first when the match is continued)
       players: game.players.map((p, i) => ({ name: p.name, uid: p.isAI ? null : profile.cleanUid(session.start0 && session.start0.slots && session.start0.slots[i] && session.start0.slots[i].uid), team: p.team, kind: p.isAI ? 'ai' : 'human', difficulty: p.difficulty || null, color: p.color, left: !!p.left, defeated: !!p.defeated })),
       data: game.serialize(),
     };
     key = storage.MP_PREFIX + match + '-' + (ev.auto ? 'auto' : game.tick);
-  } catch (err) { console.warn('[mp save]', err); game.events.emit('notify', { text: 'Oyun kaydedilemedi!', type: 'warn' }); return; }
+  } catch (err) { console.warn('[mp save]', err); game.events.emit('notify', { text: tr('Oyun kaydedilemedi!'), type: 'warn' }); return; }
   storage.put(key, rec).then(ok => {
-    if (!ok) game.events.emit('notify', { text: 'Oyun kaydedilemedi!', type: 'warn' });
-    else if (!ev.auto) game.events.emit('notify', { text: 'Oyun kaydedildi (çok oyunculu)' + (ev.by && ev.byPid !== game.me ? ' — ' + ev.by + ' kaydetti' : ''), type: 'good' });
+    if (!ok) game.events.emit('notify', { text: tr('Oyun kaydedilemedi!'), type: 'warn' });
+    else if (!ev.auto) game.events.emit('notify', { text: tr('Oyun kaydedildi (çok oyunculu)') + (ev.by && ev.byPid !== game.me ? tr(' — {0} kaydetti', ev.by) : ''), type: 'good' });
     if (ok) cloudSafe(c => c.onSaved(key, { auto: !!ev.auto, game: 'mp-' + rec.code }));
   }).catch(err => console.warn('[mp save]', err));
 }
@@ -383,7 +384,7 @@ function recordGame(game, final) {
       // TP: the server turns the match ticket of this match into points on the signed ledger
       const mt = await ctx.mt;
       const r = mt ? await cloud.tpClaim(mt, rec.result) : null;
-      if (r && r.gained) notifyTp(game, '🏅 +' + r.gained + ' TP (toplam ' + r.tp + ' TP)', 'good');
+      if (r && r.gained) notifyTp(game, tr('🏅 +{0} TP (toplam {1} TP)', r.gained, r.tp), 'good');
       else if (r && r.reason) notifyTp(game, '🏅 ' + r.reason, 'info');
     }
     return rec;
@@ -455,9 +456,9 @@ function initCloud() {
       if (st === lastStatus) return;
       const prev = lastStatus; lastStatus = st;
       const ui = app.ui; if (!ui || ui.mode !== 'hud') return;
-      if (st === 'offline') ui.hint?.('cloud-offline', '☁ Bulut bağlantısı yok; kayıtlar ve maç geçmişi sonra gönderilecek.', 'warn', 120);
-      else if (st === 'expired') ui.hint?.('cloud-expired', '☁ Hesap oturumu sona erdi; Profil ekranından tekrar giriş yap.', 'warn', 300);
-      else if (st === 'synced' && prev === 'offline') ui.hint?.('cloud-back', '☁ Bulut bağlantısı geri geldi.', 'info', 120);
+      if (st === 'offline') ui.hint?.('cloud-offline', tr('☁ Bulut bağlantısı yok; kayıtlar ve maç geçmişi sonra gönderilecek.'), 'warn', 120);
+      else if (st === 'expired') ui.hint?.('cloud-expired', tr('☁ Hesap oturumu sona erdi; Profil ekranından tekrar giriş yap.'), 'warn', 300);
+      else if (st === 'synced' && prev === 'offline') ui.hint?.('cloud-back', tr('☁ Bulut bağlantısı geri geldi.'), 'info', 120);
     });
     window.addEventListener('online', () => cloudSafe(c => c.kick({ pull: 'lazy' })));
     // another tab signed out / into another account: this tab follows (never revives a session signed out there)
@@ -526,10 +527,10 @@ function preUpdateSave() {
       const match = s.match || s.code || 'MP';
       if (s.isHost) { s.requestSave(true); app._mpAutoAt = game.tick + MP_AUTOSAVE_TICKS; }
       markInterrupted({ code: match, key: storage.MP_PREFIX + match + '-auto', host: !!s.isHost, hostName: hostNameOf(s), tick: game.tick | 0 });
-      game.events.emit('notify', { text: '💾 Güncelleme öncesi maç kaydediliyor…', type: 'info' });
+      game.events.emit('notify', { text: tr('💾 Güncelleme öncesi maç kaydediliyor…'), type: 'info' });
     } else if (!game.mp) {
       autosaveT = 0;
-      Promise.resolve(app.saveGame('auto')).then(ok => { if (ok && app.game === game) game.events.emit('notify', { text: '💾 Güncelleme öncesi oyun kaydedildi.', type: 'good' }); });
+      Promise.resolve(app.saveGame('auto')).then(ok => { if (ok && app.game === game) game.events.emit('notify', { text: tr('💾 Güncelleme öncesi oyun kaydedildi.'), type: 'good' }); });
     }
   } catch (err) { console.warn('[notice] save', err); }
 }
@@ -545,8 +546,8 @@ async function checkResumeSave(data, at) {
   if (!rec || (rec.tick | 0) !== at.tick) { const a = await storage.get(base + 'auto'); rec = a && (a.tick | 0) === at.tick ? a : null; }
   if (!rec || rec.hash == null) return null;
   let h;
-  try { h = Game.deserialize(structuredClone(data), { me: 0 }).hash() >>> 0; } catch (err) { console.warn('[resume check]', err); return 'Kurucunun gönderdiği kayıt açılamadı.'; }
-  return h === (rec.hash >>> 0) ? null : 'Kurucunun gönderdiği kayıt, bu maçın sendeki kaydıyla aynı değil.';
+  try { h = Game.deserialize(structuredClone(data), { me: 0 }).hash() >>> 0; } catch (err) { console.warn('[resume check]', err); return tr('Kurucunun gönderdiği kayıt açılamadı.'); }
+  return h === (rec.hash >>> 0) ? null : tr('Kurucunun gönderdiği kayıt, bu maçın sendeki kaydıyla aynı değil.');
 }
 import('./net/session.js').then(m => { m.NetSession.checkResume = checkResumeSave; }).catch(err => console.warn('[resume check]', err));
 
@@ -689,7 +690,7 @@ function boot() {
     if (!on) { if (n) n.remove(); return; }
     if (n) return;
     n = document.createElement('div'); n.id = 'storage-blocked'; n.className = 'storage-blocked';
-    n.textContent = 'Aevum başka bir sekmede (eski sürüm) açık. Kayıtlar ve maç geçmişi için o sekmeyi kapat.';
+    n.textContent = tr('Aevum başka bir sekmede (eski sürüm) açık. Kayıtlar ve maç geçmişi için o sekmeyi kapat.');
     document.body.append(n);
   });
 
