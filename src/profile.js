@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 // Aevum - local player profile + match history logic.
 // Pure functions: storage (a localStorage-like {getItem,setItem,removeItem}), crypto and the clock are injected,
 // so everything here runs in node too (test/profile-test.mjs). Nothing in this file touches the simulation:
@@ -39,11 +40,11 @@ export const newMatchId = (cryptoObj) => randHex(8, cryptoObj);
 // ---------- names ----------
 // -> {ok, name, error}; whitespace runs collapse, control characters are rejected
 export function checkName(raw) {
-  if (typeof raw !== 'string') return { ok: false, name: '', error: 'Ad metin olmalı.' };
+  if (typeof raw !== 'string') return { ok: false, name: '', error: tr('Ad metin olmalı.') };
   const name = raw.replace(/\s+/g, ' ').trim();
   // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\u007f]/.test(raw.replace(/[\t\n\r ]/g, ''))) return { ok: false, name, error: 'Ad geçersiz karakter içeriyor.' };
-  if (name.length < NAME_MIN) return { ok: false, name, error: `Ad en az ${NAME_MIN} karakter olmalı.` };
+  if (/[\u0000-\u001f\u007f]/.test(raw.replace(/[\t\n\r ]/g, ''))) return { ok: false, name, error: tr('Ad geçersiz karakter içeriyor.') };
+  if (name.length < NAME_MIN) return { ok: false, name, error: tr('Ad en az {0} karakter olmalı.', NAME_MIN) };
   if (name.length > NAME_MAX) return { ok: false, name, error: `Ad en fazla ${NAME_MAX} karakter olabilir.` };
   return { ok: true, name, error: '' };
 }
@@ -87,7 +88,7 @@ export function createProfile(ls, name, { cryptoObj, now } = {}) {
 // current: the in-memory session profile (used instead of storage when storage could not keep it)
 export function renameProfile(ls, name, current) {
   const p = (validProfile(current) ? withAvatar({ v: 1, uid: current.uid, name: current.name, created: current.created }, current.avatar) : null) || loadProfile(ls);
-  if (!p) return { ok: false, profile: null, error: 'Profil yok.', saved: false };
+  if (!p) return { ok: false, profile: null, error: tr('Profil yok.'), saved: false };
   const r = checkName(name); if (!r.ok) return { ok: false, profile: p, error: r.error, saved: false };
   p.name = r.name;
   const saved = saveProfile(ls, p);
@@ -228,27 +229,27 @@ function validStats(s) {
 // -> null if valid, else a Turkish reason
 // now: the current time (injected in tests); records dated in the future are rejected
 export function recordError(r, now) {
-  if (!r || typeof r !== 'object' || Array.isArray(r)) return 'kayıt nesne değil';
-  if (typeof r.id !== 'string' || !ID_RE.test(r.id)) return 'geçersiz id';
-  if (!isNum(r.endedAt, 0, (now != null ? now : Date.now()) + FUTURE_MARGIN_MS)) return 'geçersiz tarih';
-  if (!MODES.includes(r.mode)) return 'geçersiz mod';
-  if (!MAP_TYPES.includes(r.mapType)) return 'geçersiz harita türü';
-  if (!MAP_SIZES.includes(r.mapSize)) return 'geçersiz harita boyutu';
-  if (r.difficulty != null && !DIFFS.includes(r.difficulty)) return 'geçersiz zorluk';
-  if (!isNum(r.gameTime, 0, 1e8)) return 'geçersiz süre';
-  if (!RESULTS.includes(r.result)) return 'geçersiz sonuç';
-  if (!isInt(r.myAge, 0, 10)) return 'geçersiz çağ';
-  if (!validStats(r.stats)) return 'geçersiz istatistik';
-  if (r.uid != null && !isUid(r.uid)) return 'geçersiz uid';
-  if (r.me != null && !isInt(r.me, 0, 7)) return 'geçersiz oyuncu no';
-  if (!Array.isArray(r.players) || r.players.length < 1 || r.players.length > 8) return 'geçersiz oyuncu listesi';
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return tr('kayıt nesne değil');
+  if (typeof r.id !== 'string' || !ID_RE.test(r.id)) return tr('geçersiz id');
+  if (!isNum(r.endedAt, 0, (now != null ? now : Date.now()) + FUTURE_MARGIN_MS)) return tr('geçersiz tarih');
+  if (!MODES.includes(r.mode)) return tr('geçersiz mod');
+  if (!MAP_TYPES.includes(r.mapType)) return tr('geçersiz harita türü');
+  if (!MAP_SIZES.includes(r.mapSize)) return tr('geçersiz harita boyutu');
+  if (r.difficulty != null && !DIFFS.includes(r.difficulty)) return tr('geçersiz zorluk');
+  if (!isNum(r.gameTime, 0, 1e8)) return tr('geçersiz süre');
+  if (!RESULTS.includes(r.result)) return tr('geçersiz sonuç');
+  if (!isInt(r.myAge, 0, 10)) return tr('geçersiz çağ');
+  if (!validStats(r.stats)) return tr('geçersiz istatistik');
+  if (r.uid != null && !isUid(r.uid)) return tr('geçersiz uid');
+  if (r.me != null && !isInt(r.me, 0, 7)) return tr('geçersiz oyuncu no');
+  if (!Array.isArray(r.players) || r.players.length < 1 || r.players.length > 8) return tr('geçersiz oyuncu listesi');
   for (const p of r.players) {
-    if (!p || typeof p !== 'object') return 'geçersiz oyuncu';
-    if (typeof p.name !== 'string' || p.name.length > NAME_MAX + 4) return 'geçersiz oyuncu adı';
-    if (p.uid != null && !isUid(p.uid)) return 'geçersiz oyuncu uid';
-    if (!isInt(p.team, 0, 15) || typeof p.ai !== 'boolean') return 'geçersiz oyuncu takımı';
-    if (p.difficulty != null && !DIFFS.includes(p.difficulty)) return 'geçersiz oyuncu zorluğu';
-    if (p.won != null && typeof p.won !== 'boolean') return 'geçersiz oyuncu sonucu';
+    if (!p || typeof p !== 'object') return tr('geçersiz oyuncu');
+    if (typeof p.name !== 'string' || p.name.length > NAME_MAX + 4) return tr('geçersiz oyuncu adı');
+    if (p.uid != null && !isUid(p.uid)) return tr('geçersiz oyuncu uid');
+    if (!isInt(p.team, 0, 15) || typeof p.ai !== 'boolean') return tr('geçersiz oyuncu takımı');
+    if (p.difficulty != null && !DIFFS.includes(p.difficulty)) return tr('geçersiz oyuncu zorluğu');
+    if (p.won != null && typeof p.won !== 'boolean') return tr('geçersiz oyuncu sonucu');
   }
   return null;
 }
@@ -263,16 +264,16 @@ function cleanRecord(r) {
 // strict: any invalid part rejects the whole file. -> {ok, error, profile, history}
 export function validateImport(obj, now) {
   const bad = (error) => ({ ok: false, error, profile: null, history: [] });
-  if (typeof obj === 'string') { try { obj = JSON.parse(obj); } catch { return bad('Dosya geçerli bir JSON değil.'); } }
-  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return bad('Dosya biçimi tanınmadı.');
-  if (obj.format !== EXPORT_FORMAT || obj.v !== 1) return bad('Bu bir Aevum profil dosyası değil.');
+  if (typeof obj === 'string') { try { obj = JSON.parse(obj); } catch { return bad(tr('Dosya geçerli bir JSON değil.')); } }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return bad(tr('Dosya biçimi tanınmadı.'));
+  if (obj.format !== EXPORT_FORMAT || obj.v !== 1) return bad(tr('Bu bir Aevum profil dosyası değil.'));
   const p = obj.profile;
-  if (!validProfile(p)) return bad('Dosyadaki profil geçersiz.');
-  if (!Array.isArray(obj.history)) return bad('Dosyadaki maç geçmişi geçersiz.');
-  if (obj.history.length > MAX_IMPORT) return bad('Dosyada çok fazla maç var.');
+  if (!validProfile(p)) return bad(tr('Dosyadaki profil geçersiz.'));
+  if (!Array.isArray(obj.history)) return bad(tr('Dosyadaki maç geçmişi geçersiz.'));
+  if (obj.history.length > MAX_IMPORT) return bad(tr('Dosyada çok fazla maç var.'));
   for (let i = 0; i < obj.history.length; i++) {
     const e = recordError(obj.history[i], now);
-    if (e) return bad(`Maç ${i + 1}: ${e}.`);
+    if (e) return bad(tr('Maç {0}: {1}.', i + 1, e));
   }
   return { ok: true, error: '', profile: { v: 1, uid: p.uid, name: checkName(p.name).name, created: p.created }, history: obj.history.map(cleanRecord) };
 }

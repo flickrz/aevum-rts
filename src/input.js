@@ -2,6 +2,7 @@
 import { BUILDINGS, UNITS } from './data.js';
 import { RES_ICONS } from './icons.js';
 import { MINE_CAP, NO_ROTATE } from './sim/game.js';
+import { tr } from './i18n.js';
 
 const DRAG_PX = 5;
 // (players 2026-11-22: "you have to push the mouse right to the edge to scroll") the edge zone is wider and the pan
@@ -160,7 +161,7 @@ export class Input {
     const d = BUILDINGS[this.placing], n = plan.filter(p => p.valid).length, want = plan.length;
     const cost = Object.keys(d.cost).map(k => (RES_ICONS[k] || k) + ' ' + d.cost[k] * want).join(' ');
     const l = this.lineLbl, ok = n === want && want > 0;
-    l.innerHTML = want + ' parça · ' + cost + (ok ? '' : ' (' + n + ' yerleşir)');   // (numbers and our icons only)
+    l.innerHTML = tr('{0} parça · {1}', want, cost) + (ok ? '' : ' ' + tr('({0} yerleşir)', n));   // (numbers and our icons only)
     l.style.color = ok ? '#bfffb0' : '#ff7a6a';
     l.style.left = (this.mouse.x + 16) + 'px'; l.style.top = (this.mouse.y + 18) + 'px'; l.style.display = 'block';
   }
@@ -197,7 +198,7 @@ export class Input {
       this.setLineLabel(null);
       if (placed) {
         this.sfx('place');
-        if (want > 1) { try { this.app.ui.toast(placed + ' / ' + want + ' ' + (BUILDINGS[type].name || '') + ' parçası yerleştirildi' + (placed < want ? ' (kaynak yetmedi)' : ''), placed < want ? 'warn' : 'info'); } catch (err) { /* ignore */ } }
+        if (want > 1) { try { this.app.ui.toast(tr('{0} / {1} {2} parçası yerleştirildi', placed, want, tr(BUILDINGS[type].name || '')) + (placed < want ? tr(' (kaynak yetmedi)') : ''), placed < want ? 'warn' : 'info'); } catch (err) { /* ignore */ } }
         this.updateGhost();
         return; // tool stays active: press again to continue the wall
       }
@@ -211,10 +212,10 @@ export class Input {
       try {
         const ui = this.app.ui, d = BUILDINGS[type];
         if (ui && ui.hint) {
-          if (d && d.cost && !this.game.canAfford(this.me(), d.cost)) ui.hint('afford', '⛔ Yetersiz kaynak: ' + (d.name || 'bina') + ' için kaynağın yetmiyor');
-          else if (type === 'dock') ui.hint('place', '⛔ Kıyıya yerleştir: bir kısmı suda olmalı');
-          else if (type === 'gate') ui.hint('place', '⛔ Kapı bitmiş bir sur parçasına ya da boş bir kareye konur');
-          else ui.hint('place', '⛔ Buraya inşa edilemez — boş ve keşfedilmiş bir alan seç');
+          if (d && d.cost && !this.game.canAfford(this.me(), d.cost)) ui.hint('afford', tr('⛔ Yetersiz kaynak: {0} için kaynağın yetmiyor', (d.name ? tr(d.name) : tr('bina'))));
+          else if (type === 'dock') ui.hint('place', tr('⛔ Kıyıya yerleştir: bir kısmı suda olmalı'));
+          else if (type === 'gate') ui.hint('place', tr('⛔ Kapı bitmiş bir sur parçasına ya da boş bir kareye konur'));
+          else ui.hint('place', tr('⛔ Buraya inşa edilemez — boş ve keşfedilmiş bir alan seç'));
         }
       } catch (err) { /* ignore */ }
     }
@@ -223,7 +224,7 @@ export class Input {
   // ---------- one-shot targeting (transport unload, attack-move, patrol) ----------
   startUnload(transportId) {
     if (!this.game.cmdUnload) return false;
-    return this.startTargeting({ kind: 'unload', id: transportId }, '⚓ Boşaltma noktası: kıyıya sol tık · Esc / sağ tık: iptal');
+    return this.startTargeting({ kind: 'unload', id: transportId }, tr('⚓ Boşaltma noktası: kıyıya sol tık · Esc / sağ tık: iptal'));
   }
   // kind 'amove' / 'patrol': the next left click on the ground gives the order to the selected units (Shift: queued)
   startGroundCmd(kind) {
@@ -231,7 +232,7 @@ export class Input {
     return this.startTargeting({ kind }, this.groundCmdLabel(kind));
   }
   groundCmdLabel(kind) {
-    return kind === 'patrol' ? '🔁 Devriye: hedef noktaya sol tık · Shift: sıraya ekle · Esc / sağ tık: iptal' : '⚔ Saldırarak yürü: hedef noktaya sol tık · Shift: sıraya ekle · Esc / sağ tık: iptal';
+    return kind === 'patrol' ? tr('🔁 Devriye: hedef noktaya sol tık · Shift: sıraya ekle · Esc / sağ tık: iptal') : tr('⚔ Saldırarak yürü: hedef noktaya sol tık · Shift: sıraya ekle · Esc / sağ tık: iptal');
   }
   startTargeting(t, label) {
     this.cancelPlacement();
@@ -417,7 +418,7 @@ export class Input {
       if (!p) return;
       let ok = false;
       for (const id of blds) ok = game.setRally(id, p.x, p.z, work ? target.id : null) || ok;
-      if (ok) { r.addMarker(p.x, p.z, work ? C_GATHER : C_RALLY); this.sfx('command'); if (work) app.ui?.hint?.('rallywork', '🚩 Yeni köylüler doğrudan burada çalışacak', 'info', 4); }
+      if (ok) { r.addMarker(p.x, p.z, work ? C_GATHER : C_RALLY); this.sfx('command'); if (work) app.ui?.hint?.('rallywork', tr('🚩 Yeni köylüler doğrudan burada çalışacak'), 'info', 4); }
       return;
     }
 
@@ -685,7 +686,7 @@ export class Input {
   nextIdleVillager(all = false) {
     const idle = this.game.unitsOf(this.me()).filter(u => u.type === 'villager' && u.state === 'idle' && !u.dead);
     if (!idle.length) {
-      this.game.events.emit('notify', { text: 'Boşta köylü yok.', type: 'info' });
+      this.game.events.emit('notify', { text: tr('Boşta köylü yok.'), type: 'info' });
       return;
     }
     if (all) {
@@ -732,7 +733,7 @@ export class Input {
     const fake = (x, y, button) => ({ clientX: x, clientY: y, button, shiftKey: false, altKey: false, ctrlKey: false, preventDefault() {} });
     const mid = () => { const p = [...T.pts.values()]; return { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) }; };
     this.dropBtn = document.createElement('button');
-    this.dropBtn.textContent = 'Bırak';
+    this.dropBtn.textContent = tr('Bırak');
     this.dropBtn.className = 'mbtn small touch-drop';
     this.dropBtn.style.cssText = 'position:fixed;right:calc(12px + env(safe-area-inset-right));top:52px;z-index:40;display:none';
     this.dropBtn.onclick = () => { this.app.select([]); };

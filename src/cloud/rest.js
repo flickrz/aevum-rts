@@ -1,3 +1,4 @@
+import { tr } from '../i18n.js';
 // Aevum - minimal Firebase REST client (Identity Toolkit, Secure Token, Firestore v1).
 // Plain fetch only (no SDK, no build step); fetch is injected so the same code runs in node tests against a
 // fake server. Nothing here knows about the game.
@@ -43,7 +44,7 @@ export async function call(fetchFn, url, init, timeoutMs = 20000) {
     if (ctl && timeoutMs > 0) timer = setTimeout(() => { try { ctl.abort(); } catch (e) { /* ignore */ } }, timeoutMs);
     res = await fetchFn(url, Object.assign({}, init, ctl ? { signal: ctl.signal } : {}));
   } catch (err) {
-    throw new CloudError('network', 'NETWORK', 'Ağ hatası: ' + ((err && err.message) || err));
+    throw new CloudError('network', 'NETWORK', tr('Ağ hatası: {0}', (err && err.message) || err));
   } finally { if (timer) clearTimeout(timer); }
   let body = null;
   try { const t = await res.text(); body = t ? JSON.parse(t) : null; } catch (e) { body = null; }

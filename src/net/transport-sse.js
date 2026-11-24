@@ -3,6 +3,7 @@
 // closed for good (server restarted, HTTP error) or goes silent (no heartbeat for 40 s) it is re-opened with backoff
 // (0.4 s -> 3 s) under the SAME peer id, so the relay rebuilds the room and the match goes on.
 import { PollTransport, backoff, identMixin } from './transport-poll.js';
+import { tr } from '../i18n.js';
 function rid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
 
 export class SSETransport {
@@ -27,7 +28,7 @@ export class SSETransport {
     this._run = true;
     return new Promise((resolve, reject) => {
       let done = false;
-      const to = setTimeout(() => { if (!done) { done = true; this.close(); reject(new Error('Sunucuya bağlanılamadı (node server.js çalışıyor mu?).')); } }, 6000);
+      const to = setTimeout(() => { if (!done) { done = true; this.close(); reject(new Error(tr('Sunucuya bağlanılamadı (node server.js çalışıyor mu?).'))); } }, 6000);
       this._onHello = () => { if (!done) { done = true; clearTimeout(to); resolve(); } };
       this._open();
       this._wd = setInterval(() => {

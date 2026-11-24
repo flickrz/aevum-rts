@@ -19,6 +19,7 @@ import { googleMessage, googleCode } from './google.js';
 import { firestoreApi, CloudError } from './rest.js';
 import { packSave, unpackSave } from './codec.js';
 import { isAvatar, defaultAvatar, avatarOf } from '../avatars.js';
+import { tr } from '../i18n.js';
 
 export const MAX_CLOUD_SAVES = 30;
 export const MAX_CLOUD_AUTOS = 10;                   // autosaves kept in the cloud (every match makes one; the oldest go first)
@@ -66,7 +67,7 @@ export function nameCandidate(base, i, rnd = Math.random) {
   const suf = i < 20 ? String(i + 1) : String(1000 + Math.floor(rnd() * 9000));
   return base.slice(0, P.NAME_MAX - suf.length) + suf;
 }
-export const STATUS_TR = { guest: 'Giriş yapılmadı', synced: 'Senkronize', pending: 'Bekliyor', offline: 'Çevrimdışı', expired: 'Oturum süresi doldu', busy: 'Senkronize ediliyor' };
+export const STATUS_TR = { guest: tr('Giriş yapılmadı'), synced: tr('Senkronize'), pending: tr('Bekliyor'), offline: tr('Çevrimdışı'), expired: tr('Oturum süresi doldu'), busy: tr('Senkronize ediliyor') };
 
 // ---------------------------------------------------------------- pure helpers (tested directly)
 // names/{key}: unique case-insensitively, Turkish casing included: İ / I / ı / i (and i + combining dot) all fold
@@ -191,7 +192,7 @@ export class CloudSync {
   // without reaching the network, so the queued writes simply wait. The jitter spreads the tabs that resume.
   _gated(api) {
     const gate = (fn) => async (...a) => {
-      if (this.quotaWait() > 0) throw new CloudError('quota', 'QUOTA_WAIT', 'Bulut kotası doldu; daha sonra tekrar denenecek.', 429);
+      if (this.quotaWait() > 0) throw new CloudError('quota', 'QUOTA_WAIT', tr('Bulut kotası doldu; daha sonra tekrar denenecek.'), 429);
       try { return await fn(...a); } catch (e) {
         if (e && e.kind === 'quota') lsSet(this.ls, QUOTA_KEY, String(this.now() + QUOTA_WAIT + Math.floor(Math.random() * QUOTA_JITTER)));
         throw e;
@@ -264,7 +265,7 @@ export class CloudSync {
   // the current session: account uid + sign-in generation (a sign out and in again is a new session)
   _sid() { return this.auth.user ? this.auth.user.uid + ':' + this.auth._gen : null; }
   // a sync step started for session `sid` stops as soon as the session changed (sign out / another sign in)
-  _alive(sid) { if (sid != null && this._sid() !== sid) throw new CloudError('stale', 'SESSION_CHANGED', 'Oturum değişti.'); }
+  _alive(sid) { if (sid != null && this._sid() !== sid) throw new CloudError('stale', 'SESSION_CHANGED', tr('Oturum değişti.')); }
 
   // ---------- account ----------
   // ---------- sign in with Google ----------
@@ -273,7 +274,7 @@ export class CloudSync {
   //        allowRedirect: popup blocked -> signInWithRedirect (the page leaves; finishGoogleRedirect() on load)}
   // -> {ok, error, silent (show nothing), redirecting, cancelled, newAccount, ...the _attach result}
   async loginGoogle(opts = {}) {
-    if (!this.google) return fail('Google ile giriş bu tarayıcıda kullanılamıyor.');
+    if (!this.google) return fail(tr('Google ile giriş bu tarayıcıda kullanılamıyor.'));
     let c;
     try { c = await this.google.signIn({ allowRedirect: opts.allowRedirect !== false }); } catch (e) { return this._googleFail(e); }
     if (c && c.redirecting) return fail('', { redirecting: true, silent: true });
@@ -315,20 +316,20 @@ export class CloudSync {
               if (!mine) { this.auth.signOut(); return fail(authMessage(e)); }
               claimed = n.name;
             }
-            if (!this.auth.user || this.auth.user.uid !== c.uid) return fail('Oturum değişti.');
+            if (!this.auth.user || this.auth.user.uid !== c.uid) return fail(tr('Oturum değişti.'));
           }
         }
         for (let tries = 0; tries < 50 && !claimed; tries++) {
           let name = suggest;
           if (opts.askName) { try { name = await opts.askName({ suggest, error, email: this.auth.user ? this.auth.user.email : '' }); } catch (e) { name = null; } }
           if (name == null) { this.auth.signOut(); return fail('', { cancelled: true, silent: true }); }
-          if (!this.auth.user || this.auth.user.uid !== c.uid) return fail('Oturum değişti.');
+          if (!this.auth.user || this.auth.user.uid !== c.uid) return fail(tr('Oturum değişti.'));
           const n = P.checkName(String(name));
           suggest = n.name || String(name);
           if (!n.ok) error = n.error;
           else {
             try {
-              if (await this._claim(n.name)) claimed = n.name; else error = 'Bu ad alınmış. Başka bir ad seç.';
+              if (await this._claim(n.name)) claimed = n.name; else error = tr('Bu ad alınmış. Başka bir ad seç.');
             } catch (e) {
               // the claim may have been committed before the connection dropped: look once
               let mine = false;
@@ -339,7 +340,7 @@ export class CloudSync {
           }
           if (!claimed && !opts.askName) break;
         }
-        if (!claimed) { this.auth.signOut(); return fail(error || 'Bu ad alınmış.', { nameTaken: true }); }
+        if (!claimed) { this.auth.signOut(); return fail(error || tr('Bu ad alınmış.'), { nameTaken: true }); }
         // the account takes over this PC's guest profile (its uid stays the multiplayer identity) with the new name
         if (guest) this.o.profile.set({ v: 1, uid: guest.uid, name: claimed, created: guest.created, avatar: avatarOf(guest.avatar, guest.uid) });
         else { const np = this.o.profile.create(claimed); if (np && !isAvatar(np.avatar)) this.o.profile.set(Object.assign({}, np, { avatar: defaultAvatar(np.uid) })); }
@@ -368,7 +369,7 @@ export class CloudSync {
       if (!p) p = this.o.profile.create(local ? local.name : nameFromEmail(this.auth.user.email));
       try {
         // (normally claimed by the caller: the user name dialog of a new account)
-        if (!(opts.claimed || await this._claim(p.name))) { this.auth.signOut(); return fail('Bu ad alınmış. Başka bir ad seç.', { nameTaken: true }); }
+        if (!(opts.claimed || await this._claim(p.name))) { this.auth.signOut(); return fail(tr('Bu ad alınmış. Başka bir ad seç.'), { nameTaken: true }); }
         await this.fs.commit([{ set: this._base() + '/meta/profile', data: { uid: p.uid, name: p.name, created: p.created, avatar: avatarOf(p.avatar, p.uid) } }]);
       } catch (e) { this.auth.signOut(); return fail(authMessage(e)); }
       if (!isAvatar(p.avatar)) this.o.profile.set(Object.assign({}, p, { avatar: defaultAvatar(p.uid) }));
@@ -475,7 +476,7 @@ export class CloudSync {
   }
   // rename the account profile: claim the new name, then release the old one
   async rename(name) {
-    if (!this.loggedIn) return fail('Giriş yapılmadı.');
+    if (!this.loggedIn) return fail(tr('Giriş yapılmadı.'));
     const n = P.checkName(name);
     if (!n.ok) return fail(n.error);
     let p = this.o.profile.get();
@@ -486,14 +487,14 @@ export class CloudSync {
       const cur = await this.fs.get(this._base() + '/meta/profile');
       if (cur && cur.data && P.isUid(cur.data.uid) && cur.data.uid === p.uid && P.checkName(cur.data.name || '').ok) oldKey = nameKey(cur.data.name);
       if (newKey !== oldKey) {
-        if (!(await this._claim(n.name))) return fail('Bu ad alınmış.');
+        if (!(await this._claim(n.name))) return fail(tr('Bu ad alınmış.'));
         claimedNew = true;
       }
       await this.fs.commit([{ set: this._base() + '/meta/profile', data: { uid: p.uid, name: n.name, created: p.created, avatar: avatarOf(p.avatar, p.uid) } }]);
     } catch (e) {
       // the new name was claimed but the profile still has the old one: give the new name back (best effort)
       if (claimedNew) { try { await this._release(newKey); } catch (x) { /* queued / ignore */ } }
-      return fail(e.kind === 'network' ? 'Çevrimdışı: ad şu an değiştirilemiyor.' : authMessage(e));
+      return fail(e.kind === 'network' ? tr('Çevrimdışı: ad şu an değiştirilemiyor.') : authMessage(e));
     }
     if (newKey !== oldKey) { try { await this._release(oldKey); } catch (e) { /* session gone: nothing to do */ } }
     p = this.o.profile.get() || p;
@@ -506,14 +507,14 @@ export class CloudSync {
   }
   // pick another avatar (src/avatars.js) -> {ok, error, profile}
   async setAvatar(id) {
-    if (!this.loggedIn) return fail('Giriş yapılmadı.');
-    if (!isAvatar(id)) return fail('Geçersiz avatar.');
+    if (!this.loggedIn) return fail(tr('Giriş yapılmadı.'));
+    if (!isAvatar(id)) return fail(tr('Geçersiz avatar.'));
     const p = this.o.profile.get();
     if (!p) return fail('Profil yok.');
     const name = this._st().name || p.name;
     try {
       await this.fs.commit([{ set: this._base() + '/meta/profile', data: { uid: p.uid, name, created: p.created, avatar: id } }]);
-    } catch (e) { return fail(e.kind === 'network' ? 'Çevrimdışı: avatar şu an değiştirilemiyor.' : authMessage(e)); }
+    } catch (e) { return fail(e.kind === 'network' ? tr('Çevrimdışı: avatar şu an değiştirilemiyor.') : authMessage(e)); }
     const np = Object.assign({}, this.o.profile.get() || p, { avatar: id });
     this.o.profile.set(np);
     const st = this._st(); st.card = null; this._save();
@@ -571,16 +572,16 @@ export class CloudSync {
     const headers = { 'Content-Type': 'application/json' };
     if (ticket) headers['X-Aevum-Ticket'] = ticket;
     let r;
-    try { r = await this.relayFetch(this.relayBase + pathname, { method: 'POST', headers, body: JSON.stringify(body || {}) }); } catch (e) { throw new CloudError('network', 'NETWORK', 'Oyun sunucusuna ulaşılamadı.'); }
+    try { r = await this.relayFetch(this.relayBase + pathname, { method: 'POST', headers, body: JSON.stringify(body || {}) }); } catch (e) { throw new CloudError('network', 'NETWORK', tr('Oyun sunucusuna ulaşılamadı.')); }
     let j = null; try { j = await r.json(); } catch (e) { j = null; }
-    if (!r.ok) throw new CloudError(r.status === 401 || r.status === 403 ? 'auth' : r.status >= 500 ? 'server' : 'bad', 'RELAY_' + r.status, (j && j.error) || ('Sunucu hatası (' + r.status + ').'), r.status);
+    if (!r.ok) throw new CloudError(r.status === 401 || r.status === 403 ? 'auth' : r.status >= 500 ? 'server' : 'bad', 'RELAY_' + r.status, (j && j.error) || tr('Sunucu hatası ({0}).', r.status), r.status);
     return j || {};
   }
   // the relay ticket of this account: the server verified our Google session and read our profile -> {ticket, ident, exp}
   // (2026-11-23) each /mp/auth costs the server 3-4 Firestore reads: the 12 h ticket is kept in localStorage and
   // reused by reloads and other tabs until 10 minutes before it expires. fresh: a new one (a transport reconnect).
   async relayTicket(fresh = false) {
-    if (!this.loggedIn) throw new CloudError('auth', 'NO_SESSION', 'Giriş yapılmadı.');
+    if (!this.loggedIn) throw new CloudError('auth', 'NO_SESSION', tr('Giriş yapılmadı.'));
     const fb0 = this.auth.user.uid;
     const have = this._tktHeld();
     if (!fresh && have && have.exp - this.now() > 10 * 60 * 1000) return have;
@@ -602,7 +603,7 @@ export class CloudSync {
           if (e && TKT_SLOW.includes(e.status) && this.auth.user && this.auth.user.uid === fb) this._tktErr = { fb, until: this.now() + TKT_SLOW_MS, e };
           throw e;
         }
-        if (!this.auth.user || this.auth.user.uid !== fb) throw new CloudError('stale', 'SESSION_CHANGED', 'Oturum değişti.');
+        if (!this.auth.user || this.auth.user.uid !== fb) throw new CloudError('stale', 'SESSION_CHANGED', tr('Oturum değişti.'));
         this._setTicket({ ticket: r.ticket, ident: r.ident, exp: r.exp, fb, owner: r.owner === true });
         if (reread) this._tktReread = false;
         this._tktErr = null;
@@ -649,9 +650,9 @@ export class CloudSync {
   async stats() {
     const t = await this.relayTicket();
     let r;
-    try { r = await this.relayFetch(this.relayBase + '/mp/stats', { cache: 'no-store', headers: { 'X-Aevum-Ticket': t.ticket } }); } catch (e) { throw new CloudError('network', 'NETWORK', 'Oyun sunucusuna ulaşılamadı.'); }
+    try { r = await this.relayFetch(this.relayBase + '/mp/stats', { cache: 'no-store', headers: { 'X-Aevum-Ticket': t.ticket } }); } catch (e) { throw new CloudError('network', 'NETWORK', tr('Oyun sunucusuna ulaşılamadı.')); }
     if (r.status === 401) this._dropTicket();
-    if (!r.ok) throw new CloudError('server', 'STATS_' + r.status, r.status === 403 ? 'Bu ekran yalnızca oyunun sahibine açık.' : 'İstatistikler alınamadı (' + r.status + ').', r.status);
+    if (!r.ok) throw new CloudError('server', 'STATS_' + r.status, r.status === 403 ? tr('Bu ekran yalnızca oyunun sahibine açık.') : tr('İstatistikler alınamadı ({0}).', r.status), r.status);
     return r.json();
   }
   // a match starts -> the server's match ticket (null when it cannot be had: no TP for this match then).
@@ -689,7 +690,7 @@ export class CloudSync {
         this._emit(); this.kick();
       }
       return { ok: !!r.ok, gained: r.gained | 0, tp: r.tp | 0, reason: r.reason || '' };
-    } catch (e) { console.warn('[tp] claim', e && e.message); return { ok: false, gained: 0, tp: this.tp.tp, reason: 'TP şu an hesaplanamadı (' + ((e && e.message) || e) + ').' }; }
+    } catch (e) { console.warn('[tp] claim', e && e.message); return { ok: false, gained: 0, tp: this.tp.tp, reason: tr('TP şu an hesaplanamadı ({0}).', (e && e.message) || e) }; }
   }
 
   // ---------- friends ----------
@@ -732,8 +733,8 @@ export class CloudSync {
     return list.slice();
   }
   async addFriend(card) {
-    if (!this.loggedIn || !card || typeof card.fb !== 'string' || !/^[A-Za-z0-9]{1,128}$/.test(card.fb)) return fail('Oyuncu bulunamadı.');
-    if (card.fb === this.auth.user.uid) return fail('Kendini arkadaş olarak ekleyemezsin.');
+    if (!this.loggedIn || !card || typeof card.fb !== 'string' || !/^[A-Za-z0-9]{1,128}$/.test(card.fb)) return fail(tr('Oyuncu bulunamadı.'));
+    if (card.fb === this.auth.user.uid) return fail(tr('Kendini arkadaş olarak ekleyemezsin.'));
     const data = { name: String(card.name || 'Oyuncu').slice(0, P.NAME_MAX), avatar: isAvatar(card.avatar) ? card.avatar : null, added: this.now() };
     try { await this.fs.commit([{ set: this._base() + '/friends/' + card.fb, data }]); } catch (e) { return fail(authMessage(e)); }
     if (this._friends && this.auth.user && this._friends.fb === this.auth.user.uid) {
@@ -743,7 +744,7 @@ export class CloudSync {
     return { ok: true, error: '' };
   }
   async removeFriend(fb) {
-    if (!this.loggedIn || !/^[A-Za-z0-9]{1,128}$/.test(String(fb))) return fail('Geçersiz.');
+    if (!this.loggedIn || !/^[A-Za-z0-9]{1,128}$/.test(String(fb))) return fail(tr('Geçersiz.'));
     try { await this.fs.commit([{ del: this._base() + '/friends/' + fb }]); } catch (e) { return fail(authMessage(e)); }
     if (this._friends) this._friends.list = this._friends.list.filter((x) => x.fb !== String(fb));
     return { ok: true, error: '' };
@@ -765,9 +766,9 @@ export class CloudSync {
     if (!this.loggedIn) return { total: 0, players: [] };
     const t = await this.relayTicket();
     let r;
-    try { r = await this.relayFetch(this.relayBase + '/mp/players', { cache: 'no-store', headers: { 'X-Aevum-Ticket': t.ticket } }); } catch (e) { throw new CloudError('network', 'NETWORK', 'Oyun sunucusuna ulaşılamadı.'); }
+    try { r = await this.relayFetch(this.relayBase + '/mp/players', { cache: 'no-store', headers: { 'X-Aevum-Ticket': t.ticket } }); } catch (e) { throw new CloudError('network', 'NETWORK', tr('Oyun sunucusuna ulaşılamadı.')); }
     if (r.status === 401) this._dropTicket();
-    if (!r.ok) throw new CloudError('server', 'PLAYERS_' + r.status, 'Oyuncu listesi alınamadı (' + r.status + ').', r.status);
+    if (!r.ok) throw new CloudError('server', 'PLAYERS_' + r.status, tr('Oyuncu listesi alınamadı ({0}).', r.status), r.status);
     const j = await r.json();
     return { total: j.total | 0, players: Array.isArray(j.players) ? j.players : [] };
   }
@@ -776,9 +777,9 @@ export class CloudSync {
     if (!this.loggedIn) return { total: 0, rooms: [] };
     const t = await this.relayTicket();
     let r;
-    try { r = await this.relayFetch(this.relayBase + '/mp/rooms', { cache: 'no-store', headers: { 'X-Aevum-Ticket': t.ticket } }); } catch (e) { throw new CloudError('network', 'NETWORK', 'Oyun sunucusuna ulaşılamadı.'); }
+    try { r = await this.relayFetch(this.relayBase + '/mp/rooms', { cache: 'no-store', headers: { 'X-Aevum-Ticket': t.ticket } }); } catch (e) { throw new CloudError('network', 'NETWORK', tr('Oyun sunucusuna ulaşılamadı.')); }
     if (r.status === 401) this._dropTicket();
-    if (!r.ok) throw new CloudError('server', 'ROOMS_' + r.status, 'Oda listesi alınamadı (' + r.status + ').', r.status);
+    if (!r.ok) throw new CloudError('server', 'ROOMS_' + r.status, tr('Oda listesi alınamadı ({0}).', r.status), r.status);
     const j = await r.json();
     return { total: j.total | 0, rooms: Array.isArray(j.rooms) ? j.rooms : [] };
   }
@@ -825,12 +826,12 @@ export class CloudSync {
   // Google asks for a fresh sign in first (Firebase refuses to delete an account signed in long ago); then every
   // document of the account goes, then the Firebase account itself. local: {history(uid), saves(uid)} cleanup hooks.
   async deleteAccount(opts = {}) {
-    if (!this.loggedIn) return fail('Giriş yapılmadı.');
+    if (!this.loggedIn) return fail(tr('Giriş yapılmadı.'));
     const fb = this.auth.user.uid;
     if (opts.reauth !== false && this.google) {
       let c;
       try { c = await this.google.signIn({ allowRedirect: false }); } catch (e) { return this._googleFail(e); }
-      if (!c || c.uid !== fb) { try { await this.google.clear(); } catch (e) { /* ignore */ } return fail('Silmek için aynı Google hesabını seçmelisin.'); }
+      if (!c || c.uid !== fb) { try { await this.google.clear(); } catch (e) { /* ignore */ } return fail(tr('Silmek için aynı Google hesabını seçmelisin.')); }
       try { await this.auth.adopt(c); } catch (e) { return fail(authMessage(e)); }
     }
     const p = this.o.profile.get();
@@ -855,7 +856,7 @@ export class CloudSync {
       for (const k of names) { const d = await this.fs.get('names/' + k); if (d && d.data.uid === fb) dels.push('names/' + k); }
       await this._delAll(dels);
       await this.auth.deleteAccount();
-    } catch (e) { return fail(e.kind === 'network' ? 'Çevrimdışı: hesap şu an silinemiyor.' : authMessage(e)); }
+    } catch (e) { return fail(e.kind === 'network' ? tr('Çevrimdışı: hesap şu an silinemiyor.') : authMessage(e)); }
     lsDel(this.ls, STATE_PREFIX + fb);
     this._stCache = null; this._saveList = null; this._tkt = null; this._friends = null;
     lsDel(this.ls, TICKET_PREFIX + fb);
@@ -1072,7 +1073,7 @@ export class CloudSync {
     if (e && e.kind === 'stale') return;
     if (e && e.kind === 'auth') { this.auth.dead = true; this.lastError = authMessage(e); return; }
     this.offline = true;
-    this.lastError = e && e.kind === 'quota' ? 'Bulut kotası doldu; daha sonra tekrar denenecek.' : e && e.kind === 'network' ? 'Çevrimdışı; bağlantı gelince tekrar denenecek.' : 'Bulut hatası; daha sonra tekrar denenecek.';
+    this.lastError = e && e.kind === 'quota' ? tr('Bulut kotası doldu; daha sonra tekrar denenecek.') : e && e.kind === 'network' ? tr('Çevrimdışı; bağlantı gelince tekrar denenecek.') : tr('Bulut hatası; daha sonra tekrar denenecek.');
     // a quota error: wait until the quota pause ends (shared by every tab, see _gated)
     this._schedule(e && e.kind === 'quota' ? Math.max(RETRY_MAX, this.quotaWait() + 1000) : null);
   }
@@ -1228,24 +1229,24 @@ export class CloudSync {
   cachedSave(ck) { return (this._saveList || []).find((s) => s.key === ck) || null; }
   // download + verify; stored in the local store under localKey (default: the cloud key). -> the save record
   async downloadSave(ck, localKey) {
-    if (!this.loggedIn) throw new CloudError('auth', 'NO_SESSION', 'Giriş yapılmadı.');
+    if (!this.loggedIn) throw new CloudError('auth', 'NO_SESSION', tr('Giriş yapılmadı.'));
     const base = this._base() + '/saves/' + ck;
     const d = await this.fs.get(base);
-    if (!d) throw new CloudError('notfound', 'NOT_FOUND', 'Kayıt bulutta bulunamadı.');
+    if (!d) throw new CloudError('notfound', 'NOT_FOUND', tr('Kayıt bulutta bulunamadı.'));
     const meta = this._metaOf(d);
-    if (!(meta.chunks > 0) || meta.chunks > 400) throw new Error('Buluttaki kayıt bozuk.');
+    if (!(meta.chunks > 0) || meta.chunks > 400) throw new Error(tr('Buluttaki kayıt bozuk.'));
     const paths = [];
     for (let i = 0; i < meta.chunks; i++) paths.push(this._chunkPath(base, meta, i));
     const got = await this.fs.batchGet(paths);
     const parts = paths.map((p, i) => {
       const c = got.get(p);
-      if (!c || c.data.sha !== meta.sha || (c.data.i | 0) !== i || typeof c.data.d !== 'string') throw new Error('Kayıt bütünlük denetimi başarısız (eksik ya da yarım yüklenmiş parça). Biraz sonra tekrar dene.');
+      if (!c || c.data.sha !== meta.sha || (c.data.i | 0) !== i || typeof c.data.d !== 'string') throw new Error(tr('Kayıt bütünlük denetimi başarısız (eksik ya da yarım yüklenmiş parça). Biraz sonra tekrar dene.'));
       return c.data.d;
     });
     const rec = await unpackSave(parts, meta);
-    if (!rec || typeof rec !== 'object' || !rec.data) throw new Error('Buluttaki kayıt okunamadı.');
+    if (!rec || typeof rec !== 'object' || !rec.data) throw new Error(tr('Buluttaki kayıt okunamadı.'));
     const key = localKey || ck;
-    if (!(await this.o.saves.put(key, rec))) throw new Error('Kayıt bu bilgisayara yazılamadı.');
+    if (!(await this.o.saves.put(key, rec))) throw new Error(tr('Kayıt bu bilgisayara yazılamadı.'));
     this._st().up[ck] = meta.sha; this._save();
     return rec;
   }

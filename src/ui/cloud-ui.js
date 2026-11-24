@@ -6,6 +6,7 @@ import { avatarById, avatarOf, AVATARS } from '../avatars.js';
 import { TP_RULES } from '../cloud/sync.js';
 import { levelOf } from '../rank.js';
 import { ask } from './ask.js';
+import { tr } from '../i18n.js';
 
 const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
 const safe = (fn, fb) => { try { return fn(); } catch (e) { console.warn(e); return fb; } };
@@ -38,14 +39,14 @@ export function avatarPicker(current, onPick) {
   return g;
 }
 export const tpText = (n) => (n | 0).toLocaleString('tr-TR') + ' TP';
-export const TP_RULE_TEXT = `Zafer +${TP_RULES.won} TP · Yenilgi +${TP_RULES.lost} TP · Yarıda bırakılan ya da 5 dakikadan kısa maç ${TP_RULES.abandoned} TP. Puanlar oyun sunucusunda doğrulanır.`;
+export const TP_RULE_TEXT = tr('Zafer +{0} TP · Yenilgi +{1} TP · Yarıda bırakılan ya da 5 dakikadan kısa maç {2} TP. Puanlar oyun sunucusunda doğrulanır.', TP_RULES.won, TP_RULES.lost, TP_RULES.abandoned);
 
 // ---------- sign in ----------
-const mergeQuestion = (n) => ask({ title: 'Maç Geçmişi', text: `Bu bilgisayarda giriş yapılmadan oynanmış ${n} maç var.\nBu maçlar hesabına eklensin mi?`, ok: 'Hesabıma ekle', cancel: 'Ekleme' });
+const mergeQuestion = (n) => ask({ title: tr('Maç Geçmişi'), text: tr('Bu bilgisayarda giriş yapılmadan oynanmış {0} maç var.\nBu maçlar hesabına eklensin mi?', n), ok: tr('Hesabıma ekle'), cancel: tr('Ekleme') });
 function loginNote(r, email) {
-  if (r.newAccount) return 'Hoş geldin! Hesabın oluşturuldu (' + email + '). Kullanıcı adını Profil ekranından değiştirebilirsin.';
-  const parts = ['Giriş yapıldı: ' + email + '.'];
-  if (r.merged) parts.push(r.merged + ' maç hesabına eklendi.');
+  if (r.newAccount) return tr('Hoş geldin! Hesabın oluşturuldu ({0}). Kullanıcı adını Profil ekranından değiştirebilirsin.', email);
+  const parts = [tr('Giriş yapıldı: {0}.', email)];
+  if (r.merged) parts.push(tr('{0} maç hesabına eklendi.', r.merged));
   return parts.join(' ');
 }
 // a game in progress (paused behind the menu) would be lost by a redirect: then a blocked popup is only reported
@@ -56,7 +57,7 @@ let carriedError = '';   // an error to show on the screen that is rebuilt after
 export async function googleLogin(ui, opts = {}) {
   const cloud = ui.app.cloud;
   const say = opts.say || (() => {});
-  if (!cloud) { say('Hesap sistemi bu tarayıcıda başlatılamadı.', false); return null; }
+  if (!cloud) { say(tr('Hesap sistemi bu tarayıcıda başlatılamadı.'), false); return null; }
   // (no user name question: a new account gets one from its e-mail, changeable in Profil)
   const r = await cloud.loginGoogle({ allowRedirect: !gameRunning(ui), askMerge: (n) => mergeQuestion(n) });
   return finish(ui, r, opts);
@@ -64,7 +65,7 @@ export async function googleLogin(ui, opts = {}) {
 function finish(ui, r, opts) {
   const cloud = ui.app.cloud, say = opts.say || (() => {});
   if (!r) return r;
-  if (r.redirecting) { say('Google sayfasına yönlendiriliyor...', true); return r; }
+  if (r.redirecting) { say(tr('Google sayfasına yönlendiriliyor...'), true); return r; }
   if (!r.ok) {
     if (!r.silent) safe(() => ui._error());
     say(r.error || '', false);
@@ -80,7 +81,7 @@ export async function resumeGoogleRedirect(ui) {
   if (!cloud) return;
   const box = ui._menuBox('');
   box.classList.add('acc-gate');
-  box.append(h('div', 'logo', 'AEVUM'), h('div', 'mpnote', 'Google ile giriş tamamlanıyor...'));
+  box.append(h('div', 'logo', 'AEVUM'), h('div', 'mpnote', tr('Google ile giriş tamamlanıyor...')));
   const r = await cloud.finishGoogleRedirect({ askMerge: (n) => mergeQuestion(n) });
   if (!r) { ui._menuMain(); return; }
   if (!r.ok) { carriedError = r.silent ? '' : (r.error || ''); ui._menuMain(); return; }
@@ -94,8 +95,8 @@ export function googleBlock(ui, opts = {}) {
   const btn = h('button', 'gbtn' + (opts.small ? ' small' : '') + (opts.wide ? ' wide' : ''));
   btn.type = 'button';
   btn.innerHTML = G_SVG;
-  btn.append(h('span', 'gbtn-t', opts.label || 'Google ile Giriş Yap'));
-  btn.setAttribute('aria-label', opts.label || 'Google ile Giriş Yap');
+  btn.append(h('span', 'gbtn-t', opts.label || tr('Google ile Giriş Yap')));
+  btn.setAttribute('aria-label', opts.label || tr('Google ile Giriş Yap'));
   const msg = h('div', 'mperr hidden');
   msg.setAttribute('role', 'status');
   const say = (t, good) => { msg.textContent = t || ''; msg.className = t ? 'mperr' + (good ? ' prof-ok' : '') : 'mperr hidden'; };
@@ -110,11 +111,11 @@ export function googleBlock(ui, opts = {}) {
   btn.onclick = async () => {
     if (busy) return;
     safe(() => ui._click()); safe(() => ui.app.audio?.resume());
-    if (!cloud) { say('Hesap sistemi bu tarayıcıda başlatılamadı.', false); return; }
-    busy = true; btn.disabled = true; say('Google penceresi açılıyor...', true);
-    try { await googleLogin(ui, { done: opts.done, say }); } catch (e) { console.warn('[cloud]', e); say('Google ile giriş başarısız.', false); } finally {
+    if (!cloud) { say(tr('Hesap sistemi bu tarayıcıda başlatılamadı.'), false); return; }
+    busy = true; btn.disabled = true; say(tr('Google penceresi açılıyor...'), true);
+    try { await googleLogin(ui, { done: opts.done, say }); } catch (e) { console.warn('[cloud]', e); say(tr('Google ile giriş başarısız.'), false); } finally {
       busy = false; btn.disabled = false;
-      if (msg.textContent === 'Google penceresi açılıyor...') say('', false);
+      if (msg.textContent === tr('Google penceresi açılıyor...')) say('', false);
     }
   };
   return wrap;
@@ -124,13 +125,13 @@ export function googleBlock(ui, opts = {}) {
 export function loginScreen(ui) {
   const box = ui._menuBox('');
   box.classList.add('acc-gate');
-  box.append(h('div', 'logo', 'AEVUM'), h('div', 'tagline', 'Çağları aş · Uygarlığını kur'));
+  box.append(h('div', 'logo', 'AEVUM'), h('div', 'tagline', tr('Çağları aş · Uygarlığını kur')));
   const card = h('div', 'gate-card');
-  card.append(h('h2', '', 'Hoş Geldin, Komutan'),
-    h('p', 'gate-text', 'Oynamak için Google hesabınla giriş yap. Her hesap tek bir oyuncudur: adın, avatarın, TP puanın, maç geçmişin ve kayıtların hesabına bağlı kalır ve her bilgisayarda seninle gelir.'));
-  if (!ui.app.cloud) card.append(h('div', 'mperr', 'Hesap sistemi bu tarayıcıda başlatılamadı (çerezler / site verileri engellenmiş olabilir). Oynamak için giriş gerekli.'));
+  card.append(h('h2', '', tr('Hoş Geldin, Komutan')),
+    h('p', 'gate-text', tr('Oynamak için Google hesabınla giriş yap. Her hesap tek bir oyuncudur: adın, avatarın, TP puanın, maç geçmişin ve kayıtların hesabına bağlı kalır ve her bilgisayarda seninle gelir.')));
+  if (!ui.app.cloud) card.append(h('div', 'mperr', tr('Hesap sistemi bu tarayıcıda başlatılamadı (çerezler / site verileri engellenmiş olabilir). Oynamak için giriş gerekli.')));
   else card.append(googleBlock(ui, { wide: true }));
-  card.append(h('p', 'gate-small', 'Kullanıcı adın e-posta adresinden otomatik oluşur; Profil ekranından değiştirebilirsin. E-posta adresin diğer oyunculara gösterilmez.'));
+  card.append(h('p', 'gate-small', tr('Kullanıcı adın e-posta adresinden otomatik oluşur; Profil ekranından değiştirebilirsin. E-posta adresin diğer oyunculara gösterilmez.')));
   box.append(card);   // (owner 2026-11-20: no 'Nasıl Oynanır' link before signing in)
 }
 
@@ -159,7 +160,7 @@ export function menuHud(ui) {
   const layer = ui.menuEl;
   layer.classList.add('with-hud');
   const plate = h('button', 'mh-plate');
-  plate.type = 'button'; plate.title = 'Profil';
+  plate.type = 'button'; plate.title = tr('Profil');
   const avw = h('span', 'mh-avwrap');
   avw.append(avatarEl(p.avatar, p.uid, 'av-hud'));
   const lvBadge = h('span', 'mh-lv');
@@ -174,22 +175,22 @@ export function menuHud(ui) {
   const draw = () => {
     const L = levelOf(cloud.tp.tp);
     lvBadge.textContent = String(L.level);
-    rank.textContent = 'Seviye ' + L.level + ' · ' + L.rank;
+    rank.textContent = tr('Seviye {0} · {1}', L.level, L.rank);
     fill.style.width = Math.round(L.frac * 100) + '%';
-    nums.textContent = tpText(L.tp) + ' · sonraki seviye ' + L.next + ' TP';
+    nums.textContent = tpText(L.tp) + ' · ' + tr('sonraki seviye {0} TP', L.next);
   };
   draw();
   plate.onclick = () => { safe(() => ui._click()); import('./profile-ui.js').then((m) => m.menuProfile(ui)); };
   const right = h('div', 'mh-right');
   right.append(statusPill(cloud));
-  const pb = h('button', 'mh-chip', 'Profil'); pb.type = 'button';
+  const pb = h('button', 'mh-chip', tr('Profil')); pb.type = 'button';
   pb.onclick = plate.onclick;
-  const out = h('button', 'mh-chip', 'Çıkış'); out.type = 'button'; out.title = 'Çıkış yap';
+  const out = h('button', 'mh-chip', tr('Çıkış')); out.type = 'button'; out.title = tr('Çıkış yap');
   out.onclick = async () => {
     safe(() => ui._click());
-    if (!(await ask({ title: 'Çıkış', text: 'Çıkış yapılsın mı?\nProfilin, maç geçmişin ve kayıtların hesabında kalır.', ok: 'Çıkış Yap' }))) return;
+    if (!(await ask({ title: tr('Çıkış'), text: tr('Çıkış yapılsın mı?\nProfilin, maç geçmişin ve kayıtların hesabında kalır.'), ok: tr('Çıkış Yap') }))) return;
     if (ui.app.game && !ui.app.demo) safe(() => ui.app.toMenu());
-    cloud.logout(); ui._menuMain('Çıkış yapıldı.');
+    cloud.logout(); ui._menuMain(tr('Çıkış yapıldı.'));
   };
   right.append(pb, out);
   const hud = h('div', 'menu-hud');
@@ -199,7 +200,7 @@ export function menuHud(ui) {
   if (cloud.status === 'expired') {
     const box = layer.querySelector('.menu-box');
     const wrap = h('div', 'acc-expired');
-    wrap.append(h('div', 'mperr', 'Oturumun sona erdi: aynı Google hesabıyla tekrar giriş yap.'), googleBlock(ui, { small: true }));
+    wrap.append(h('div', 'mperr', tr('Oturumun sona erdi: aynı Google hesabıyla tekrar giriş yap.')), googleBlock(ui, { small: true }));
     if (box) box.append(wrap);
   }
 }
@@ -210,7 +211,7 @@ export function accountLine(ui, box) {
   if (!cloud || !cloud.loggedIn || !p) return;
   const d = h('button', 'acc-card');
   d.type = 'button';
-  d.title = 'Profil';
+  d.title = tr('Profil');
   d.append(avatarEl(p.avatar, p.uid, 'av-md'));
   const txt = h('span', 'acc-card-txt');
   const top = h('span', 'acc-card-name', p.name);
@@ -218,12 +219,12 @@ export function accountLine(ui, box) {
   const tp = h('b', 'acc-tp', tpText(cloud.tp.tp));
   sub.append(tp, statusPill(cloud));
   txt.append(top, sub);
-  d.append(txt, h('span', 'acc-card-go', 'Profil ›'));
+  d.append(txt, h('span', 'acc-card-go', tr('Profil ›')));
   d.onclick = () => { safe(() => ui._click()); import('./profile-ui.js').then((m) => m.menuProfile(ui)); };
   const off = cloud.onChange(() => { if (!d.isConnected) { off(); return; } tp.textContent = tpText(cloud.tp.tp); });
   if (cloud.status === 'expired') {
     const wrap = h('div', 'acc-expired');
-    wrap.append(h('div', 'mperr', 'Oturumun sona erdi: aynı Google hesabıyla tekrar giriş yap.'), googleBlock(ui, { small: true }));
+    wrap.append(h('div', 'mperr', tr('Oturumun sona erdi: aynı Google hesabıyla tekrar giriş yap.')), googleBlock(ui, { small: true }));
     box.append(d, wrap);
     return;
   }
@@ -239,14 +240,14 @@ export function saveBadge(s) {
 }
 export function saveBadgeTitle(s) {
   if (!s || !s.cloud) return '';
-  return { only: 'Yalnızca bulutta: açınca bu bilgisayara indirilir', newer: 'Buluttaki kopyası daha yeni: açınca indirilir', synced: 'Bu bilgisayarda ve bulutta (yedekli)', none: 'Yalnızca bu bilgisayarda (bulut yedeği bekliyor)' }[s.cloud] || '';
+  return { only: tr('Yalnızca bulutta: açınca bu bilgisayara indirilir'), newer: tr('Buluttaki kopyası daha yeni: açınca indirilir'), synced: tr('Bu bilgisayarda ve bulutta (yedekli)'), none: tr('Yalnızca bu bilgisayarda (bulut yedeği bekliyor)') }[s.cloud] || '';
 }
 // -> Promise: null (cancelled) or {cloud: bool}
 export async function confirmDeleteSave(s) {
-  if (s && s.cloud === 'only') return (await ask({ title: 'Kaydı Sil', text: 'Bu kayıt yalnızca bulutta. Buluttan silinsin mi? Geri alınamaz.', ok: 'Sil', danger: true })) ? { cloud: true } : null;
-  if (!(await ask({ title: 'Kaydı Sil', text: 'Bu kayıt silinsin mi? Geri alınamaz.', ok: 'Sil', danger: true }))) return null;
+  if (s && s.cloud === 'only') return (await ask({ title: tr('Kaydı Sil'), text: tr('Bu kayıt yalnızca bulutta. Buluttan silinsin mi? Geri alınamaz.'), ok: tr('Sil'), danger: true })) ? { cloud: true } : null;
+  if (!(await ask({ title: tr('Kaydı Sil'), text: tr('Bu kayıt silinsin mi? Geri alınamaz.'), ok: tr('Sil'), danger: true }))) return null;
   // (the old confirm's Cancel here meant "this PC only": Esc / the cancel button keep that meaning)
-  if (s && (s.cloud === 'synced' || s.cloud === 'newer')) return { cloud: await ask({ title: 'Buluttaki Kopya', text: 'Bu kaydın buluttaki kopyası da silinsin mi?', ok: 'Buluttan da sil', cancel: 'Yalnızca bu bilgisayardan', danger: true }) };
+  if (s && (s.cloud === 'synced' || s.cloud === 'newer')) return { cloud: await ask({ title: tr('Buluttaki Kopya'), text: tr('Bu kaydın buluttaki kopyası da silinsin mi?'), ok: tr('Buluttan da sil'), cancel: tr('Yalnızca bu bilgisayardan'), danger: true }) };
   return { cloud: false };
 }
 

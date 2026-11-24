@@ -2,6 +2,7 @@
 // Never throws: missing files / missing AudioContext simply result in silence.
 
 import { fetchAsset, assetUrls, cdnFailed } from './cdn.js';
+import { tr } from './i18n.js';
 
 const BASE = 'sfx/';   // (under assets/: from jsDelivr on the live site, src/cdn.js)
 
@@ -630,7 +631,7 @@ export class AudioManager {
       });
       on('questDone', () => { this.play('quest'); this.play('questBell', { delay: 0.25 }); });
       on('underAttack', () => { this.play('alarm'); });   // (one horn, 2026-11-17: the three-part alarm was too much)
-      on('notify', ({ type, text }) => { if (type === 'warn' && text !== 'Saldırı altındasın!') this.play('notify'); });   // (the attack has its own alarm)
+      on('notify', ({ type, text }) => { if (type === 'warn' && text !== 'Saldırı altındasın!' && text !== tr('Saldırı altındasın!')) this.play('notify'); });   // (the attack has its own alarm)
       on('gameOver', ({ won }) => { this._musicStop(true); this.play(won ? 'gameWon' : 'gameLost'); });
     } catch (e) { /* never throw */ }
   }

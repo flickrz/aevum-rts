@@ -1,3 +1,4 @@
+import { tr } from '../i18n.js';
 // Aevum - transport over the Claude artifact runtime "room" capability.
 // Our own peer id travels inside every message ({f, d}), so we never depend on the runtime's id format.
 function rid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -12,7 +13,7 @@ export class RoomTransport {
     this.r = null;
     this._room = null;
     this.up = true;                 // no relay status from this runtime: assume reachable
-    this.noBlob = 'Kayıtlı maça devam etmek bu bağlantı türünde desteklenmiyor: oyunu node server.js ile (baslat.bat / baslat-online.bat) açın.';
+    this.noBlob = tr('Kayıtlı maça devam etmek bu bağlantı türünde desteklenmiyor: oyunu node server.js ile (baslat.bat / baslat-online.bat) açın.');
   }
 
   async available() {
@@ -22,7 +23,7 @@ export class RoomTransport {
   }
 
   async connect(roomCode) {
-    if (!this._room && !(await this.available())) throw new Error('Oda servisi kullanılamıyor.');
+    if (!this._room && !(await this.available())) throw new Error(tr('Oda servisi kullanılamıyor.'));
     this.r = await this._room.join('aevum-' + String(roomCode).toLowerCase());
     this.r.onPeers(change => {
       const left = [];

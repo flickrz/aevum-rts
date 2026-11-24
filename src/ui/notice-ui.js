@@ -4,11 +4,12 @@ import { ask } from './ask.js';
 import { ico } from '../icons.js';
 import { getInterrupted, markInterrupted, clearInterrupted } from '../net/notice.js';
 import { MP_PREFIX } from '../storage.js';
+import { tr } from '../i18n.js';
 
 const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
 const safe = (fn, fb) => { try { return fn(); } catch (e) { console.warn(e); return fb; } };
 const mmss = (ms) => { const s = Math.ceil(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
-export const SAVE_TEXT = 'Maçın kaydedilecek; 2-3 dakika sonra kaldığın yerden devam edebilirsin.';
+export const SAVE_TEXT = tr('Maçın kaydedilecek; 2-3 dakika sonra kaldığın yerden devam edebilirsin.');
 
 // ---------- the banner (menus, single player and multiplayer) ----------
 export function mountNoticeBanner(ui, notice) {
@@ -24,19 +25,19 @@ export function mountNoticeBanner(ui, notice) {
     const n = notice.notice;
     let title, sub, btn = null;
     if (s === 'soon') {
-      title = (n.kind === 'restart' ? '⏳ Sunucu yeniden başlıyor: ' : '⏳ Güncelleme geliyor: ') + mmss(notice.remaining());
+      title = (n.kind === 'restart' ? tr('⏳ Sunucu yeniden başlıyor: ') : tr('⏳ Güncelleme geliyor: ')) + mmss(notice.remaining());
       sub = n.msg || SAVE_TEXT;
       startTick();
     } else if (s === 'loading') {
-      title = '⏳ Güncelleme yükleniyor…';
-      sub = 'Birkaç dakika sürebilir; hazır olunca burada haber vereceğiz.';
+      title = tr('⏳ Güncelleme yükleniyor…');
+      sub = tr('Birkaç dakika sürebilir; hazır olunca burada haber vereceğiz.');
       startTick();
     } else {   // ready
-      title = '✨ Yeni sürüm hazır';
-      sub = app.net && inGame() ? 'Maç kayıtlı; yenileyince menüden kaldığın yerden devam edersin.'
-        : inGame() ? 'Yenileyince oyun kaydedilir; Devam Et ile kaldığın yerden sürer.'
-          : 'Yenileyince yeni sürümle oynarsın.';
-      btn = 'Yenile';
+      title = tr('✨ Yeni sürüm hazır');
+      sub = app.net && inGame() ? tr('Maç kayıtlı; yenileyince menüden kaldığın yerden devam edersin.')
+        : inGame() ? tr('Yenileyince oyun kaydedilir; Devam Et ile kaldığın yerden sürer.')
+          : tr('Yenileyince yeni sürümle oynarsın.');
+      btn = tr('Yenile');
       stopTick();
     }
     const k = s + '|' + title + '|' + sub;
@@ -63,7 +64,7 @@ async function reloadNow(ui) {
   const game = app.game;
   if (game && !app.demo && !game.over) {
     if (app.net && game.mp) {
-      if (!(await ask({ title: 'Sayfayı Yenile', text: 'Maçtan çıkıp sayfayı yenilemek istiyor musun?\nMaç kayıtlı; menüdeki “Kesilen maça devam et” ile kaldığınız yerden sürer.', ok: 'Yenile' }))) return;
+      if (!(await ask({ title: tr('Sayfayı Yenile'), text: tr('Maçtan çıkıp sayfayı yenilemek istiyor musun?\nMaç kayıtlı; menüdeki “Kesilen maça devam et” ile kaldığınız yerden sürer.'), ok: tr('Yenile') }))) return;
       safe(() => {
         const s = app.net, match = s.match || s.code || 'MP';
         const prev = getInterrupted();
@@ -93,9 +94,9 @@ export function interruptedEntry(ui, box, after) {
     if (!save) return;
     const b = h('button', 'mbtn mitem primary int-resume');
     b.innerHTML = `<span class="mi">${ico('x-ally')}</span><span class="mt"></span><span class="mm"></span>`;
-    b.querySelector('.mt').textContent = 'Kesilen maça devam et';
-    b.querySelector('.mm').textContent = (save.tick ? Math.floor(save.tick / 1800) + '. dk · ' : '') + (it.host ? 'sen kurarsın, diğerlerini davet et' : 'kurucu yeniden açacak');
-    b.title = 'Güncelleme yüzünden yarıda kalan çok oyunculu maç';
+    b.querySelector('.mt').textContent = tr('Kesilen maça devam et');
+    b.querySelector('.mm').textContent = (save.tick ? Math.floor(save.tick / 1800) + '. dk · ' : '') + (it.host ? tr('sen kurarsın, diğerlerini davet et') : tr('kurucu yeniden açacak'));
+    b.title = tr('Güncelleme yüzünden yarıda kalan çok oyunculu maç');
     b.onclick = () => { safe(() => ui._click()); resumeInterrupted(ui, it, save); };
     after.after(b);
   }).catch(() => {});
@@ -106,16 +107,16 @@ async function resumeInterrupted(ui, it, save) {
   if (!it.host) {
     const who = it.hostName ? ' (' + it.hostName + ')' : '';
     const mine = await ask({
-      title: 'Kesilen Maç',
-      text: 'Maçı kurucu' + who + ' kayıttan yeniden açacak; davet gelince Katıl\'a bas, kendi yerine oturursun.\nKurucu gelmezse maçı sen de açıp diğerlerini davet edebilirsin.',
-      ok: 'Ben açayım', cancel: 'Bekleyeceğim',
+      title: tr('Kesilen Maç'),
+      text: tr('Maçı kurucu{0} kayıttan yeniden açacak; davet gelince Katıl\'a bas, kendi yerine oturursun.\nKurucu gelmezse maçı sen de açıp diğerlerini davet edebilirsin.', who),
+      ok: tr('Ben açayım'), cancel: tr('Bekleyeceğim'),
     });
     if (!mine) return;
   }
   const m = await import('./mp-resume.js');
   try {
     const rec = await app.getSave(save.key);
-    if (!rec || !rec.data) throw new Error('Kayıt okunamadı.');
+    if (!rec || !rec.data) throw new Error(tr('Kayıt okunamadı.'));
     const sess = await ui._mpSession();
     await sess.hostResume(rec);
     m.showResumeLobby(ui, sess);

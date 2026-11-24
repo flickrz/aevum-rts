@@ -1,3 +1,4 @@
+import { tr } from '../i18n.js';
 // Aevum - save payload codec for the cloud: JSON -> UTF-8 -> gzip (CompressionStream, when available) -> base64,
 // split into chunks; SHA-256 of the JSON text for the integrity check. Runs in browsers and node 20+.
 // crypto.subtle only exists in secure contexts (https / localhost): a LAN game over plain http falls back to the
@@ -97,13 +98,13 @@ export async function packSave(obj, { chunkChars = CHUNK_CHARS, noGzip = false }
 export async function unpackSave(parts, meta) {
   const b64 = parts.join('');
   let body;
-  try { body = fromBase64(b64); } catch (e) { throw new Error('Kayıt bozuk (base64).'); }
+  try { body = fromBase64(b64); } catch (e) { throw new Error(tr('Kayıt bozuk (base64).')); }
   if (meta.enc === 'gzip') {
-    if (!canGzip()) throw new Error('Bu tarayıcı sıkıştırılmış kaydı açamıyor.');
-    try { body = await gunzip(body); } catch (e) { throw new Error('Kayıt bozuk (açılamadı).'); }
-  } else if (meta.enc !== 'none') throw new Error('Bilinmeyen kayıt biçimi.');
-  if (meta.size != null && body.length !== meta.size) throw new Error('Kayıt boyutu tutmuyor (bozuk indirme).');
+    if (!canGzip()) throw new Error(tr('Bu tarayıcı sıkıştırılmış kaydı açamıyor.'));
+    try { body = await gunzip(body); } catch (e) { throw new Error(tr('Kayıt bozuk (açılamadı).')); }
+  } else if (meta.enc !== 'none') throw new Error(tr('Bilinmeyen kayıt biçimi.'));
+  if (meta.size != null && body.length !== meta.size) throw new Error(tr('Kayıt boyutu tutmuyor (bozuk indirme).'));
   const sha = await sha256Hex(body);
-  if (sha !== meta.sha) throw new Error('Kayıt bütünlük denetimi başarısız (bozuk indirme).');
+  if (sha !== meta.sha) throw new Error(tr('Kayıt bütünlük denetimi başarısız (bozuk indirme).'));
   return JSON.parse(fromUtf8(body));
 }

@@ -1,5 +1,6 @@
+import { tr } from '../i18n.js';
 // In-game confirmation dialog (replaces the browser's confirm()). DOM only.
-// ask({ title, text, ok = 'Evet', cancel = 'Vazgeç', danger }) -> Promise<boolean>
+// ask({ title, text, ok = tr('Evet'), cancel = 'Vazgeç', danger }) -> Promise<boolean>
 //   Enter = ok, Esc = cancel, a click on the dark backdrop = cancel. While it is open the game's hotkeys
 //   (src/input.js) see nothing: a capture-phase keydown listener swallows every key, and input.js also
 //   checks askOpen(). The overlay covers the whole screen, so clicks never reach the HUD, the menu or the map.
@@ -21,7 +22,7 @@ export function ask(opts = {}) {
 
 function show(opts, resolve) {
   if (typeof document === 'undefined') { resolve(false); return; }
-  const { title = 'Emin misin?', text = '', ok = 'Evet', cancel = 'Vazgeç', danger = false } = opts;
+  const { title = tr('Emin misin?'), text = '', ok = tr('Evet'), cancel = tr('Vazgeç'), danger = false } = opts;
   const root = document.getElementById('ui') || document.body;
   const ov = document.createElement('div');
   ov.className = 'overlay askov';

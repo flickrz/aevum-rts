@@ -1,3 +1,4 @@
+import { tr } from '../i18n.js';
 // Aevum - transport over the node server using HTTP long-polling (GET /mp/poll down, POST /mp/send up).
 // Used when the page is reached through a tunnel/proxy that does not pass Server-Sent Events.
 // After the first successful connect it never gives up: when the relay goes away (restart, tunnel hiccup) it keeps
@@ -62,7 +63,7 @@ export class PollTransport {
     this._run = true;
     return new Promise((resolve, reject) => {
       let done = false;
-      const to = setTimeout(() => { if (!done) { done = true; this._run = false; this.room = null; reject(new Error('Sunucuya bağlanılamadı (oyunu açan kişinin penceresi açık mı?).')); } }, 9000);
+      const to = setTimeout(() => { if (!done) { done = true; this._run = false; this.room = null; reject(new Error(tr('Sunucuya bağlanılamadı (oyunu açan kişinin penceresi açık mı?).'))); } }, 9000);
       this._onHello = () => { if (!done) { done = true; clearTimeout(to); resolve(); } };
       this._loopStart();
     });
@@ -105,25 +106,25 @@ export class PollTransport {
     for (let i = 1; i <= 5; i++) {
       try {
         const r = await fetchT(`${this.base}/mp/blob?room=${encodeURIComponent(this.room)}&peer=${encodeURIComponent(this.id)}`, { method: 'POST', headers: this._hdr({ 'Content-Type': 'application/octet-stream' }), body: text }, 60000);
-        if (r.status === 413) throw Object.assign(new Error('Kayıt çok büyük (en fazla 32 MB).'), { fatal: true });
+        if (r.status === 413) throw Object.assign(new Error(tr('Kayıt çok büyük (en fazla 32 MB).')), { fatal: true });
         if (!r.ok) throw new Error('blob ' + r.status);
         const j = await r.json(); if (j && j.id) return j.id;
         throw new Error('blob: no id');
       } catch (err) { last = err; if (err.fatal) throw err; await sleep(backoff(i)); }
     }
-    throw new Error('Kayıt sunucuya yüklenemedi: ' + (last && last.message || last));
+    throw new Error(tr('Kayıt sunucuya yüklenemedi: {0}', last && last.message || last));
   }
   async getBlob(id) {
     let last = null;
     for (let i = 1; i <= 6; i++) {
       try {
         const r = await fetchT(`${this.base}/mp/blob?room=${encodeURIComponent(this.room)}&peer=${encodeURIComponent(this.id)}&id=${encodeURIComponent(id)}&t=${Date.now()}`, { cache: 'no-store', headers: this._hdr() }, 60000);
-        if (r.status === 404) throw Object.assign(new Error('Kayıt sunucuda bulunamadı (süresi dolmuş olabilir).'), { fatal: i >= 3 });
+        if (r.status === 404) throw Object.assign(new Error(tr('Kayıt sunucuda bulunamadı (süresi dolmuş olabilir).')), { fatal: i >= 3 });
         if (!r.ok) throw new Error('blob ' + r.status);
         return await r.text();
       } catch (err) { last = err; if (err.fatal) throw err; await sleep(backoff(i)); }
     }
-    throw new Error('Kayıt indirilemedi: ' + (last && last.message || last));
+    throw new Error(tr('Kayıt indirilemedi: {0}', last && last.message || last));
   }
 
   _handle(m) {

@@ -3,11 +3,12 @@
 // An invite needs a room: without one, a room is opened first and its lobby shown. All names go in via textContent.
 import { avatarEl } from './cloud-ui.js';
 import { levelOf } from '../rank.js';
+import { tr } from '../i18n.js';
 
 const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
 const safe = (fn, fb) => { try { return fn(); } catch (e) { console.warn(e); return fb; } };
-const errText = (e) => (e && e.message) || String(e || 'Hata');
-const STATE_TR = { menu: 'Menüde', sp: 'Tek oyunculu maçta', mp: 'Çok oyunculu maçta' };
+const errText = (e) => (e && e.message) || String(e || tr('Hata'));
+const STATE_TR = { menu: tr('Menüde'), sp: tr('Tek oyunculu maçta'), mp: tr('Çok oyunculu maçta') };
 const REFRESH_MS = 8000;
 
 // invites already sent (kept across the panel being rebuilt): fb -> {code, t}; and the last "invite everyone"
@@ -33,10 +34,10 @@ export function onlinePanel(ui) {
   if (!cloud || !cloud.loggedIn) return wrap;
   const head = h('div', 'op-head');
   const count = h('span', 'op-count', '…');
-  head.append(h('span', 'op-title', 'Çevrimiçi Oyuncular'), count);
-  const all = h('button', 'mbtn small primary op-all', 'Herkesi Davet Et'); all.type = 'button';
+  head.append(h('span', 'op-title', tr('Çevrimiçi Oyuncular')), count);
+  const all = h('button', 'mbtn small primary op-all', tr('Herkesi Davet Et')); all.type = 'button';
   const msg = h('div', 'op-msg hidden'); msg.setAttribute('role', 'status');
-  const list = h('div', 'op-list', 'Yükleniyor...');
+  const list = h('div', 'op-list', tr('Yükleniyor...'));
   // (owner 2026-11-20: the list grew with every player and pushed the menu off the screen) only the rows scroll; the
   // wheel over them scrolls the list and nothing behind the menu
   list.addEventListener('wheel', (ev) => ev.stopPropagation(), { passive: true });
@@ -51,22 +52,22 @@ export function onlinePanel(ui) {
     const free = players.filter((p) => p.s === 'menu' && !inRoom.has(p.uid)).length;
     const wait = allAt && Date.now() - allAt < 120000 && allCode === code;
     all.disabled = !free || !!wait;
-    all.title = !free ? 'Menüde bekleyen davet edilebilecek oyuncu yok' : wait ? 'Herkese davet gitti; 2 dakikada bir gönderilebilir' : 'Menüde olan herkese oda davetini gönderir (' + free + ' kişi)';
+    all.title = !free ? tr('Menüde bekleyen davet edilebilecek oyuncu yok') : wait ? tr('Herkese davet gitti; 2 dakikada bir gönderilebilir') : tr('Menüde olan herkese oda davetini gönderir ({0} kişi)', free);
     list.textContent = '';
-    if (!players.length) { list.append(h('div', 'prof-dim op-empty', 'Şu an senden başka çevrimiçi oyuncu yok.')); return; }
+    if (!players.length) { list.append(h('div', 'prof-dim op-empty', tr('Şu an senden başka çevrimiçi oyuncu yok.'))); return; }
     for (const p of players) {
       const r = h('div', 'op-row' + (p.s !== 'menu' ? ' busy' : ''));
       const av = h('span', 'fr-av'); av.append(avatarEl(p.av, p.uid, 'av-sm'), h('i', 'fr-dot on' + (p.s !== 'menu' ? ' busy' : ''), ''));
       const t = h('span', 'fr-txt');
-      t.append(h('b', 'fr-name', p.name || 'Oyuncu'), h('small', 'fr-sub', (STATE_TR[p.s] || STATE_TR.menu) + ' · Sv ' + levelOf(p.tp | 0).level));
+      t.append(h('b', 'fr-name', p.name || tr('Oyuncu')), h('small', 'fr-sub', (STATE_TR[p.s] || STATE_TR.menu) + ' · ' + tr('Sv {0}', levelOf(p.tp | 0).level)));
       r.append(av, t);
-      if (inRoom.has(p.uid)) r.append(h('span', 'fr-tag', 'Odada'));
+      if (inRoom.has(p.uid)) r.append(h('span', 'fr-tag', tr('Odada')));
       else {
         const x = sent.get(p.fb);
         const done = x && x.code === code && Date.now() - x.t < 60000;
-        const b = h('button', 'mbtn small op-inv', done ? 'Gitti ✔' : 'Davet Et'); b.type = 'button';
+        const b = h('button', 'mbtn small op-inv', done ? tr('Gitti ✔') : tr('Davet Et')); b.type = 'button';
         b.disabled = !!done;
-        b.title = 'Oda davetini ' + (p.name || 'oyuncuya') + ' gönderir' + (p.s !== 'menu' ? ' (şu an maçta)' : '');
+        b.title = (p.name ? tr('Oda davetini {0} gönderir', p.name) : tr('Oda davetini oyuncuya gönderir')) + (p.s !== 'menu' ? tr(' (şu an maçta)') : '');
         b.onclick = async () => {
           safe(() => ui._click());
           b.disabled = true; say('', false);
@@ -74,9 +75,9 @@ export function onlinePanel(ui) {
             const s = await roomFor(ui);
             const r2 = await cloud.invite(p.fb, s.state.code);
             sent.set(p.fb, { code: s.state.code, t: Date.now() });
-            b.textContent = r2.online ? 'Gitti ✔' : 'Çevrimdışı';
-            safe(() => ui._lobbyNote?.(r2.online ? (p.name || 'Oyuncu') + ' davet edildi; kabul edince lobiye girer.' : (p.name || 'Oyuncu') + ' az önce çıktı.'));
-          } catch (e) { b.disabled = false; say('Davet edilemedi: ' + errText(e), false); }
+            b.textContent = r2.online ? tr('Gitti ✔') : tr('Çevrimdışı');
+            safe(() => ui._lobbyNote?.(r2.online ? tr('{0} davet edildi; kabul edince lobiye girer.', p.name || tr('Oyuncu')) : tr('{0} az önce çıktı.', p.name || tr('Oyuncu'))));
+          } catch (e) { b.disabled = false; say(tr('Davet edilemedi: {0}', errText(e)), false); }
         };
         r.append(b);
       }
@@ -93,7 +94,7 @@ export function onlinePanel(ui) {
       const r = await cloud.inviteAll(s.state.code, skip);
       allAt = Date.now(); allCode = s.state.code;
       for (const p of players) if (p.s === 'menu' && !skip.includes(p.fb)) sent.set(p.fb, { code: allCode, t: allAt });
-      const t = r.sent ? r.sent + ' oyuncuya davet gitti; kabul edenler lobiye girer.' : 'Davet edilecek kimse kalmadı.';
+      const t = r.sent ? tr('{0} oyuncuya davet gitti; kabul edenler lobiye girer.', r.sent) : tr('Davet edilecek kimse kalmadı.');
       safe(() => ui.toast('✉ ' + t, r.sent ? 'good' : 'warn'));
       safe(() => ui._lobbyNote?.(t));
       if (wrap.isConnected) say(t, true);

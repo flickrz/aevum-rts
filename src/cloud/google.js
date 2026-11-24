@@ -1,3 +1,4 @@
+import { tr } from '../i18n.js';
 // Aevum - "Google ile Giriş Yap": the official Firebase JS SDK is used ONLY for the Google popup / redirect (OAuth
 // needs the Firebase auth handler on authDomain as its redirect_uri, which plain REST cannot provide from our own
 // origin). It is lazy-loaded from gstatic on first use (never on page load, except to finish a pending redirect).
@@ -20,19 +21,19 @@ export async function loadFirebaseSdk() {
 // an SDK / loader error -> {code, message (Turkish; '' = say nothing: the player closed the popup)}
 const SILENT = new Set(['auth/popup-closed-by-user', 'auth/cancelled-popup-request', 'auth/user-cancelled', 'auth/redirect-cancelled-by-user']);
 const GMSG = {
-  'auth/popup-blocked': 'Google giriş penceresi engellendi. Tarayıcının bu site için açılır pencerelere izin vermesini sağlayıp tekrar dene.',
-  'auth/operation-not-allowed': 'Google ile giriş henüz açılmamış.',
-  'auth/unauthorized-domain': 'Bu site adresi Google ile giriş için yetkilendirilmemiş.',
-  'auth/network-request-failed': 'Sunucuya ulaşılamadı. İnternet bağlantını kontrol et.',
-  'auth/timeout': 'Google yanıt vermedi. Tekrar dene.',
-  'auth/user-disabled': 'Bu hesap devre dışı bırakılmış.',
-  'auth/too-many-requests': 'Çok fazla deneme yapıldı. Biraz bekleyip tekrar dene.',
-  'auth/web-storage-unsupported': 'Tarayıcın Google ile giriş için gereken depolamayı engelliyor (gizli mod ya da çerez ayarları).',
-  'auth/operation-not-supported-in-this-environment': 'Bu tarayıcıda Google ile giriş desteklenmiyor.',
-  'auth/account-exists-with-different-credential': 'Bu e-posta başka bir giriş yöntemine bağlı.',
-  'auth/internal-error': 'Google ile giriş sırasında bir hata oluştu. Tekrar dene.',
-  'sdk-load': 'Google ile giriş yüklenemedi. İnternet bağlantını kontrol edip tekrar dene.',
-  'no-refresh-token': 'Google ile giriş tamamlanamadı. Tekrar dene.',
+  'auth/popup-blocked': tr('Google giriş penceresi engellendi. Tarayıcının bu site için açılır pencerelere izin vermesini sağlayıp tekrar dene.'),
+  'auth/operation-not-allowed': tr('Google ile giriş henüz açılmamış.'),
+  'auth/unauthorized-domain': tr('Bu site adresi Google ile giriş için yetkilendirilmemiş.'),
+  'auth/network-request-failed': tr('Sunucuya ulaşılamadı. İnternet bağlantını kontrol et.'),
+  'auth/timeout': tr('Google yanıt vermedi. Tekrar dene.'),
+  'auth/user-disabled': tr('Bu hesap devre dışı bırakılmış.'),
+  'auth/too-many-requests': tr('Çok fazla deneme yapıldı. Biraz bekleyip tekrar dene.'),
+  'auth/web-storage-unsupported': tr('Tarayıcın Google ile giriş için gereken depolamayı engelliyor (gizli mod ya da çerez ayarları).'),
+  'auth/operation-not-supported-in-this-environment': tr('Bu tarayıcıda Google ile giriş desteklenmiyor.'),
+  'auth/account-exists-with-different-credential': tr('Bu e-posta başka bir giriş yöntemine bağlı.'),
+  'auth/internal-error': tr('Google ile giriş sırasında bir hata oluştu. Tekrar dene.'),
+  'sdk-load': tr('Google ile giriş yüklenemedi. İnternet bağlantını kontrol edip tekrar dene.'),
+  'no-refresh-token': tr('Google ile giriş tamamlanamadı. Tekrar dene.'),
 };
 export function googleCode(e) {
   if (!e) return '';
@@ -47,7 +48,7 @@ export function googleMessage(e) {
   if (SILENT.has(c)) return '';
   if (Object.hasOwn(GMSG, c)) return GMSG[c];
   if (e && e.kind === 'network') return GMSG['auth/network-request-failed'];
-  return 'Google ile giriş başarısız' + (c ? ' (' + c.replace(/^auth\//, '') + ')' : '') + '.';
+  return c ? tr('Google ile giriş başarısız ({0}).', c.replace(/^auth\//, '')) : tr('Google ile giriş başarısız.');
 }
 const gErr = (code, cause) => Object.assign(new Error(code), { code, cause });
 

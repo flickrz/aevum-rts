@@ -4,28 +4,29 @@
 // to adopt()); everything after that is plain REST. Storage, fetch and the clock are injected (test/cloud-test.mjs
 // runs it against a fake server).
 import { authApi, CloudError } from './rest.js';
+import { tr } from '../i18n.js';
 
 export const AUTH_KEY = 'aevum.auth';
 export const REFRESH_EARLY_MS = 5 * 60 * 1000;
 
 const MSG = {
-  TOO_MANY_ATTEMPTS_TRY_LATER: 'Çok fazla deneme yapıldı. Biraz bekleyip tekrar dene.',
-  USER_DISABLED: 'Bu hesap devre dışı bırakılmış.',
-  OPERATION_NOT_ALLOWED: 'Google ile giriş henüz açılmamış.',
-  TOKEN_EXPIRED: 'Oturumun sona erdi, tekrar giriş yap.',
-  INVALID_REFRESH_TOKEN: 'Oturumun sona erdi, tekrar giriş yap.',
-  INVALID_ID_TOKEN: 'Oturumun sona erdi, tekrar giriş yap.',
-  USER_NOT_FOUND: 'Hesap bulunamadı, tekrar giriş yap.',
-  CREDENTIAL_TOO_OLD_LOGIN_AGAIN: 'Güvenlik için tekrar giriş yapman gerekiyor.',
+  TOO_MANY_ATTEMPTS_TRY_LATER: tr('Çok fazla deneme yapıldı. Biraz bekleyip tekrar dene.'),
+  USER_DISABLED: tr('Bu hesap devre dışı bırakılmış.'),
+  OPERATION_NOT_ALLOWED: tr('Google ile giriş henüz açılmamış.'),
+  TOKEN_EXPIRED: tr('Oturumun sona erdi, tekrar giriş yap.'),
+  INVALID_REFRESH_TOKEN: tr('Oturumun sona erdi, tekrar giriş yap.'),
+  INVALID_ID_TOKEN: tr('Oturumun sona erdi, tekrar giriş yap.'),
+  USER_NOT_FOUND: tr('Hesap bulunamadı, tekrar giriş yap.'),
+  CREDENTIAL_TOO_OLD_LOGIN_AGAIN: tr('Güvenlik için tekrar giriş yapman gerekiyor.'),
 };
 // any error -> a short Turkish message
 export function authMessage(e) {
-  if (!e) return 'Bilinmeyen hata.';
-  if (e.kind === 'network') return 'Sunucuya ulaşılamadı. İnternet bağlantını kontrol et.';
-  if (e.kind === 'quota') return 'Sunucu şu an yoğun (kota). Daha sonra tekrar dene.';
-  if (e.kind === 'server') return 'Sunucu hatası. Daha sonra tekrar dene.';
+  if (!e) return tr('Bilinmeyen hata.');
+  if (e.kind === 'network') return tr('Sunucuya ulaşılamadı. İnternet bağlantını kontrol et.');
+  if (e.kind === 'quota') return tr('Sunucu şu an yoğun (kota). Daha sonra tekrar dene.');
+  if (e.kind === 'server') return tr('Sunucu hatası. Daha sonra tekrar dene.');
   if (e.code && Object.hasOwn(MSG, e.code)) return MSG[e.code];
-  return (e.message && !/^[A-Z_]+$/.test(e.message) ? e.message : 'Bir hata oluştu' + (e.code ? ' (' + e.code + ')' : '')) + '';
+  return (e.message && !/^[A-Z_]+$/.test(e.message) ? e.message : (e.code ? tr('Bir hata oluştu ({0})', e.code) : tr('Bir hata oluştu'))) + '';
 }
 
 const lsGet = (ls, k) => { try { return ls ? ls.getItem(k) : null; } catch { return null; } };
@@ -100,7 +101,7 @@ export class Auth {
   // Our own id token comes from one securetoken refresh. hold: keep it out of localStorage until commit() (a new
   // account choosing its user name must not come back half set up after a reload).
   async adopt({ uid, email, refreshToken }, { hold = false } = {}) {
-    if (typeof uid !== 'string' || !uid || typeof refreshToken !== 'string' || !refreshToken) throw new CloudError('auth', 'NO_SESSION', 'Giriş tamamlanamadı.');
+    if (typeof uid !== 'string' || !uid || typeof refreshToken !== 'string' || !refreshToken) throw new CloudError('auth', 'NO_SESSION', tr('Giriş tamamlanamadı.'));
     this._gen++; this._ref = null; this.dead = false;
     if (this._timer != null && this.clearTimer) { this.clearTimer(this._timer); this._timer = null; }
     this._hold = !!hold;
@@ -108,7 +109,7 @@ export class Auth {
     this.s = { uid, email: String(email || ''), refreshToken, idToken: '', exp: 0 };
     try {
       await this.token(true);
-      if (!this.s || this.s.uid !== uid) throw new CloudError('auth', 'USER_MISMATCH', 'Giriş tamamlanamadı.');
+      if (!this.s || this.s.uid !== uid) throw new CloudError('auth', 'USER_MISMATCH', tr('Giriş tamamlanamadı.'));
     } catch (e) {
       if (this._gen === gen) this.signOut();   // (unless another sign in / sign out came meanwhile)
       throw e;
@@ -120,7 +121,7 @@ export class Auth {
   // a valid id token; refreshes when it expires within REFRESH_EARLY_MS (or force). Concurrent callers share one refresh.
   // A refresh that lands after a sign out / another sign in is discarded (kind 'stale'): it never revives a session.
   async token(force = false) {
-    if (!this.s) throw new CloudError('auth', 'NO_SESSION', 'Giriş yapılmadı.');
+    if (!this.s) throw new CloudError('auth', 'NO_SESSION', tr('Giriş yapılmadı.'));
     if (this.dead && !force) throw new CloudError('auth', 'TOKEN_EXPIRED', MSG.TOKEN_EXPIRED);
     if (!force && this.s.idToken && this.s.exp - this.now() > REFRESH_EARLY_MS) return this.s.idToken;
     if (!this._ref) {
@@ -129,7 +130,7 @@ export class Auth {
       const p = (async () => {
         try {
           const r = await this.api.refresh(rt);
-          if (!cur()) throw new CloudError('stale', 'SESSION_CHANGED', 'Oturum değişti.');
+          if (!cur()) throw new CloudError('stale', 'SESSION_CHANGED', tr('Oturum değişti.'));
           this._set(r); return this.s.idToken;
         } catch (e) {
           if (cur() && (e.kind === 'auth' || (e.kind === 'bad' && /TOKEN|GRANT/.test(e.code)))) { e.kind = 'auth'; this.dead = true; if (this.onChange) { try { this.onChange(); } catch (x) { /* ignore */ } } }
