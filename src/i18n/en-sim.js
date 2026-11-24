@@ -205,7 +205,7 @@ export default {
   'Sur seç': 'Select a wall',
   'Sur henüz bitmedi': 'The wall is not finished yet',
   'Kapı için düz bir hatta yan yana 3 sur parçası gerekli': 'A gate needs 3 wall pieces side by side in a straight line',
-  'Zaten son çağdasın': 'You are already in the last age',
+  'Zaten son çağdasın': 'Already in the last age',
   'Çağ atlama sürüyor': 'Already advancing an age',
   'Oyuncu yok': 'No such player',
   // (templated age-up reasons: translated in the sim, display only, nothing compares them)

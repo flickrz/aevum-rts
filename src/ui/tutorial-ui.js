@@ -20,7 +20,7 @@ export class TutorialUI {
     this.msgSeq = 0; this.hintSeq = 0; this.page = 0; this.lines = []; this.kind = null; this.infoT = 0;
     this.cam0 = null; this.markerT = 0; this.pan = null; this.panned = -1; this.hlNodes = [];
     const p = this.el = mk('div', 'panel tut-story hidden');
-    p.append(mk('h4', null, SPEAKER), this.lineEl = mk('div', 'tl'), this.hintEl = mk('div', 'th'));
+    p.append(mk('h4', null, tr(SPEAKER)), this.lineEl = mk('div', 'tl'), this.hintEl = mk('div', 'th'));
     const row = mk('div', 'tb');
     this.pageEl = mk('span', 'tp');
     this.btn = mk('button', 'mbtn small primary', tr('Devam'));
@@ -46,7 +46,7 @@ export class TutorialUI {
     const n = this.lines.length;
     this.pageEl.textContent = n > 1 ? (this.page + 1) + '/' + n : '';
     this.btn.textContent = this.kind === 'hint' || this.kind === 'info' ? tr('Tamam') : tr('Devam');
-    if (this.kind === 'info' && this.page < n - 1) this.btn.textContent = 'Devam';
+    if (this.kind === 'info' && this.page < n - 1) this.btn.textContent = tr('Devam');
   }
   _next() {
     if (this.page < this.lines.length - 1) { this.page++; this._renderPage(); return; }
@@ -169,7 +169,7 @@ export class TutorialUI {
     const toMenu = () => { ui._closeModal(true); try { this.app.toMenu?.(); } catch (err) { /* ignore */ } ui.showMenu(); };
     if (won) {
       btn(tr('Ana Menü'), toMenu, 'primary');
-      btn('Yeni Oyun Kur', () => { toMenu(); try { ui._menuSetup(); } catch (err) { /* ignore */ } });
+      btn(tr('Yeni Oyun Kur'), () => { toMenu(); try { ui._menuSetup(); } catch (err) { /* ignore */ } });
     } else {
       btn(tr('Yeniden Başla'), () => { ui._closeModal(true); this.app.newGame({ ...TUT_CFG }); }, 'primary');
       btn(tr('Ana Menü'), toMenu);

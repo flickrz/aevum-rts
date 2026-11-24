@@ -6,7 +6,7 @@ import { avatarById, avatarOf, AVATARS } from '../avatars.js';
 import { TP_RULES } from '../cloud/sync.js';
 import { levelOf } from '../rank.js';
 import { ask } from './ask.js';
-import { tr } from '../i18n.js';
+import { tr, loc } from '../i18n.js';
 
 const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
 const safe = (fn, fb) => { try { return fn(); } catch (e) { console.warn(e); return fb; } };
@@ -23,7 +23,7 @@ const G_SVG = '<svg class="gbtn-g" viewBox="0 0 48 48" width="18" height="18" ar
 export function avatarEl(id, uid, cls = '') {
   const a = avatarById(avatarOf(id, uid));
   const s = h('span', 'av' + (cls ? ' ' + cls : ''));
-  if (a) { s.innerHTML = a.svg; s.title = a.name; }
+  if (a) { s.innerHTML = a.svg; s.title = tr(a.name); }
   return s;
 }
 // a grid of all avatars; onPick(id). current: the selected one
@@ -31,14 +31,14 @@ export function avatarPicker(current, onPick) {
   const g = h('div', 'av-grid');
   for (const a of AVATARS) {
     const b = h('button', 'av-pick' + (a.id === current ? ' on' : ''));
-    b.type = 'button'; b.title = a.name; b.setAttribute('aria-label', a.name);
+    b.type = 'button'; b.title = tr(a.name); b.setAttribute('aria-label', tr(a.name));
     b.innerHTML = a.svg;
     b.onclick = () => onPick(a.id, b);
     g.append(b);
   }
   return g;
 }
-export const tpText = (n) => (n | 0).toLocaleString('tr-TR') + ' TP';
+export const tpText = (n) => (n | 0).toLocaleString(loc()) + ' TP';
 export const TP_RULE_TEXT = tr('Zafer +{0} TP · Yenilgi +{1} TP · Yarıda bırakılan ya da 5 dakikadan kısa maç {2} TP. Puanlar oyun sunucusunda doğrulanır.', TP_RULES.won, TP_RULES.lost, TP_RULES.abandoned);
 
 // ---------- sign in ----------

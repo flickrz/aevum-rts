@@ -3,7 +3,7 @@
 // An invite needs a room: without one, a room is opened first and its lobby shown. All names go in via textContent.
 import { avatarEl } from './cloud-ui.js';
 import { levelOf } from '../rank.js';
-import { tr } from '../i18n.js';
+import { tr, pn } from '../i18n.js';
 
 const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
 const safe = (fn, fb) => { try { return fn(); } catch (e) { console.warn(e); return fb; } };
@@ -59,7 +59,7 @@ export function onlinePanel(ui) {
       const r = h('div', 'op-row' + (p.s !== 'menu' ? ' busy' : ''));
       const av = h('span', 'fr-av'); av.append(avatarEl(p.av, p.uid, 'av-sm'), h('i', 'fr-dot on' + (p.s !== 'menu' ? ' busy' : ''), ''));
       const t = h('span', 'fr-txt');
-      t.append(h('b', 'fr-name', p.name || tr('Oyuncu')), h('small', 'fr-sub', (STATE_TR[p.s] || STATE_TR.menu) + ' · ' + tr('Sv {0}', levelOf(p.tp | 0).level)));
+      t.append(h('b', 'fr-name', pn(p.name) || tr('Oyuncu')), h('small', 'fr-sub', (STATE_TR[p.s] || STATE_TR.menu) + ' · ' + tr('Sv {0}', levelOf(p.tp | 0).level)));
       r.append(av, t);
       if (inRoom.has(p.uid)) r.append(h('span', 'fr-tag', tr('Odada')));
       else {

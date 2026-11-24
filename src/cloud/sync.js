@@ -19,7 +19,7 @@ import { googleMessage, googleCode } from './google.js';
 import { firestoreApi, CloudError } from './rest.js';
 import { packSave, unpackSave } from './codec.js';
 import { isAvatar, defaultAvatar, avatarOf } from '../avatars.js';
-import { tr } from '../i18n.js';
+import { tr, srvTr } from '../i18n.js';
 
 export const MAX_CLOUD_SAVES = 30;
 export const MAX_CLOUD_AUTOS = 10;                   // autosaves kept in the cloud (every match makes one; the oldest go first)
@@ -574,7 +574,7 @@ export class CloudSync {
     let r;
     try { r = await this.relayFetch(this.relayBase + pathname, { method: 'POST', headers, body: JSON.stringify(body || {}) }); } catch (e) { throw new CloudError('network', 'NETWORK', tr('Oyun sunucusuna ulaşılamadı.')); }
     let j = null; try { j = await r.json(); } catch (e) { j = null; }
-    if (!r.ok) throw new CloudError(r.status === 401 || r.status === 403 ? 'auth' : r.status >= 500 ? 'server' : 'bad', 'RELAY_' + r.status, (j && j.error) || tr('Sunucu hatası ({0}).', r.status), r.status);
+    if (!r.ok) throw new CloudError(r.status === 401 || r.status === 403 ? 'auth' : r.status >= 500 ? 'server' : 'bad', 'RELAY_' + r.status, (j && typeof j.error === 'string' && srvTr(j.error)) || tr('Sunucu hatası ({0}).', r.status), r.status);
     return j || {};
   }
   // the relay ticket of this account: the server verified our Google session and read our profile -> {ticket, ident, exp}
@@ -689,7 +689,7 @@ export class CloudSync {
         }
         this._emit(); this.kick();
       }
-      return { ok: !!r.ok, gained: r.gained | 0, tp: r.tp | 0, reason: r.reason || '' };
+      return { ok: !!r.ok, gained: r.gained | 0, tp: r.tp | 0, reason: srvTr(r.reason || '') };
     } catch (e) { console.warn('[tp] claim', e && e.message); return { ok: false, gained: 0, tp: this.tp.tp, reason: tr('TP şu an hesaplanamadı ({0}).', (e && e.message) || e) }; }
   }
 

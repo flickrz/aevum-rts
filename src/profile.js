@@ -45,7 +45,7 @@ export function checkName(raw) {
   // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f]/.test(raw.replace(/[\t\n\r ]/g, ''))) return { ok: false, name, error: tr('Ad geçersiz karakter içeriyor.') };
   if (name.length < NAME_MIN) return { ok: false, name, error: tr('Ad en az {0} karakter olmalı.', NAME_MIN) };
-  if (name.length > NAME_MAX) return { ok: false, name, error: `Ad en fazla ${NAME_MAX} karakter olabilir.` };
+  if (name.length > NAME_MAX) return { ok: false, name, error: tr('Ad en fazla {0} karakter olabilir.', NAME_MAX) };
   return { ok: true, name, error: '' };
 }
 
