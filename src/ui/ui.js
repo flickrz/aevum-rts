@@ -1465,6 +1465,7 @@ export class UI {
     for (const uid of bd.trains || []) {
       const u = UNITS[uid]; if (!u) continue;
       if (later(u.age)) { put(false); continue; }
+      if ((u.reqTech && !p.techs?.has(u.reqTech)) || (u.upgradedBy && p.techs?.has(u.upgradedBy))) { put(false); continue; }   // (final-form lines: the upgraded unit replaces the old one)
       put({
         icon: u.icon || ico('x-unknown'), name: tr(u.name), cost: u.cost, time: u.time * QUEUE_TIME_MUL / (sb * (1 + (p.mods?.train || 0) + (e.type === 'factory' ? (p.mods?.factory || 0) : 0))),
         desc: (tr(u.desc) || '') + ` — ${ico('x-atk')}${u.atk} ${ico('x-armor')}${u.armor} ${ico('x-hp')}${u.hp}${u.range ? ' ' + ico('x-range') + u.range : ''} ${ico('x-pop')}${u.pop ?? 1}` + (pool.length > 1 ? tr(' · {0} binada aynı anda', pool.length) : '') + tr(' · Shift: 5 adet'),

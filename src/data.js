@@ -10,8 +10,8 @@ export const AGES = [
   { id: 0, name: 'Taş Devri', cost: {}, time: 0, reqBuildings: 0, unlockText: ['Köylü', 'Mızrakçı', 'Ev', 'Ağıl', 'Kışla', 'Depo', 'Oduncu Kampı', 'Maden Ocağı', 'Tapınak', 'Büyücü'] },
   { id: 1, name: 'Tunç Devri', cost: { food: 1000, wood: 500 }, time: 90, reqBuildings: 3, reqTypes: ['barracks'], minStay: 240, unlockText: ['Tarla', 'Kılıç Ustası', 'Okçu', 'Hafif Süvari', 'Okçuluk Alanı', 'Ahır', 'Demirci', 'Pazar', 'Kule', 'Sur'] },
   { id: 2, name: 'Orta Çağ', cost: { food: 1800, wood: 800, gold: 1000, stone: 400 }, time: 140, reqBuildings: 5, reqTypes: ['blacksmith', 'market'], minStay: 300, unlockText: ['Ağır Piyade', 'Arbaletçi', 'Şövalye', 'Koçbaşı', 'Mancınık', 'Üniversite', 'Kale', 'Kuşatma Atölyesi'] },
-  { id: 3, name: 'Barut Çağı', cost: { food: 2500, wood: 1200, gold: 2000, stone: 1000 }, time: 180, reqBuildings: 7, reqTypes: ['university'], minStay: 360, unlockText: ['Tüfekçi', 'Top', 'Zırhlı Süvari', 'Harp Akademisi', 'Banka'] },
-  { id: 4, name: 'Sanayi Çağı', cost: { food: 3200, wood: 1600, gold: 3500, stone: 1600 }, time: 220, reqBuildings: 9, reqTypes: ['academy', 'bank'], minStay: 360, unlockText: ['Piyade Tüfekçisi', 'Sahra Topu', 'Fabrika'] },
+  { id: 3, name: 'Barut Çağı', cost: { food: 2500, wood: 1200, gold: 2000, stone: 1000 }, time: 180, reqBuildings: 7, reqTypes: ['university'], minStay: 360, unlockText: ['Tüfekçi', 'Uzun Yaylı Okçu', 'Top', 'Zırhlı Süvari', 'Harp Akademisi', 'Banka'] },
+  { id: 4, name: 'Sanayi Çağı', cost: { food: 3200, wood: 1600, gold: 3500, stone: 1600 }, time: 220, reqBuildings: 9, reqTypes: ['academy', 'bank'], minStay: 360, unlockText: ['Piyade Tüfekçisi', 'Keskin Nişancı', 'Sahra Topu', 'Fabrika'] },
 ];
 
 function U(id, name, cls, age, cost, time, hp, atk, armor, speed, range, rof, los, pop, bonus, proj, icon, desc) {
@@ -34,6 +34,15 @@ export const UNITS = {
   cuirassier: U('cuirassier', 'Zırhlı Süvari', 'cavalry', 3, { food: 85, gold: 110 }, 32, 170, 16, 4, 3.6, 0, 1.5, 7, 1, { ranged: 1.4, siege: 3 }, null, '🦄', 'Barut çağının seçkin süvarisi.'),
   rifleman: U('rifleman', 'Piyade Tüfekçisi', 'ranged', 4, { food: 50, gold: 75 }, 24, 75, 24, 2, 2.3, 9, 2, 10, 1, { cavalry: 1.3 }, 'bullet', '🎖️', 'Hızlı ateş eden modern piyade.'),
   artillery: U('artillery', 'Sahra Topu', 'siege', 4, { wood: 220, gold: 250, stone: 120 }, 50, 120, 48, 1, 1.2, 11, 6, 12, 3, { building: 5.8, cavalry: 0.6 }, 'cannonball', '🧨', 'En uzun menzilli kuşatma silahı.'),
+  // (owner 2026-11-24) later archery-range units: a Gunpowder-age longbow and an Industrial-age sharpshooter (longer
+  // range and slower fire than the barracks' musketeer / rifleman)
+  longbow: U('longbow', 'Uzun Yaylı Okçu', 'ranged', 3, { wood: 60, gold: 40 }, 26, 50, 11, 0, 2.3, 8, 2, 10, 1, { infantry: 1.5 }, 'arrow', '🏹', 'Uzun menzilli okçu. Piyadeye karşı etkili, altını az harcar.'),
+  sharpshooter: U('sharpshooter', 'Keskin Nişancı', 'ranged', 4, { wood: 50, gold: 90 }, 30, 60, 32, 1, 2.2, 10, 3.2, 12, 1, { infantry: 1.3 }, 'bullet', '🔭', 'Çok uzun menzilli, yavaş ama sert vuran nişancı.'),
+  // (owner 2026-11-24) final forms of the spear and sword lines: unlocked by a barracks tech (reqTech) in the
+  // Industrial Age; the tech turns every living unit of the old line into the new one and the old one is no longer
+  // trained (UNITS[from].upgradedBy, see Game._upgradeLine)
+  bayonet: Object.assign(U('bayonet', 'Süngülü Er', 'infantry', 4, { food: 60, wood: 30, gold: 20 }, 22, 110, 13, 3, 2.3, 0, 1.4, 7, 1, { cavalry: 2.5 }, null, '🗡️', 'Mızrakçının son hâli. Süvariye karşı çok güçlü.'), { reqTech: 'bayonetdrill' }),
+  guardsman: Object.assign(U('guardsman', 'Muhafız', 'infantry', 4, { food: 60, gold: 55 }, 26, 140, 16, 5, 2.2, 0, 1.4, 7, 1, { building: 1.5, siege: 1.5 }, null, '💂', 'Kılıç Ustasının son hâli. Seçkin zırhlı piyade.'), { reqTech: 'guardregiment' }),
   // (owner 2026-11-21) the healer: a hooded woman trained at the temple; never attacks, heals the friendly living
   // units around her every second, in combat too (see Game._healTick, HEALER_AGE in game.js: one target in the Stone Age, then an area growing per age)
   healer: U('healer', 'Büyücü', 'support', 0, { food: 60, gold: 40 }, 28, 40, 0, 0, 2.2, 0, 1, 11, 1, {}, null, '🧙‍♀️', 'Dost birlikleri savaş sırasında da iyileştirir. Taş Devri’nde en yaralı tek birliği, sonra çevresindeki herkesi; alanı (6-8 kare) ve hızı (2-6 can/sn) her çağda artar. Saldırmaz.'),
@@ -54,8 +63,8 @@ export const BUILDINGS = {
   towncenter: B('towncenter', 'Şehir Merkezi', 0, { wood: 400, stone: 200 }, 90, 2400, 4, 5, ['villager'], ['basket', 'loom', 'wheelbarrow', 'feltvest', 'backpack'], RES.slice(), 6, 7, 10, '🏛️', 'Köylü üretir, kaynak teslim alınır, çağ atlanır.'),
   house: B('house', 'Ev', 0, { wood: 30 }, 15, 500, 2, 5, [], [], null, 0, 0, 4, '🏠', '+5 nüfus kapasitesi.'),
   farm: B('farm', 'Tarla', 1, { wood: 150 }, 30, 600, 3, 0, [], ['plow', 'crop', 'irrigation', 'fertilizer', 'thresher'], null, 0, 0, 3, '🌾', 'Ortada ambar, çevresinde 8 parsel: her parselde bir çiftçi ekip biçer, ürünü ambara taşır. Tarım geliştirmeleri ambarda araştırılır.'),
-  barracks: B('barracks', 'Kışla', 0, { wood: 125 }, 30, 1200, 3, 0, ['spearman', 'swordsman', 'heavyinf', 'musketeer', 'rifleman'], ['drill', 'forcedmarch'], null, 0, 0, 6, '⚔️', 'Piyade birlikleri üretir.'),
-  archery: B('archery', 'Okçuluk Alanı', 1, { wood: 150 }, 30, 1100, 3, 0, ['archer', 'crossbow'], [], null, 0, 0, 6, '🏹', 'Menzilli birlikler üretir.'),
+  barracks: B('barracks', 'Kışla', 0, { wood: 125 }, 30, 1200, 3, 0, ['spearman', 'swordsman', 'heavyinf', 'musketeer', 'rifleman', 'bayonet', 'guardsman'], ['drill', 'forcedmarch', 'bayonetdrill', 'guardregiment'], null, 0, 0, 6, '⚔️', 'Piyade birlikleri üretir.'),
+  archery: B('archery', 'Okçuluk Alanı', 1, { wood: 150 }, 30, 1100, 3, 0, ['archer', 'crossbow', 'longbow', 'sharpshooter'], [], null, 0, 0, 6, '🏹', 'Menzilli birlikler üretir.'),
   stable: B('stable', 'Ahır', 1, { wood: 150 }, 30, 1100, 3, 0, ['lightcav', 'knight', 'cuirassier'], ['husbandry', 'bloodlines', 'warhorses', 'steelshoes', 'barding', 'chainbarding', 'cuirass', 'steelcuirass'], null, 0, 0, 6, '🐴', 'Süvari birlikleri üretir.'),
   blacksmith: B('blacksmith', 'Demirci', 1, { wood: 150 }, 30, 1100, 3, 0, [], ['forging', 'ironcast', 'steel', 'dropforge', 'fletching', 'bodkin', 'cartridge', 'minieball', 'scale', 'plate', 'buffcoat', 'helmet',], null, 0, 0, 6, '⚒️', 'Silah ve zırh geliştirmeleri.'),
   market: B('market', 'Pazar', 1, { wood: 150 }, 30, 1100, 3, 0, [], ['coinage'], null, 0, 0, 6, '⚖️', 'Kaynak takası.'),
@@ -212,6 +221,10 @@ Object.assign(TECHS, {
   concrete: T('concrete', 'Betonarme', 'Bina dayanıklılığı +%20', 4, { wood: 300, stone: 300 }, 60, 'def', '🧱', { bhp: 0.2 }),
   shrapnel: T('shrapnel', 'Şarapnel', 'Kule ve kale saldırısı +3', 4, { gold: 350, stone: 250 }, 60, 'def', '💣', { towerAtk: 3 }),
   casemate: T('casemate', 'Kazamat', 'Kule ve kale saldırısı +3', 4, { stone: 400, gold: 350 }, 60, 'def', '🏰', { towerAtk: 3 }),
+  // barracks: final forms (owner 2026-11-24), see UNITS.bayonet / guardsman
+  bayonetdrill: Object.assign(T('bayonetdrill', 'Süngü Talimi', 'Tüm Mızrakçılar Süngülü Er olur (can 110, saldırı 13, zırh 3)', 4, { food: 400, gold: 300 }, 60, 'mil', '🗡️', {}), { upgrade: { from: 'spearman', to: 'bayonet' } }),
+  guardregiment: Object.assign(T('guardregiment', 'Muhafız Alayı', 'Tüm Kılıç Ustaları Muhafız olur (can 140, saldırı 16, zırh 5)', 4, { food: 400, gold: 400 }, 60, 'mil', '💂', {}), { upgrade: { from: 'swordsman', to: 'guardsman' } }),
   hospital: T('hospital', 'Sahra Hastanesi', 'Tapınak ve Büyücü iyileştirmesi +%100', 4, { gold: 350, stone: 200 }, 55, 'def', '🏥', { heal: 1 }),
 });
+for (const t of Object.values(TECHS)) if (t.upgrade) UNITS[t.upgrade.from].upgradedBy = t.id;
 TECHS.caravan.legacy = true;   // (owner 2026-11-20: no trade carts for now, see UNITS.tradecart.legacy)

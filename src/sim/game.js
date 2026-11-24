@@ -715,6 +715,11 @@ export class Game {
   _rescaleBuildings(p) { for (const b of this.buildings) if (b.owner === p.id) { const n = this._bMaxHp(b.type, p.id); b.hp = n > b.maxHp ? Math.min(n, b.hp + (n - b.maxHp)) : Math.max(1, Math.round(b.hp * n / b.maxHp)); b.maxHp = n; b.ageLook = p.age; } }
   _uMaxHp(type, owner) { const d = UNITS[type], m = this.players[owner].mods; return Math.round(d.hp * (1 + (m.hp[d.cls] || 0) + (type === 'villager' ? m.vhp : 0))); }
   _rescaleUnits(p) { for (const u of this.units) if (u.owner === p.id && !u.dead) { const n = this._uMaxHp(u.type, p.id); if (n !== u.maxHp) { u.hp = n > u.maxHp ? u.hp + (n - u.maxHp) : Math.max(1, Math.min(n, u.hp)); u.maxHp = n; } } }
+  // a final-form tech (TECHS[].upgrade): every living unit of the old line becomes the new type, keeping its health share
+  _upgradeLine(p, up) {
+    const n = this._uMaxHp(up.to, p.id);
+    for (const u of this.units) if (u.owner === p.id && !u.dead && u.type === up.from) { u.hp = Math.max(1, Math.round(u.hp * n / u.maxHp)); u.maxHp = n; u.type = up.to; }
+  }
   _addUnit(type, owner, x, z) {
     const d = UNITS[type], uh = this._uMaxHp(type, owner);
     const u = { id: this.nextId++, kind: 'unit', type, owner, x, z, rot: this.rand() * 6.283, hp: uh, maxHp: uh, dead: false, state: 'idle', anim: 'idle', carry: null, targetId: null, deathTime: 0, attackT: -99, order: null, queue: [], path: null, pi: 0, pk: null, rpT: 0, cd: 0, scanT: this.rand() * 0.5 };
@@ -796,6 +801,7 @@ export class Game {
     const d = kind === 'unit' ? UNITS[id] : kind === 'building' ? BUILDINGS[id] : TECHS[id];
     if (!d || d.age > p.age || d.legacy) return false;   // (legacy: the mill, kept for old saves only)
     if (kind === 'tech' && p.techs.has(id)) return false;
+    if (kind === 'unit' && ((d.reqTech && !p.techs.has(d.reqTech)) || (d.upgradedBy && p.techs.has(d.upgradedBy)))) return false;   // (final-form lines, owner 2026-11-24)
     return true;
   }
   unitsOf(owner) { return this.units.filter(u => u.owner === owner && !u.dead); }
@@ -2216,7 +2222,8 @@ export class Game {
       if (p.pop + ud.pop > p.popCap) { if (b.owner === this.me && this.time > this._popWarnT) { this._popWarnT = this.time + 20; this.events.emit('notify', { text: tr('Nüfus sınırı dolu (1000)!'), type: 'warn' }); } return; }
       b.queue.shift();
       this._navMode = !!ud.naval; const f = ud.naval ? this._navSpawn(b) : this._freeNear(b.x + (this.rand() - 0.5) * b.size, b.z + b.size / 2 + 0.6, b.owner); this._navMode = false;
-      const u = this._addUnit(q.id, b.owner, f.x, f.z); p.stats.unitsTrained++;
+      const up = ud.upgradedBy && p.techs.has(ud.upgradedBy) ? TECHS[ud.upgradedBy].upgrade.to : q.id;   // (queued before the line's upgrade)
+      const u = this._addUnit(up, b.owner, f.x, f.z); p.stats.unitsTrained++;
       this.events.emit('trained', { e: u, building: b });
       if (ud.naval && (!b.rally || !this._navPass(b.rally.x | 0, b.rally.z | 0))) { if (f.rx !== f.x || f.rz !== f.z) this.cmdMove([u.id], f.rx, f.rz); }
       else if (b.rally) {
@@ -2225,7 +2232,7 @@ export class Game {
       } else if (!ud.naval && u.type !== 'villager' && u.type !== 'tradecart') { const sl = this._slotNear(b.x, b.z + b.size / 2 + 2.2, u); this._setOrder(u, { type: 'move', x: sl.x, z: sl.z }, false); }
     } else if (q.kind === 'tech') {
       b.queue.shift(); p.techs.add(q.id); const i = p.pending.indexOf(q.id); if (i >= 0) p.pending.splice(i, 1);
-      p.stats.techs++; this._mods(p); this._rescaleBuildings(p); this._rescaleUnits(p);
+      p.stats.techs++; this._mods(p); this._rescaleBuildings(p); if (TECHS[q.id].upgrade) this._upgradeLine(p, TECHS[q.id].upgrade); this._rescaleUnits(p);
       this.events.emit('researched', { owner: b.owner, tech: q.id });
       if (b.owner === this.me) this.events.emit('notify', { text: tr('{0} araştırıldı', tr(TECHS[q.id].name)), type: 'good' });
     } else if (q.kind === 'age') {
