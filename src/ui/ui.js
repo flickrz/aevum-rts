@@ -785,7 +785,11 @@ export class UI {
         else if (r.webkitRequestFullscreen) r.webkitRequestFullscreen();
       } catch (err) { fail(); }
     };
-    const sync = () => { const on = !!fsEl(); b.innerHTML = ico(on ? 'x-fullscreen-exit' : 'x-fullscreen'); b.classList.toggle('on', on); };
+    // (owner 2026-11-24) Esc in fullscreen should only deselect in-game: Keyboard Lock (Chromium) keeps Esc for the page;
+    // the button, F11 and holding Esc still leave fullscreen. Other browsers: no lock, Esc exits as before.
+    const kb = navigator.keyboard;
+    const lockEsc = (on) => { try { if (!kb || !kb.lock) return; if (on) { const p = kb.lock(['Escape']); if (p && p.catch) p.catch(() => {}); } else kb.unlock(); } catch (err) { /* unsupported */ } };
+    const sync = () => { const on = !!fsEl(); lockEsc(on); b.innerHTML = ico(on ? 'x-fullscreen-exit' : 'x-fullscreen'); b.classList.toggle('on', on); };
     d.addEventListener('fullscreenchange', sync); d.addEventListener('webkitfullscreenchange', sync);
     this._tip(b, () => (fsEl() ? { name: tr('Tam Ekrandan Çık'), desc: tr('Pencere görünümüne dön. Esc de çıkarır.') } : { name: tr('Tam Ekran'), desc: tr('Oyunu tam ekranda oyna. Çıkmak için tekrar tıkla ya da Esc.') }));
     top.append(b); this.fsBtn = b;
