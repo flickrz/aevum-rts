@@ -1171,7 +1171,9 @@ function makeBuilding(type, size, age, color, mask, seed, noGlb) {
       if (hasSea(dockFile(era))) {
         body.clear(); roof.clear(); slab.clear(); c.chim.length = 0; c.spin = null;
         let d = 2; for (let i = 0; i < 4; i++) if ((mask & 15) === 1 << i) d = i;
-        addSeaModel(body, dockFile(era), color, size * 1.15, -.35, [Math.PI, Math.PI / 2, 0, -Math.PI / 2][d]);
+        const ry = [Math.PI, Math.PI / 2, 0, -Math.PI / 2][d], dm = addSeaModel(body, dockFile(era), color, size * 1.15, -.35, ry);
+        // (owner 2026-11-25: "biraz daha suya doğru") the model is pushed out over the water side
+        if (dm) { const off = size * .4; dm.position.x += Math.sin(ry) * off; dm.position.z += Math.cos(ry) * off; }
         U.glb = true;
       }
     }
