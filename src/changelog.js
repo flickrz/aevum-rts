@@ -2,6 +2,35 @@
 // release (Turkish, player-facing: what changed in the game, not how). Shown by src/ui/updates-ui.js.
 export const CHANGELOG = [
   {
+    v: '0.9.8', date: '2026-11-25', title: 'Deniz savaşları ve İngilizce',
+    items: [
+      'Oyun artık İngilizce de var: tarayıcının diline göre açılır, Ayarlardan değiştirilebilir.',
+      'Askerler iki kat hızlı yürüyor. Köylülerin hızı aynı.',
+      'Gemiler 1.8 kat hızlı.',
+      'Kalyon ve Zırhlı karaya uzaktan top atar: menzil 12 ve 13, Kadırga 8.',
+      'Kuleler ve kaleler gemilere daha uzaktan ve 2.5 kat hasarla vurur.',
+      'Balık sürüleri daha bol ve daha hızlı yenileniyor, balıkçı teknesi daha çok topluyor.',
+      'Nakliye gemisi: askerler ve köylüler sağ tıkla biner; dolu gemiyle karşı kıyıya sağ tıklayınca gider ve herkesi indirir. Yeni İndir düğmesi.',
+      'Adalar haritasında oyuncuların adaları arasında kara bağlantısı yok: savaş gemiyle ve çıkarmayla yapılır.',
+      'Adalar, Kıta ve İç Deniz haritalarında deniz çok daha geniş.',
+      'Yapay zeka denizi kullanıyor: iskele ve savaş gemisi kurar, gemiyle asker çıkarır, kıyı binalarını döver, iskelesine kule diker.',
+      'Gemilerin ve iskelelerin yeni 3D modelleri.',
+      'Sağ tıkla basılı tutup sürükleyerek seçili birliklerin diziliş yönünü sen belirlersin.',
+      'Teknoloji ağacından başlatılan geliştirme, aynı türden boştaki binada hemen başlar.',
+      'Pazarda Shift ile alıp satınca 5 kat miktar.',
+      'Kurt ve ayılar yaklaşana saldırır, vurulunca karşılık verir ve başlangıç noktalarından uzakta doğar.',
+      'Büyücü Tunç Devrinden itibaren büyü oku atar, sonraki çağlarda alan hasarı verir.',
+      'Maç sonunda ve İstatistik ekranında grafikler: genel skor, askeri, ekonomi, kaynak, nüfus ve çağ.',
+      'Okçu kışlasında yeni birlikler: Uzun Yaylı Okçu ve Keskin Nişancı. Sanayi Çağında Süngülü Er ve Muhafız geliştirmeleri.',
+      'Düşmanlar artık sağlam surların içinden geçemiyor. Yapay zeka surlarını tam halka olarak kapatır.',
+      'Firefox ve Chrome oyuncuları arasında maçın ayrışması düzeltildi; ayrışma olursa uyarı çıkar.',
+      'Tapınak ve şehir merkezinin etrafındaki kesik çizgiler kalktı.',
+      'Tam ekranda Esc artık tam ekrandan çıkarmaz; çıkmak için Esc basılı tutulur.',
+      'Köylü seçiliyken ağaç, maden, yiyecek ve bina üzerinde imleç baltaya, kazmaya, oraga ve çekice döner; düşman üzerinde kılıç.',
+      '@claude mesajları 1000 karaktere kadar yazılabilir ve kamera düğmesiyle ekran görüntüsü eklenebilir.',
+    ],
+  },
+  {
     v: '0.9.7', date: '2026-11-23', title: 'Büyücü çağlarla güçleniyor',
     items: [
       'Büyücü çağ atladıkça gelişir: Taş Devrinde en yaralı tek birliği iyileştirir, sonraki çağlarda alanı genişler ve daha hızlı iyileştirir.',
