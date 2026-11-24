@@ -1629,15 +1629,95 @@ export class AIController {
         for (const id of ['ironclad', 'galleon', 'galley']) { const ud = UNITS[id]; if (ud && this.unlocked('unit', id) && c.can(ud.cost)) { g.train(dock.id, id); break; } }
       }
     }
+    this._navTrade(c, docks, units);
+    this._navTowers(c, dock);
     if (!war.length) return;
     let tgt = null, td = 20 * 20;
     for (const m of this.mem.values()) { if (m.kind !== 'unit' || !m.naval || m.st !== this.vstamp) continue; const dd = d2(m.x, m.z, dock.x, dock.z); if (dd < td) { td = dd; tgt = m; } }
-    if (!tgt && war.length >= 2) { let bd = 34 * 34; for (const m of this.mem.values()) { if (m.kind !== 'building' || m.type !== 'dock') continue; const dd = d2(m.x, m.z, dock.x, dock.z); if (dd < bd) { bd = dd; tgt = m; } } }
-    const free = war.filter(w => !w.order || w.order.auto);
+    // hurt warships go home to the dock and guard it
+    const hurt = war.filter(w => w.hp < w.maxHp * 0.4), hs = hurt.length ? g._navShore(dock.x, dock.z, this.pid, 6, true) : null;
+    if (hs) { const h = hurt.filter(w => d2(w.x, w.z, hs.wx, hs.wz) > 4 * 4 && !(w.order && w.order.type === 'move')).map(w => w.id); if (h.length) g.cmdMove(h, hs.wx, hs.wz); }
+    const fit = war.filter(w => w.hp >= w.maxHp * 0.4), free = fit.filter(w => !w.order || w.order.auto);
     if (tgt) { const f = free.filter(w => !(w.order && w.order.targetId === tgt.id)); if (f.length) g.cmdAttack(f.map(w => w.id), tgt.id); return; }
+    if (this._navBombard(c, fit, dock)) return;
     const s = this._shoalNear(shoals, dock), gx = s ? s.x : dock.x, gz = s ? s.z : dock.z;
     const idle = war.filter(w => !w.order && d2(w.x, w.z, gx, gz) > 8 * 8);
     if (idle.length) g.cmdMove(idle.map(w => w.id), gx, gz);
+  }
+
+  // trade ships: with two own docks 22+ tiles apart (or an allied dock that far) train up to the cap; on a sea map
+  // with one dock, put a second dock on a distant stretch of our own coast (normal / hard)
+  _navTrade(c, docks, units) {
+    const g = this.game, cap = this.difficulty === 'easy' ? 0 : this.difficulty === 'normal' ? 2 : 4;
+    if (!cap || !UNITS.tradeship || !this.unlocked('unit', 'tradeship') || c.me.age < 1) return;
+    const done = docks.filter(b => b.done), far = 22 * 22;
+    const partner = d => g.buildings.some(b => b !== d && !b.dead && b.done && b.type === 'dock' && g.isAlly(this.pid, b.owner) && d2(b.x, b.z, d.x, d.z) >= far);
+    const home = done.find(partner);
+    if (!home) {
+      if (docks.length >= 2 || !done.length || !this._seaMode(c) || g.time - (this.dock2T || 0) < 45 || !c.can(BUILDINGS.dock.cost) || c.vills.length < 12) return;
+      this.dock2T = g.time;
+      if ((this.dock2N || 0) >= 3) return;
+      const d0 = done[0], hx = Math.floor(c.home.x), hz = Math.floor(c.home.z); let best = null, bd = -1;
+      const foes = []; g.players.forEach((p, i) => { if (i !== this.pid && p && this.foe(i) && p.startX != null) foes.push(p); });
+      for (let tz = hz - 36; tz <= hz + 36; tz += 2) for (let tx = hx - 36; tx <= hx + 36; tx += 2) {
+        const x = tx + 1.5, z = tz + 1.5, dh = d2(x, z, c.home.x, c.home.z), dd = d2(x, z, d0.x, d0.z);
+        if (dh > 36 * 36 || dd < far || dd <= bd || !this.explored(x, z) || this._unsafe(x, z)) continue;
+        if (foes.some(p => d2(x, z, p.startX, p.startZ) < dh)) continue;
+        if (this.safe(() => g.canPlace('dock', tx, tz, this.pid))) { best = { tx, tz }; bd = dd; }
+      }
+      if (!best) return;
+      this.dock2N = (this.dock2N || 0) + 1;
+      const b = c.vills.filter(v => !v.order || v.order.type !== 'build').sort((p, q) => d2(p.x, p.z, best.tx, best.tz) - d2(q.x, q.z, best.tx, best.tz) || p.id - q.id).slice(0, 2).map(v => v.id);
+      g.placeBuilding(this.pid, 'dock', best.tx, best.tz, b);
+      return;
+    }
+    const n = units.filter(u => u.type === 'tradeship').length + done.reduce((a, d) => a + (d.queue || []).filter(q => q.id === 'tradeship').length, 0);
+    if (n >= cap || !c.can(UNITS.tradeship.cost)) return;
+    const d = done.find(d => partner(d) && !(d.queue || []).length);
+    if (d) g.train(d.id, 'tradeship');
+  }
+
+  // a tower or two next to our dock once enemy warships have been seen near our coast
+  _navTowers(c, dock) {
+    const g = this.game, want = this.difficulty === 'easy' ? 1 : 2;
+    if (g.time - (this.navTowT || 0) < 20) return; this.navTowT = g.time;
+    let seen = false;
+    for (const m of this.mem.values()) if (m.kind === 'unit' && m.naval && m.mil && g.time - m.t < 90 && (d2(m.x, m.z, dock.x, dock.z) < 30 * 30 || d2(m.x, m.z, c.home.x, c.home.z) < 30 * 30)) { seen = true; break; }
+    if (!seen) return;
+    const n = c.blds.filter(b => (b.type === 'tower' || b.type === 'castle') && d2(b.x, b.z, dock.x, dock.z) < 9 * 9).length;
+    if (n < want && this.tryBuild(c, 'tower', 2, 6, { x: dock.x, z: dock.z }, 1)) c.pendingB = (c.pendingB || 0) + 1;
+  }
+
+  // warships shell enemy buildings in reach of the water: pick the remembered building nearest our dock that has a
+  // water tile within the ship's range, sail there, then attack it
+  _navBombard(c, war, dock) {
+    const g = this.game;
+    if (war.length < (this.difficulty === 'hard' ? 1 : 2)) return false;
+    const big = war.filter(w => w.type === 'galleon' || w.type === 'ironclad'), use = big.length ? big : war;
+    const R = Math.max(3, Math.floor((Math.min(...use.map(w => UNITS[w.type].range)) - 1) * 0.7));
+    let b = this.bomb && this.mem.get(this.bomb.id);
+    if (!b || this.bomb.R !== R) {
+      this.bomb = null; b = null;
+      if (g.time - (this.bombT || 0) < 10) return false; this.bombT = g.time;
+      const bad = this.bombBad || (this.bombBad = {}), list = [];
+      for (const m of this.mem.values()) if (m.kind === 'building' && m.type !== 'wall' && m.type !== 'rail' && !(bad[m.id] >= R)) list.push(m);
+      list.sort((p, q) => d2(p.x, p.z, dock.x, dock.z) - d2(q.x, q.z, dock.x, dock.z) || p.id - q.id);
+      for (const m of list.slice(0, 12)) {
+        const s = g._navShore(m.x, m.z, this.pid, R, true);
+        if (!s) { bad[m.id] = R; continue; }
+        this.bomb = { id: m.id, R, wx: s.wx, wz: s.wz }; b = m; break;
+      }
+      if (!b) return false;
+    }
+    const t = g.entities.get(b.id);
+    for (const w of use) {
+      if (w.order && w.order.targetId === b.id) continue;
+      const rr = UNITS[w.type].range + (b.size || 1) * 0.5;
+      if (t && !t.dead && d2(w.x, w.z, b.x, b.z) <= rr * rr) g.cmdAttack([w.id], b.id);
+      else if (!(w.order && w.order.type === 'move')) g.cmdMove([w.id], this.bomb.wx, this.bomb.wz);
+    }
+    this.stats.bombards = (this.stats.bombards || 0) + 1;
+    return true;
   }
 
   // true when no foe's start can be reached over land from home (islands; shallow fords count as land). Computed once.
@@ -2015,6 +2095,8 @@ export class AIController {
   }
 
   _retreat(gr, c, keep) {
+    // a sea landing cannot walk home: it fights on (hunts) until it wins or dies; returns true so the caller fights
+    if (gr.sea && this._seaMode(c)) { const now = this.game.time; gr.lastHit = now; if (!gr.hunting) { gr.hunting = true; gr.huntS = now; } return true; }
     const ids = gr.ids.filter(id => this.alive(id));
     if (ids.length) this.game.cmdMove(ids, c.rally.x, c.rally.z);
     gr.phase = 'back'; gr.phaseT = this.game.time;
@@ -2067,7 +2149,7 @@ export class AIController {
       // does not go stale; it keeps looking until the enemy is gone, the push is beaten, or HUNT_GIVEUP s pass without
       // a kill or a hit on a building
       const huntOut = gr.hunting && now - Math.max(gr.lastHit || 0, this._bldHitT || 0, gr.huntS || gr.start) > HUNT_GIVEUP;
-      if ((lost >= 0.6 && !gr.razed) || live.length < 2 || losing || (stale && now - gr.start > 300 && !gr.hunting) || huntOut) { this._retreat(gr, c); continue; }
+      if ((lost >= 0.6 && !gr.razed) || live.length < 2 || losing || (stale && now - gr.start > 300 && !gr.hunting) || huntOut) { if (!this._retreat(gr, c)) continue; }
       if (gr.phase === 'rally') {
         const slow = Math.min(...live.map(u => UNITS[u.type].speed));
         const far = Math.sqrt(d2(c.home.x, c.home.z, gr.rx, gr.rz));
