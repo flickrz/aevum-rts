@@ -791,7 +791,7 @@ export class UI {
     const lockEsc = (on) => { try { if (!kb || !kb.lock) return; if (on) { const p = kb.lock(['Escape']); if (p && p.catch) p.catch(() => {}); } else kb.unlock(); } catch (err) { /* unsupported */ } };
     const sync = () => { const on = !!fsEl(); lockEsc(on); b.innerHTML = ico(on ? 'x-fullscreen-exit' : 'x-fullscreen'); b.classList.toggle('on', on); };
     d.addEventListener('fullscreenchange', sync); d.addEventListener('webkitfullscreenchange', sync);
-    this._tip(b, () => (fsEl() ? { name: tr('Tam Ekrandan Çık'), desc: tr('Pencere görünümüne dön. Esc de çıkarır.') } : { name: tr('Tam Ekran'), desc: tr('Oyunu tam ekranda oyna. Çıkmak için tekrar tıkla ya da Esc.') }));
+    this._tip(b, () => (fsEl() ? { name: tr('Tam Ekrandan Çık'), desc: tr('Pencere görünümüne dön. Esc tuşunu basılı tutmak da çıkarır.') } : { name: tr('Tam Ekran'), desc: tr('Oyunu tam ekranda oyna. Çıkmak için tekrar tıkla ya da Esc tuşunu basılı tut.') }));
     top.append(b); this.fsBtn = b;
     return b;
   }
