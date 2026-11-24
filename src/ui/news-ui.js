@@ -2,6 +2,7 @@
 // the latest release from src/changelog.js) with a couple of older titles under it; a click opens the full text.
 // An unread dot shows until the newest one has been opened (localStorage 'aevum.newsSeen'). On phones (html.touch or a
 // low screen) the box collapses to a small button that opens the same panel. No network: everything is in the bundle.
+import { ico } from '../icons.js';
 import { NEWS } from '../news.js';
 import { CHANGELOG } from '../changelog.js';
 import { tr } from '../i18n.js';
@@ -11,11 +12,13 @@ const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) 
 const AYLAR = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
 const fmtDate = (d) => { const [y, m, dd] = String(d).split('-').map(Number); return dd + ' ' + (AYLAR[m - 1] ? tr(AYLAR[m - 1]) : '') + ' ' + y; };
 
-// every announcement, newest first: the NEWS entries and the latest release
+// every announcement, newest first (only what is written in src/news.js; owner 2026-11-25: nothing is added
+// automatically). An entry with changelog: '0.9.8' lists that release's items under its text when opened.
 export function allNews() {
-  const out = NEWS.map((n) => ({ ...n, title: tr(n.title), body: tr(n.body), linkText: n.linkText ? tr(n.linkText) : '' }));
-  const r = CHANGELOG[0];
-  if (r) out.push({ id: 'rel-' + r.v, date: r.date, release: true, title: r.v + ' – ' + tr(r.title), items: r.items.map((t) => tr(t)), body: r.items.slice(0, 3).map((t) => tr(t)).join(' ') });
+  const out = NEWS.map((n) => {
+    const r = n.changelog ? CHANGELOG.find((c) => c.v === n.changelog) : null;
+    return { ...n, title: tr(n.title), body: tr(n.body), linkText: n.linkText ? tr(n.linkText) : '', release: !!r, items: r ? r.items.map((t) => tr(t)) : [] };
+  });
   return out.sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
 const seen = () => { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } };
@@ -75,7 +78,7 @@ export function newsBox(ui) {
     card.append(older);
   }
   // the small button (phones)
-  const btn = h('button', 'news-btn panel', '📢'); btn.type = 'button'; btn.title = tr('Duyurular');
+  const btn = h('button', 'news-btn panel'); btn.innerHTML = ico('x-tech'); btn.type = 'button'; btn.title = tr('Duyurular');
   if (unread) btn.append(dot());
   btn.onclick = () => open(top);
   wrap.append(card, btn);

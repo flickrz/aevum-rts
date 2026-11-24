@@ -558,4 +558,6 @@ export default {
   // src/ui/news-ui.js (main menu announcements)
   "Duyurular": "News",
   "Aç": "Open",
+  'Oyun sizinle hızla gelişiyor': 'The game grows fast with you',
+  'Sizden gelen @claude önerileriyle oyun çok hızlı gelişiyor. Bu güncellemede birçok yenilik var: deniz savaşları, İngilizce dil desteği ve çok daha fazlası. Tüm değişiklikler için tıklayın. İyi oyunlar!': 'Thanks to your @claude suggestions the game is moving fast. This update brings a lot: naval warfare, English language support and much more. Click to see every change. Have fun!',
 };

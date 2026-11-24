@@ -1085,7 +1085,8 @@ html.touch .chathead { flex-direction: row-reverse; }
 .news-older { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
 .news-olink { background: none; border: 0; padding: 3px 2px; text-align: left; font-size: 12.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .news-olink:hover, .news-olink.on { color: var(--gold); }
-.news-btn { display: none; position: relative; width: 40px; height: 40px; padding: 0; font-size: 18px; line-height: 1; border-radius: 10px; }
+.news-btn { display: none; position: relative; width: 40px; height: 40px; padding: 0; font-size: 18px; line-height: 1; border-radius: 10px; color: #e0b858; }
+.news-btn svg, .news-btn .gi { width: 22px; height: 22px; color: #e0b858; fill: currentColor; }
 .news-btn .news-dot { position: absolute; top: -3px; right: -3px; }
 .news-ov { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(5,7,11,.55); pointer-events: auto; }
 .news-modal { position: relative; width: min(560px, 92vw); max-height: 86vh; overflow: auto; padding: 22px 26px 20px; box-sizing: border-box; text-align: left; }
