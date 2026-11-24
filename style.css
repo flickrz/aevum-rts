@@ -390,6 +390,7 @@ table.st th { color: var(--gold); font-weight: 600; }
 .chatdock.open .chatin { display: flex; }
 .netbanner { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); padding: 12px 22px; font-size: 16px; z-index: 60; pointer-events: none; border-color: var(--gold); }
 .netbanner.desync { border-color: var(--red); color: var(--red); }
+.netbanner.desync.sticky { top: 64px; max-width: min(720px, 92vw); font-size: 14px; padding: 8px 16px; text-align: center; }
 /* update notice (src/ui/notice-ui.js): countdown / loading / "Yeni sürüm hazır"; above menus and the HUD, never under the dialogs */
 .updbanner { position: fixed; left: 50%; top: 58px; transform: translateX(-50%); z-index: 900; display: flex; align-items: center; gap: 14px; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 9px 16px; border-color: var(--gold); pointer-events: none; animation: toastIn .25s ease; }
 .updbanner .ub-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

@@ -148,7 +148,15 @@ const app = {
       } catch (err) { console.warn('[desync log]', err); }
     };
     on('saveMismatch', ev => { logDesync('save', ev); notify(tr('⚠ Kayıt {0} ile farklı çıktı (senkron sorunu olabilir).', (ev && ev.name) || tr('diğer oyuncu')), 'warn'); });
-    on('desync', ev => { logDesync('desync', ev); status('desync', tr('Senkron bozuldu (tik {0}). Oyunlar farklılaştı; durum kayda geçti.', ev && ev.tick), ev); });
+    // (2026-11-23, room Q8YQ7: one client split off at minute 1 and played 80 minutes in its own world with only a 6 s
+    // toast) the vote says who split off; that player gets a banner that stays, the others are told whose screen is wrong
+    on('desync', ev => {
+      logDesync('desync', ev);
+      const names = (l) => (l || []).map(x => x.name).join(', ');
+      if (ev && ev.diverged) status('desync', tr('⚠ Senin oyunun diğerlerinden ayrıldı (tik {0}): gördüğün, gerçek maç değil. Maçı kaydedin; {1} kaydı "Kayıtlı Maça Devam Et" ile açsın.', ev.tick, names(ev.good) || tr('diğer oyuncu')), Object.assign({}, ev, { sticky: true }));
+      else if (ev && ev.odd && ev.odd.length) status('desync', tr('Senkron bozuldu (tik {0}): {1} oyunu ayrıldı, onun ekranı gerçek maçı göstermiyor. Maçı kaydedip senin kaydınla yeniden açabilirsiniz.', ev.tick, names(ev.odd)), ev);
+      else status('desync', tr('Senkron bozuldu (tik {0}). Oyunlar farklılaştı; durum kayda geçti.', ev && ev.tick), ev);
+    });
     on('peerLeft', ev => {
       status('peerLeft', tr('{0} oyundan ayrıldı.', (ev && ev.name) || tr('Bir oyuncu')), ev);   // netStatus toasts it
     });

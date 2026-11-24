@@ -1,6 +1,6 @@
 // Aevum - lockstep network test: in-memory lossy hub, 3 NetSessions (host + 2 joiners), real Game sims.
 // Run: node test/net-test.mjs
-import { NetSession, STEP, TURN_TICKS } from '../src/net/session.js';
+import { NetSession, STEP, TURN_TICKS, desyncVerdict } from '../src/net/session.js';
 import * as G from '../src/sim/game.js';
 
 let failed = 0;
@@ -232,6 +232,15 @@ for (let k = 0; k < 20000 && (S[0].tick < target2 || S[1].tick < target2); k++) 
   await flush();
 }
 ok(JSON.stringify(S[0]._log) === JSON.stringify(S[1]._log) && games[0].hash() === games[1].hash(), 'host and joiner still identical after the drop');
+// desync vote (room Q8YQ7: the host split off from 3 others): the odd one out learns it is the one off the match
+{
+  const v0 = desyncVerdict(0, 0xaa, new Map([[1, 0xbb], [2, 0xbb], [3, 0xbb]]), 0);
+  ok(v0.diverged && v0.odd.join() === '0' && v0.good.join() === '1,2,3', 'vote: the host alone with another hash is the one that split off');
+  const v2 = desyncVerdict(2, 0xbb, new Map([[0, 0xaa], [1, 0xbb], [3, 0xbb]]), 0);
+  ok(!v2.diverged && v2.odd.join() === '0', 'vote: a majority player is told who split off');
+  const t1 = desyncVerdict(1, 0xbb, new Map([[0, 0xaa]]), 0), t0v = desyncVerdict(0, 0xaa, new Map([[1, 0xbb]]), 0);
+  ok(t1.diverged && !t0v.diverged && t1.odd.join() === '1' && t0v.odd.join() === '1', 'vote: a 1-1 tie goes to the authority, both sides agree');
+}
 console.log(`(${((Date.now() - t0) / 1000).toFixed(1)} s wall time)`);
 S.forEach(s => s.close());
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll net checks passed.');

@@ -6,6 +6,7 @@
 // Difficulty changes decision quality and tempo only (think interval, villager targets, how tightly it
 // follows its plan, counter quality, how often it leaves villagers idle, attack timing / sizes).
 import { UNITS, BUILDINGS, TECHS, AGES, FARM_SLOTS } from '../data.js';
+import { dsin, dcos, datan2, dhypot } from './dmath.js';
 import { QUEUE_TIME_MUL, unitLos, buildingLos, forDisc, MINE_CAP, healerStats } from './game.js';
 
 const MIN = 60;
@@ -227,7 +228,7 @@ export class AIController {
     // direction to the enemy (known base, else the map centre)
     const eb = this.enemyBase();
     const N = g.map.size, tx = eb ? eb.x : N / 2, tz = eb ? eb.z : N / 2;
-    const L = Math.hypot(tx - home.x, tz - home.z) || 1;
+    const L = dhypot(tx - home.x, tz - home.z) || 1;
     c.edir = { x: (tx - home.x) / L, z: (tz - home.z) / L };
     c.rally = this._freeish(home.x + c.edir.x * 8, home.z + c.edir.z * 8);
     return c;
@@ -817,7 +818,7 @@ export class AIController {
       const at = site ? { x: site.x, z: site.z } : { x: H.x - ed.x * 16, z: H.z - ed.z * 16 };
       ok = this.tryBuild(c, type, 3, 14, at, 3);
       if (!ok && site && this.noSpot) {
-        const hl = Math.hypot(H.x - site.x, H.z - site.z) || 1;
+        const hl = dhypot(H.x - site.x, H.z - site.z) || 1;
         ok = this.tryBuild(c, type, 3, 12, { x: site.x + (H.x - site.x) / hl * 7, z: site.z + (H.z - site.z) / hl * 7 }, 3);
       }
       // (no room there: the whole field - every known tile of that kind round the site - is given up, not one tile of
@@ -842,7 +843,7 @@ export class AIController {
       // (the front point: its home side first and at most 8 tiles past it - the 7x7 buildings of 2026-11-20 found no
       // room right at it and went up to 15 tiles beyond, towards the enemy, which then pulled the defence out of the base)
       const front = !!at.front, nb = (def.size || 1) >= 3 ? 2 : 1;
-      ok = this.tryBuild(c, type, 5, 36, at, nb, front ? { x: -ed.x, z: -ed.z, home: H, lim: Math.hypot(at.x - H.x, at.z - H.z) + 8 } : undefined);
+      ok = this.tryBuild(c, type, 5, 36, at, nb, front ? { x: -ed.x, z: -ed.z, home: H, lim: dhypot(at.x - H.x, at.z - H.z) + 8 } : undefined);
       if (!ok && at !== H) ok = this.tryBuild(c, type, 5, 36, H, nb);
       // (players 2026-11-19: the hard AI stayed in the Middle Ages - a crowded base had no room for the university
       // within 30 tiles, so the age-up waited forever with thousands banked): a building the next age needs looks further out
@@ -857,7 +858,7 @@ export class AIController {
   // where the next building of a type goes: our town centers, then a front point towards the enemy, in turn
   _spreadAnchor(c, type) {
     const H = c.home, ed = c.edir, eb = this.enemyBase(), N = this.game.map.size;
-    const ex = eb ? eb.x : N / 2, ez = eb ? eb.z : N / 2, L = Math.hypot(ex - H.x, ez - H.z);
+    const ex = eb ? eb.x : N / 2, ez = eb ? eb.z : N / 2, L = dhypot(ex - H.x, ez - H.z);
     const anchors = c.tcs.filter(t => t.done).map(t => ({ x: t.x, z: t.z }));
     if (!anchors.length) anchors.push(H);
     // (the front moves out age by age: 35 tiles in the Bronze Age ... 80 in the Industrial, at most this.d.fwd of the way)
@@ -1368,7 +1369,7 @@ export class AIController {
           // (dir.home / dir.lim: no further from home than that - a front building stays on the home side of its point)
           if (dir && dir.home && d2(tx + size / 2, tz + size / 2, dir.home.x, dir.home.z) > dir.lim * dir.lim) continue;
           if (((tx % step) + step) % step !== 0 || ((tz % step) + step) % step !== 0) continue;
-          const L = Math.hypot(dx, dz) || 1;
+          const L = dhypot(dx, dz) || 1;
           cands.push([tx, tz, (dir ? -(dx * dir.x + dz * dir.z) / L : 0) + this.rand() * 0.8]);
         }
       }
@@ -1478,7 +1479,7 @@ export class AIController {
     cand.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
     for (let i = 0; i < cand.length && i < 24; i++) {
       const e = cand[i][2]; if (!this._campOk(c, type, e.x, e.z)) continue;
-      const hx = c.home.x - e.x, hz = c.home.z - e.z, hl = Math.hypot(hx, hz) || 1;
+      const hx = c.home.x - e.x, hz = c.home.z - e.z, hl = dhypot(hx, hz) || 1;
       // (the camp's middle half its size plus a tile from the deposit, toward home: 2.5 for the 3x3, 3 for the 4x4)
       const off = (BUILDINGS[type].size || 3) / 2 + 1;
       return { x: e.x + hx / hl * off, z: e.z + hz / hl * off };
@@ -1525,12 +1526,12 @@ export class AIController {
     if (!unpaired.length && myPairs.length >= this.d.rails) return;
     if (unpaired.length === 0) { if (!this.tryBuild(c, 'station', 7, 18, c.home, 2, { x: -c.edir.x, z: -c.edir.z })) this.railFail = g.time; return; }
     if (unpaired.length === 1) {
-      const s = unpaired[0], a0 = Math.atan2(s.z - c.home.z, s.x - c.home.x);
+      const s = unpaired[0], a0 = datan2(s.z - c.home.z, s.x - c.home.x);
       for (const da of [Math.PI / 2, -Math.PI / 2, 0, Math.PI]) {
-        const a = a0 + da, at = { x: s.x + Math.cos(a) * 17, z: s.z + Math.sin(a) * 17 };
+        const a = a0 + da, at = { x: s.x + dcos(a) * 17, z: s.z + dsin(a) * 17 };
         const spot = this.findSpot('station', at.x - 1.5, at.z - 1.5, 0, 3);
         if (!spot) continue;
-        const dd = Math.hypot(spot.tx + 1.5 - s.x, spot.tz + 1.5 - s.z); if (dd < 14 || dd > 21) continue;
+        const dd = dhypot(spot.tx + 1.5 - s.x, spot.tz + 1.5 - s.z); if (dd < 14 || dd > 21) continue;
         const b = vills.slice().sort((p, q) => d2(p.x, p.z, at.x, at.z) - d2(q.x, q.z, at.x, at.z)).slice(0, 2).map(v => v.id);
         if (g.placeBuilding(this.pid, 'station', spot.tx, spot.tz, b) != null) return;
       }
@@ -1608,15 +1609,15 @@ export class AIController {
     const g = this.game, me = c.me, N = g.map.size, h = c.home, pts = [];
     const eb = this.enemyBase();
     if (!eb) {
-      if (this.scoutRuns === 0) for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + 0.6; pts.push(this._freeish(h.x + Math.cos(a) * 16, h.z + Math.sin(a) * 16)); }
+      if (this.scoutRuns === 0) for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + 0.6; pts.push(this._freeish(h.x + dcos(a) * 16, h.z + dsin(a) * 16)); }
       // the four possible start corners of this map layout, nearest first
       const corners = [[0.2, 0.2], [0.8, 0.8], [0.8, 0.2], [0.2, 0.8]].map(f => ({ x: f[0] * N, z: f[1] * N })).filter(p => d2(p.x, p.z, me.startX, me.startZ) > 20 * 20);
       corners.sort((a, b) => d2(a.x, a.z, h.x, h.z) - d2(b.x, b.z, h.x, h.z));
       for (const p of corners) pts.push(this._freeish(p.x + (h.x - p.x) * 0.15, p.z + (h.z - p.z) * 0.15));
       pts.push(this._freeish(N / 2, N / 2));
     } else {
-      const a0 = Math.atan2(h.z - eb.z, h.x - eb.x);
-      for (let k = -2; k <= 2; k++) { const a = a0 + k * 0.75; pts.push(this._freeish(eb.x + Math.cos(a) * 19, eb.z + Math.sin(a) * 19)); }
+      const a0 = datan2(h.z - eb.z, h.x - eb.x);
+      for (let k = -2; k <= 2; k++) { const a = a0 + k * 0.75; pts.push(this._freeish(eb.x + dcos(a) * 19, eb.z + dsin(a) * 19)); }
       pts.push(this._freeish((eb.x + h.x) / 2, (eb.z + h.z) / 2));
     }
     pts.push({ x: c.rally.x, z: c.rally.z, home: true });
@@ -1837,7 +1838,7 @@ export class AIController {
     }
     // rally outside the enemy base, on our side
     const bx = eb ? eb.x : tx, bz = eb ? eb.z : tz;
-    const L = Math.hypot(c.home.x - bx, c.home.z - bz) || 1;
+    const L = dhypot(c.home.x - bx, c.home.z - bz) || 1;
     const rally = this._freeish(bx + (c.home.x - bx) / L * 20, bz + (c.home.z - bz) / L * 20);
     const gr = { kind: 'push', ids, initial: ids.length, phase: 'rally', rx: rally.x, rz: rally.z, tx, tz, targetId: tgt ? tgt.id : null, start: now, phaseT: now, kills: 0, razed: 0 };
     this.groups.push(gr);

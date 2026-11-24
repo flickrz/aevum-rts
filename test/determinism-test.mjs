@@ -81,5 +81,17 @@ const st = A.players.map(p => p.id + ':' + p.stats.unitsTrained + 'u/' + p.stats
 console.log('  sim', (A.tick / 1800).toFixed(1), 'min x3 in', secs.toFixed(1), 's; players', st.join(' '), 'over', JSON.stringify(A.over));
 // cfg.me alone never changes the hash: same game, flip me + fog recompute
 const h0 = A.hash(); A.me = 1; A._updateFog(); A.isEntityVisible(A.units[0]); ok(A.hash() === h0, 'changing me / recomputing fog leaves hash unchanged'); A.me = 0;
+// the sim's math must not use Math.sin/cos/atan2/hypot or ** (engine-dependent last bits: Firefox vs Chrome desyncs,
+// 2026-11-23); src/sim/dmath.js replaces them and stays close to the real functions
+{
+  const fs = await import('fs');
+  const bad = fs.readdirSync(new URL('../src/sim/', import.meta.url)).filter(f => f.endsWith('.js') && f !== 'dmath.js')
+    .filter(f => /Math\.(sin|cos|tan|atan2?|asin|acos|hypot|exp|expm1|pow|log|log2|log10|log1p|cbrt|sinh|cosh|tanh)\(|[^*/]\*\*[^*/]/.test(fs.readFileSync(new URL('../src/sim/' + f, import.meta.url), 'utf8')));
+  ok(!bad.length, 'no engine-dependent Math functions in src/sim ' + bad.join(' '));
+  const D = await import('../src/sim/dmath.js');
+  let e = 0; for (let i = -4000; i <= 4000; i++) { const x = i * 0.37, y = (i % 97) * 0.21 - 9; e = Math.max(e, Math.abs(D.dsin(x) - Math.sin(x)), Math.abs(D.dcos(x) - Math.cos(x)), Math.abs(D.datan2(y, x / 50) - Math.atan2(y, x / 50)), Math.abs(D.dhypot(x, y) - Math.hypot(x, y))); }
+  ok(e < 1e-12, 'dmath stays within 1e-12 of Math (' + e + ')');
+  ok(D.datan2(0, 0) === 0 && D.datan2(1, 0) === Math.PI / 2 && D.datan2(0, -1) === Math.PI && D.dsin(0) === 0 && D.dcos(0) === 1, 'dmath edge cases');
+}
 console.log(fails.length ? 'FAILED: ' + fails.length : 'ALL OK');
 process.exit(fails.length ? 1 : 0);
