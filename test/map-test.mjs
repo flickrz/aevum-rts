@@ -63,8 +63,8 @@ for (const mt of MAP_TYPES) {
   if (mt === 'plains') ok(waterMax < 0.1 && mtnMax === 0, 'plains: water < 10 %, no mountains');
   if (mt === 'highlands') ok(waterMax < 0.1 && mtnMax > 0.08, 'highlands: water < 10 %, mountain ridges present');
   if (mt === 'islands') ok(landMin >= 0.25 && landMax <= 0.6, 'islands: land 25-60 %');
-  if (mt === 'inlandsea') ok(centreDeep === maps && landMin > 0.55, 'inlandsea: deep sea at the centre, land ring around');
-  if (mt === 'continent') ok(borderMin >= 0.98 && landMin > 0.45 && landMax < 0.9, 'continent: border ring is water, one big landmass');
+  if (mt === 'inlandsea') ok(centreDeep === maps && landMin > 0.45, 'inlandsea: deep sea at the centre, land ring around');
+  if (mt === 'continent') ok(borderMin >= 0.98 && landMin > 0.3 && landMax < 0.8, 'continent: border ring is water, one big landmass');
   if (mt === 'river') ok(landMin > 0.6, 'river: mostly land');
 }
 

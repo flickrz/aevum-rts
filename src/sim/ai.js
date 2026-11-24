@@ -1632,7 +1632,7 @@ export class AIController {
     this._navTowers(c, dock);
     if (!war.length) return;
     let tgt = null, td = 20 * 20;
-    for (const m of this.mem.values()) { if (m.kind !== 'unit' || !m.naval || m.st !== this.vstamp) continue; const dd = d2(m.x, m.z, dock.x, dock.z); if (dd < td) { td = dd; tgt = m; } }
+    for (const m of this.mem.values()) { if (m.kind !== 'unit' || !m.naval || m.st !== this.vstamp || !this.game.entities.has(m.id)) continue; const dd = d2(m.x, m.z, dock.x, dock.z); if (dd < td) { td = dd; tgt = m; } }
     // hurt warships go home to the dock and guard it
     const hurt = war.filter(w => w.hp < w.maxHp * 0.4), hs = hurt.length ? g._navShore(dock.x, dock.z, this.pid, 6, true) : null;
     if (hs) { const h = hurt.filter(w => d2(w.x, w.z, hs.wx, hs.wz) > 4 * 4 && !(w.order && w.order.type === 'move')).map(w => w.id); if (h.length) g.cmdMove(h, hs.wx, hs.wz); }
@@ -1661,7 +1661,7 @@ export class AIController {
     const g = this.game;
     if (war.length < (this.difficulty === 'hard' ? 1 : 2)) return false;
     const big = war.filter(w => w.type === 'galleon' || w.type === 'ironclad'), use = big.length ? big : war;
-    const R = Math.max(3, Math.floor((Math.min(...use.map(w => UNITS[w.type].range)) - 1) * 0.7));
+    const R = Math.max(3, Math.floor((Math.min(...use.map(w => UNITS[w.type].range)) - 0.5) * 0.7));
     let b = this.bomb && this.mem.get(this.bomb.id);
     if (!b || this.bomb.R !== R) {
       this.bomb = null; b = null;

@@ -390,20 +390,20 @@ export class Game {
     const sstep = (a, b, x) => { let t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
     // non-river plateaus: per start, the inner radius stays clear of the map border (sea border must not cut it)
     // (the flat settling ground around a start: 1.7x since 2026-11-13, sized for the bigger buildings and a town around them)
-    const plat = starts.map(s => { const bd = Math.min(s[0], s[1], N - s[0], N - s[1]); const pi = Math.max(6, Math.min(Math.round(P.pi * 1.7), bd - 4)); return [s[0], s[1], pi, pi + Math.round((P.po - P.pi) * 1.7)]; });
+    const plat = starts.map(s => { const bd = Math.min(s[0], s[1], N - s[0], N - s[1]); const pi = Math.max(6, Math.min(Math.round(P.pi * 1.7), bd - 4)); return [s[0], s[1], pi, pi + (P.shape ? 6 : Math.round((P.po - P.pi) * 1.7))]; });   // (sea maps: a short blend, the sea comes close)
     // shape mask: 0 = keep terrain, 1 = open sea
     const shape = !P.shape ? null : P.shape === 'continent' ? (vx, vz) => {
       const dx = Math.abs(vx - H) / H, dz = Math.abs(vz - H) / H, r = Math.max(dx, dz) * 0.55 + dhypot(dx, dz) * 0.45;
-      return sstep(0.8, 0.92, r + (fbm(vx / N * 5 + 400, vz / N * 5 + 400, seed + 5) - 0.5) * 0.5);
+      return sstep(0.52, 0.68, r + (fbm(vx / N * 5 + 400, vz / N * 5 + 400, seed + 5) - 0.5) * 0.5);
     } : P.shape === 'inlandsea' ? (vx, vz) => {
       const r = dhypot(vx - H, vz - H) / H;
-      return 1 - sstep(0.44, 0.56, r + (fbm(vx / N * 5 + 400, vz / N * 5 + 400, seed + 5) - 0.5) * 0.45);
+      return 1 - sstep(0.68, 0.8, r + (fbm(vx / N * 5 + 400, vz / N * 5 + 400, seed + 5) - 0.5) * 0.45);
     } : (() => { // islands: low-frequency fbm with edge falloff, thresholded at a fixed quantile (stable land share)
       const iq = new Float32Array(V * V);
       for (let vz = 0; vz < V; vz++) for (let vx = 0; vx < V; vx++) iq[vz * V + vx] = fbm(vx / N * 4 + 600, vz / N * 4 + 600, seed + 6) - (1 - sstep(0, 0.14, Math.min(vx, vz, N - vx, N - vz) / N)) * 0.3;
-      // ~44 % land overall: the start plateaus count first, the threshold is the quantile of the rest
+      // ~36 % land overall (2026-11-25: was 44 %, the sea looked token): the start plateaus count first, the threshold is the quantile of the rest
       const out = []; for (let vz = 0; vz < V; vz++) for (let vx = 0; vx < V; vx++) if (!plat.some(s => dhypot(vx - s[0], vz - s[1]) < (s[2] + s[3]) / 2)) out.push(iq[vz * V + vx]);
-      out.sort((a, b) => b - a); const thr = out[Math.max(0, Math.min(out.length - 1, Math.round(V * V * 0.44) - (V * V - out.length)))] ?? 9;
+      out.sort((a, b) => b - a); const thr = out[Math.max(0, Math.min(out.length - 1, Math.round(V * V * 0.36) - (V * V - out.length)))] ?? 9;
       return (vx, vz) => 1 - sstep(thr - 0.03, thr + 0.03, iq[vz * V + vx]);
     })();
     for (let vz = 0; vz < V; vz++) for (let vx = 0; vx < V; vx++) {
@@ -427,7 +427,7 @@ export class Game {
         // (river start ground widened 1.7x with the bigger buildings, 2026-11-13: 9..16 -> 15..27)
         if (ds < 27) { let t = Math.max(0, Math.min(1, (ds - 15) / 12)); t = t * t * (3 - 2 * t); h = 1.0 + (h - 1.0) * t; }
       } else {
-        let t = 1; for (const s of plat) { const d = dhypot(vx - s[0], vz - s[1]); if (d < s[3]) t = Math.min(t, sstep(s[2], s[3], d)); }
+        let t = 1; const pn = P.shape ? 1 + (fbm(vx / N * 9 + 900, vz / N * 9 + 900, seed + 9) - 0.5) * 0.7 : 1; for (const s of plat) { const d = dhypot(vx - s[0], vz - s[1]) * pn; if (d < s[3]) t = Math.min(t, sstep(s[2], s[3], d)); }
         if (t < 1) h = 1.0 + (h - 1.0) * t;
       }
       if (P.border) { const bd = Math.min(vx, vz, N - vx, N - vz); if (bd < 3) h += (SEA - h) * (bd < 2 ? 1 : 0.6); }
