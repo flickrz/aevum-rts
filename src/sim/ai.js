@@ -30,7 +30,7 @@ const DIFF = {
     counter: 0.6, moves: 2, builds: 2, prodQ: 1, tcQ: 1, prod: [1, 3, 4, 6, 7], tc2Age: 2, carts: 4,
     towers: [0, 2, 3, 4, 4], castle: true, techPar: 2, rescout: 240, idleChance: 0.08, floatMul: 1.7, slack: 2, banks: 2, rails: 1,
     elastic: 0.8, tradeMul: 1.3, armyCap: [8, 26, 48, 72, 96], prodMax: [1, 4, 6, 9, 12], prodQmax: 3, towersX: 2,
-    tcs: [1, 2, 3, 3, 3], fwd: 0.35, wallFrom: 14, wallSides: 3, wallTowers: 2, wallRmax: 24, wallChunk: 16, wallKeep: 60, wallBuilders: 1, wallGates2: true,
+    tcs: [1, 2, 3, 3, 3], fwd: 0.35, wallFrom: 14, wallSides: 4, wallTowers: 2, wallRmax: 24, wallChunk: 16, wallKeep: 60, wallBuilders: 1, wallGates2: true,
   },
   hard: {
     think: 1.0, vill: [17, 33, 46, 60, 72], army: [0.25, 0.5, 0.6, 0.7, 0.8], minArmy: [2, 5, 8, 10, 12],
@@ -1053,7 +1053,7 @@ export class AIController {
     // 1) gates: build the three pieces, open them once they stand; a broken gate piece is put back as a gate
     let gatesOpen = true;
     for (const gt of W.gates) {
-      if (gt.skip) continue;
+      if (gt.skip || gt.direct) continue;   // (stretches closed with gate pieces go up last, step 4)
       const pcs = gt.t.map(([x, z]) => own(x, z));
       if (pcs.every(b => b && b.type === 'gate')) continue;
       // foundations that made no progress for 3 minutes (nobody gets to them): pull them down, give the gate up
@@ -1064,13 +1064,13 @@ export class AIController {
       const free = gt.t.map(([x, z], i) => !pcs[i] && g.canPlace('wall', x, z, this.pid) && !this._lostNear(x + 0.5, z + 0.5));
       if (pcs.some((b, i) => !b && !free[i])) continue;   // something else stands in the run: that gap stays open
       gatesOpen = false;
-      if (pcs.every(b => b && b.type === 'wall' && b.done)) {
+      if (!gt.direct && pcs.every(b => b && b.type === 'wall' && b.done)) {
         if (freeStone() >= BUILDINGS.gate.cost.stone && g.cmdOpenGate(pcs[1].id)) return;
         continue;
       }
       if (pcs.some(b => b && !b.done)) { if (this._wallHelp(c, pcs)) return; continue; }   // still being built
       const empty = gt.t.filter((t, i) => free[i]);
-      const anyGate = pcs.some(b => b && b.type === 'gate');
+      const anyGate = gt.direct || pcs.some(b => b && b.type === 'gate');
       const cost = (anyGate ? BUILDINGS.gate.cost.stone : BUILDINGS.wall.cost.stone) * empty.length;
       if (freeStone() < cost) continue;
       if (!anyGate && !this._wallSafe(c, new Set(empty.map(([x, z]) => z * g.map.size + x)))) continue;
@@ -1082,14 +1082,16 @@ export class AIController {
       W.dgT = g.time + 30;
       if (this._wallMoreGates(c, freeStone)) return;
     }
-    // the ring pieces still missing (never built, or broken)
+    // the ring pieces still missing (never built, or broken); unexplored ones come last, once every seen one is placed
+    // (2026-11-24: a ring corner nobody had looked at stayed open for good)
     let left = 0;
-    const todo = [];
+    const todo = [], fog = [];
     for (let i = 0; i < W.tiles.length; i++) {
       if (W.bad.includes(i)) continue;
       const [x, z] = W.tiles[i]; if (own(x, z)) continue;
-      left++; if (g.canPlace('wall', x, z, this.pid) && this.explored(x + 0.5, z + 0.5) && !this._lostNear(x + 0.5, z + 0.5)) todo.push(i);
+      left++; if (g.canPlace('wall', x, z, this.pid) && !this._lostNear(x + 0.5, z + 0.5)) (this.explored(x + 0.5, z + 0.5) ? todo : fog).push(i);
     }
+    if (!todo.length) todo.push(...fog);
     this.wallLeft = left * BUILDINGS.wall.cost.stone;
     // 2) towers on the corners once most of the ring stands (before more wall pieces: they take all the stone); a
     //    corner whose tower cannot go up gets wall pieces
@@ -1117,7 +1119,7 @@ export class AIController {
         seen[b.id] = 1; if (uf[b.id] == null) { uf[b.id] = g.time; continue; }
         if (g.time - uf[b.id] > 180 && b.progress < 0.05) {   // a ring piece nobody gets to: pull it down, leave the tile open
           const i = W.tiles.findIndex(([x, z]) => x === b.tx && z === b.tz);
-          if (i >= 0) { g.deleteEntity(b.id); if (!W.bad.includes(i)) W.bad.push(i); }
+          if (i >= 0) { g.deleteEntity(b.id); if (!W.bad.includes(i)) { W.bad.push(i); W.gates.push({ t: [W.tiles[i]], direct: true }); } }   // (tried once more as a gate piece: no hole in the ring)
         }
       }
       for (const id of Object.keys(uf)) if (!seen[id]) delete uf[id];
@@ -1131,10 +1133,21 @@ export class AIController {
         for (const i of todo.slice(0, n)) { const [x, z] = W.tiles[i]; blk.add(z * N + x); pick.push(i); }
         if (!this._wallSafe(c, blk)) {   // one by one: a piece that would shut something in is dropped for good
           blk.clear(); pick.length = 0;
-          for (const i of todo.slice(0, n)) { const [x, z] = W.tiles[i], k = z * N + x; blk.add(k); if (this._wallSafe(c, blk)) pick.push(i); else { blk.delete(k); W.bad.push(i); } }
+          for (const i of todo.slice(0, n)) { const [x, z] = W.tiles[i], k = z * N + x; blk.add(k); if (this._wallSafe(c, blk)) pick.push(i); else { blk.delete(k); W.bad.push(i); W.gates.push({ t: [[x, z]], direct: true }); } }   // (a piece that would shut something in becomes a gate piece, not a hole)
         }
         if (pick.length && this._wallPlace(c, 'wall', pick.map(i => W.tiles[i]), d.wallBuilders)) return;
       }
+    }
+    // 4) the stretches closed with gate pieces (next to mines, berries, own buildings; see _wallPlan) once every ring
+    //    piece is placed: they close the ring for enemies while own villagers keep walking through
+    if (gatesOpen && !todo.length) for (const gt of W.gates) {
+      if (!gt.direct || gt.skip) continue;
+      const pcs = gt.t.map(([x, z]) => own(x, z));
+      if (pcs.some(b => b && !b.done)) { if (this._wallHelp(c, pcs)) return; continue; }
+      const empty = gt.t.filter(([x, z], i) => !pcs[i] && g.canPlace('gate', x, z, this.pid) && !this._lostNear(x + 0.5, z + 0.5));
+      if (!empty.length) continue;
+      if (freeStone() - keep < BUILDINGS.gate.cost.stone * empty.length) break;
+      if (this._wallPlace(c, 'gate', empty, 1)) return;
     }
   }
   _wallMoreGates(c, freeStone) {
@@ -1153,7 +1166,7 @@ export class AIController {
     for (const s of W.sides) {
       if (n[s] < 3) continue;
       const aim = Math.max(-(W.R - 4), Math.min(W.R - 4, Math.round(sum[s] / n[s])));
-      const mine = W.gates.filter(gt => sideOf(gt.t[1][0], gt.t[1][1]) === s && !gt.skip);
+      const mine = W.gates.filter(gt => !gt.direct && sideOf(gt.t[1][0], gt.t[1][1]) === s && !gt.skip);
       if (mine.length >= 3 || mine.some(gt => Math.abs(along(s, gt.t[1][0], gt.t[1][1]) - aim) <= 8)) continue;
       // the nearest finished straight run of three of our wall pieces to that point
       for (let k = 0; k <= 4; k++) for (const t of k ? [aim - k, aim + k] : [aim]) {
@@ -1259,6 +1272,21 @@ export class AIController {
       if (d.wallGates2 && span.size >= 28) { const g2 = pickGate(g1 > 0 ? -R / 2 : R / 2, g1); if (g2 != null) gts.push(g2); }
       for (const gt of gts) gates.push({ t: [at(s, gt - 1), at(s, gt), at(s, gt + 1)] });
       // wall pieces from the gates outwards (the parts next to a gate close first)
+      // (2026-11-24, owner: "the AI does not know how to connect walls"): stretches of the line left open next to
+      // mines, berries or own buildings are closed with gate pieces (own villagers walk through, enemies do not)
+      // instead of staying holes; a stretch shorter than three takes ring tiles next to it, so it stands as a gate
+      const used = new Set(); for (const gt of gts) for (const k of [gt - 1, gt, gt + 1]) used.add(k);
+      const lim = R - 2, open = t => { if (span.has(t) || used.has(t)) return false; const p = at(s, t); return reach(p[0], p[1]) && g.canPlace('gate', p[0], p[1], pid); };
+      for (let t = -lim; t <= lim; t++) {
+        if (!open(t)) continue;
+        let e = t; while (e + 1 <= lim && open(e + 1)) e++;
+        for (let k = t; k <= e; k += 3) {
+          const a = k + 2 > e ? Math.max(-lim, e - 2) : k, run = [];
+          for (let q = a; q <= a + 2 && q <= lim; q++) if (!used.has(q) && (span.has(q) || open(q))) { run.push(at(s, q)); used.add(q); span.delete(q); }
+          if (run.length) gates.push({ t: run, direct: true });
+        }
+        t = e;
+      }
       const gap = t => Math.min(...gts.map(gt => Math.abs(t - gt)));
       const rest = [...span].filter(t => gap(t) > 1).sort((a, b) => gap(a) - gap(b) || a - b);
       for (const t of rest) tiles.push(at(s, t));
@@ -1268,7 +1296,9 @@ export class AIController {
     for (const s of sides) {
       const s2 = (s + 1) % 4; if (!sides.includes(s2)) continue;
       const ex = cx + (NRM[s][0] || NRM[s2][0]) * R, ez = cz + (NRM[s][1] || NRM[s2][1]) * R, sx = Math.sign(ex - cx), sz = Math.sign(ez - cz);
-      const fillT = [[ex - sx, ez], [ex, ez], [ex, ez - sz]].filter(([x, z]) => ok(x, z));
+      const all = [[ex - sx, ez], [ex, ez], [ex, ez - sz]], fillT = all.filter(([x, z]) => ok(x, z));
+      const cg = all.filter(([x, z]) => !ok(x, z) && reach(x, z) && g.canPlace('gate', x, z, pid));   // (corner tiles that must stay passable: gate pieces)
+      if (cg.length) gates.push({ t: cg, direct: true });
       corners.push({ at: [ex - 1, ez - 1], fillT, score: sx * ed.x + sz * ed.z });
     }
     corners.sort((a, b) => b.score - a.score);
@@ -1339,7 +1369,7 @@ export class AIController {
   //  clear of the gates)
   _wallClash(tx, tz, size, type) {
     const W = this.wall; if (!W) return false;
-    for (const gt of W.gates) { const [mx, mz] = gt.t[1]; if (tx - 4 <= mx && tx + size + 3 >= mx && tz - 4 <= mz && tz + size + 3 >= mz) return true; }
+    for (const gt of W.gates) { const [mx, mz] = gt.t[gt.t.length >> 1]; if (tx - 4 <= mx && tx + size + 3 >= mx && tz - 4 <= mz && tz + size + 3 >= mz) return true; }
     if ((type === 'towncenter' || type === 'castle') && Math.max(Math.abs(tx + size / 2 - W.cx), Math.abs(tz + size / 2 - W.cz)) >= W.R) return false;
     for (let z = tz - 1; z <= tz + size; z++) for (let x = tx - 1; x <= tx + size; x++) {
       const r = Math.max(Math.abs(x - W.cx), Math.abs(z - W.cz));
