@@ -95,6 +95,8 @@ export default {
   'Aevum bir hatayla karşılaştı:\n': 'Aevum ran into an error:\n',
   '⚠ Kayıt {0} ile farklı çıktı (senkron sorunu olabilir).': '⚠ Save differs from {0}\'s (possible sync problem).',
   'diğer oyuncu': 'the other player',
+  '⚠ Senin oyunun diğerlerinden ayrıldı (tik {0}): gördüğün, gerçek maç değil. Maçı kaydedin; {1} kaydı "Kayıtlı Maça Devam Et" ile açsın.': '⚠ Your game split off from the others (tick {0}): what you see is not the real match. Save the match and let {1} reopen their save with "Continue Saved Match".',
+  'Senkron bozuldu (tik {0}): {1} oyunu ayrıldı, onun ekranı gerçek maçı göstermiyor. Maçı kaydedip senin kaydınla yeniden açabilirsiniz.': 'Out of sync (tick {0}): {1} split off, their screen does not show the real match. You can save and reopen the match from your save.',
   'Senkron bozuldu (tik {0}). Oyunlar farklılaştı; durum kayda geçti.': 'Out of sync (tick {0}). The games diverged; this was logged.',
   '{0} oyundan ayrıldı.': '{0} left the game.',
   'Bir oyuncu': 'A player',

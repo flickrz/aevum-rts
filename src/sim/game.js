@@ -1,6 +1,7 @@
 // Aevum — headless simulation core (pure JS, no DOM/three)
 import { AGES, RES, UNITS, BUILDINGS, TECHS, PLAYER_COLORS, FARM_SLOTS } from '../data.js';
 import { tr } from '../i18n.js';
+import { dsin, dcos, datan2, dhypot, sq } from './dmath.js';
 // big farm: cells (x, z) of its 3x3 grid, ring order around the granary (1, 1); food / s of a farmer while his plot is ripe
 export const FARM_CELLS = [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1]];
 const FARM_RATE = 16 / 9 * 0.85;
@@ -359,8 +360,8 @@ export class Game {
     let starts = []; for (let i = 0; i < 4; i++) starts.push([Math.round(fr[i][0] * N), Math.round(fr[i][1] * N)]);
     if (cp) starts = this._mpStarts(cp, N);
     const ph = (seed % 7);
-    const rx = z => N / 2 + Math.sin(z * 0.07 + ph) * N * 0.07 + Math.sin(z * 0.023 + ph * 2) * N * 0.04;
-    const sDist = (x, z) => { let m = 1e9; for (const s of starts) { const d = Math.hypot(x - s[0], z - s[1]); if (d < m) m = d; } return m; };
+    const rx = z => N / 2 + dsin(z * 0.07 + ph) * N * 0.07 + dsin(z * 0.023 + ph * 2) * N * 0.04;
+    const sDist = (x, z) => { let m = 1e9; for (const s of starts) { const d = dhypot(x - s[0], z - s[1]); if (d < m) m = d; } return m; };
     // map type: 'random' picks from the seed only (same on every client), written back so saves / UI see the real type
     let mt = cfg.mapType;
     if (mt === 'random') mt = MAP_TYPES[Math.min(MAP_TYPES.length - 1, (hsh(seed, 7331, 911) * MAP_TYPES.length) | 0)];
@@ -373,16 +374,16 @@ export class Game {
     const plat = starts.map(s => { const bd = Math.min(s[0], s[1], N - s[0], N - s[1]); const pi = Math.max(6, Math.min(Math.round(P.pi * 1.7), bd - 4)); return [s[0], s[1], pi, pi + Math.round((P.po - P.pi) * 1.7)]; });
     // shape mask: 0 = keep terrain, 1 = open sea
     const shape = !P.shape ? null : P.shape === 'continent' ? (vx, vz) => {
-      const dx = Math.abs(vx - H) / H, dz = Math.abs(vz - H) / H, r = Math.max(dx, dz) * 0.55 + Math.hypot(dx, dz) * 0.45;
+      const dx = Math.abs(vx - H) / H, dz = Math.abs(vz - H) / H, r = Math.max(dx, dz) * 0.55 + dhypot(dx, dz) * 0.45;
       return sstep(0.8, 0.92, r + (fbm(vx / N * 5 + 400, vz / N * 5 + 400, seed + 5) - 0.5) * 0.5);
     } : P.shape === 'inlandsea' ? (vx, vz) => {
-      const r = Math.hypot(vx - H, vz - H) / H;
+      const r = dhypot(vx - H, vz - H) / H;
       return 1 - sstep(0.44, 0.56, r + (fbm(vx / N * 5 + 400, vz / N * 5 + 400, seed + 5) - 0.5) * 0.45);
     } : (() => { // islands: low-frequency fbm with edge falloff, thresholded at a fixed quantile (stable land share)
       const iq = new Float32Array(V * V);
       for (let vz = 0; vz < V; vz++) for (let vx = 0; vx < V; vx++) iq[vz * V + vx] = fbm(vx / N * 4 + 600, vz / N * 4 + 600, seed + 6) - (1 - sstep(0, 0.14, Math.min(vx, vz, N - vx, N - vz) / N)) * 0.3;
       // ~44 % land overall: the start plateaus count first, the threshold is the quantile of the rest
-      const out = []; for (let vz = 0; vz < V; vz++) for (let vx = 0; vx < V; vx++) if (!plat.some(s => Math.hypot(vx - s[0], vz - s[1]) < (s[2] + s[3]) / 2)) out.push(iq[vz * V + vx]);
+      const out = []; for (let vz = 0; vz < V; vz++) for (let vx = 0; vx < V; vx++) if (!plat.some(s => dhypot(vx - s[0], vz - s[1]) < (s[2] + s[3]) / 2)) out.push(iq[vz * V + vx]);
       out.sort((a, b) => b - a); const thr = out[Math.max(0, Math.min(out.length - 1, Math.round(V * V * 0.44) - (V * V - out.length)))] ?? 9;
       return (vx, vz) => 1 - sstep(thr - 0.03, thr + 0.03, iq[vz * V + vx]);
     })();
@@ -407,7 +408,7 @@ export class Game {
         // (river start ground widened 1.7x with the bigger buildings, 2026-11-13: 9..16 -> 15..27)
         if (ds < 27) { let t = Math.max(0, Math.min(1, (ds - 15) / 12)); t = t * t * (3 - 2 * t); h = 1.0 + (h - 1.0) * t; }
       } else {
-        let t = 1; for (const s of plat) { const d = Math.hypot(vx - s[0], vz - s[1]); if (d < s[3]) t = Math.min(t, sstep(s[2], s[3], d)); }
+        let t = 1; for (const s of plat) { const d = dhypot(vx - s[0], vz - s[1]); if (d < s[3]) t = Math.min(t, sstep(s[2], s[3], d)); }
         if (t < 1) h = 1.0 + (h - 1.0) * t;
       }
       if (P.border) { const bd = Math.min(vx, vz, N - vx, N - vz); if (bd < 3) h += (SEA - h) * (bd < 2 ? 1 : 0.6); }
@@ -420,7 +421,7 @@ export class Game {
     // so one seed cannot bury the map in trees. Forest is held back from the starts (none within FC0 tiles, thinning
     // in up to FC1) so every player has room to build a town; the start's own wood cluster sits inside that ring.
     // (only the starts in use: single-player keeps 4 corner spots even with fewer players)
-    const live = starts.slice(0, np), aDist = (x, z) => { let m = 1e9; for (const s of live) { const d = Math.hypot(x - s[0], z - s[1]); if (d < m) m = d; } return m; };
+    const live = starts.slice(0, np), aDist = (x, z) => { let m = 1e9; for (const s of live) { const d = dhypot(x - s[0], z - s[1]); if (d < m) m = d; } return m; };
     const FC0 = 18, FC1 = 28, fv = new Float64Array(N * N).fill(-9), cand = [], grassV = new Uint8Array(N * N);
     for (let tz = 0; tz < N; tz++) for (let tx = 0; tx < N; tx++) {
       const i = tz * V + tx, ha = (heights[i] + heights[i + 1] + heights[i + V] + heights[i + V + 1]) / 4;
@@ -454,7 +455,7 @@ export class Game {
         let d1 = 1e9, d2 = 1e9;
         for (let j = cj - 1; j <= cj + 1; j++) for (let i = ci - 1; i <= ci + 1; i++) {
           if (i < 0 || j < 0 || i >= CN || j >= CN) continue;
-          const d = Math.hypot(x - sx[j * CN + i], z - sz[j * CN + i]); if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+          const d = dhypot(x - sx[j * CN + i], z - sz[j * CN + i]); if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
         }
         if (d2 - d1 < GW * 2) tiles[k] = grassV[k];   // (|d2 - d1| / 2 is about the distance to the cell edge)
       }
@@ -462,19 +463,19 @@ export class Game {
     // fairness: every start needs FQ forest tiles within FR; one short of that gets up to two groves just outside
     // the town ring, in the direction where the forest noise is highest (so they join the map's own woods when they can)
     const GR = 5, GD = FC0 + GR + 0.5, FR = FC1 + 12, FQ = 120;
-    const woodNear = st => { let n = 0; for (let tz = Math.max(0, st[1] - FR | 0); tz < Math.min(N, st[1] + FR); tz++) for (let tx = Math.max(0, st[0] - FR | 0); tx < Math.min(N, st[0] + FR); tx++) if (tiles[tz * N + tx] === 6 && Math.hypot(tx + .5 - st[0], tz + .5 - st[1]) < FR) n++; return n; };
+    const woodNear = st => { let n = 0; for (let tz = Math.max(0, st[1] - FR | 0); tz < Math.min(N, st[1] + FR); tz++) for (let tx = Math.max(0, st[0] - FR | 0); tx < Math.min(N, st[0] + FR); tx++) if (tiles[tz * N + tx] === 6 && dhypot(tx + .5 - st[0], tz + .5 - st[1]) < FR) n++; return n; };
     for (const st of live) for (let gi = 0; gi < 2; gi++) {
       if (woodNear(st) >= FQ) break;
       let bx = -1, bz = -1, bv = -1e9;
       for (let k = 0; k < 72; k++) {   // (24 directions at three distances: small islands may only have room further out)
-        const an = (k % 24) / 24 * 6.283, gd = GD + ((k / 24) | 0) * 4, cx = st[0] + Math.cos(an) * gd, cz = st[1] + Math.sin(an) * gd;
+        const an = (k % 24) / 24 * 6.283, gd = GD + ((k / 24) | 0) * 4, cx = st[0] + dcos(an) * gd, cz = st[1] + dsin(an) * gd;
         let n = 0, sv = 0;
-        for (let dz = -GR; dz <= GR; dz++) for (let dx = -GR; dx <= GR; dx++) { const tx = Math.round(cx + dx), tz = Math.round(cz + dz); if (tx < 2 || tz < 2 || tx >= N - 2 || tz >= N - 2 || Math.hypot(dx, dz) > GR) continue; const t = tiles[tz * N + tx]; if ((t === 0 || t === 1) && aDist(tx + .5, tz + .5) >= FC0) { n++; sv += fbm(tx / N * 7 + 200, tz / N * 7 + 200, seed + 3); } }
+        for (let dz = -GR; dz <= GR; dz++) for (let dx = -GR; dx <= GR; dx++) { const tx = Math.round(cx + dx), tz = Math.round(cz + dz); if (tx < 2 || tz < 2 || tx >= N - 2 || tz >= N - 2 || dhypot(dx, dz) > GR) continue; const t = tiles[tz * N + tx]; if ((t === 0 || t === 1) && aDist(tx + .5, tz + .5) >= FC0) { n++; sv += fbm(tx / N * 7 + 200, tz / N * 7 + 200, seed + 3); } }
         if (n < 24) continue;   // mostly water / rock / another town's ring
         const v = sv / n + n * 0.002 - ((k / 24) | 0) * 0.05; if (v > bv) { bv = v; bx = cx; bz = cz; }
       }
       if (bx < 0) continue;
-      for (let dz = -GR; dz <= GR; dz++) for (let dx = -GR; dx <= GR; dx++) { const tx = Math.round(bx + dx), tz = Math.round(bz + dz); if (tx < 2 || tz < 2 || tx >= N - 2 || tz >= N - 2 || Math.hypot(dx, dz) > GR) continue; const t = tiles[tz * N + tx]; if ((t === 0 || t === 1) && aDist(tx + .5, tz + .5) >= FC0) { grassV[tz * N + tx] = t; tiles[tz * N + tx] = 6; } }
+      for (let dz = -GR; dz <= GR; dz++) for (let dx = -GR; dx <= GR; dx++) { const tx = Math.round(bx + dx), tz = Math.round(bz + dz); if (tx < 2 || tz < 2 || tx >= N - 2 || tz >= N - 2 || dhypot(dx, dz) > GR) continue; const t = tiles[tz * N + tx]; if ((t === 0 || t === 1) && aDist(tx + .5, tz + .5) >= FC0) { grassV[tz * N + tx] = t; tiles[tz * N + tx] = 6; } }
     }
     // forests come in groups (owner 2026-11-14: lone trees scattered round his base kept a 12x12 farm out): a forest
     // bit of fewer than FMIN touching tiles goes back to grass; the forest tiles left are solid wood (see below)
@@ -505,7 +506,7 @@ export class Game {
     // (start resources keep clear of the town centre and leave room to build camps next to them: none within TCR of
     // its middle - 3.5 tiles past its half, the clearance the 6x6 one had - so nothing lands in or hugs the 9x9 one)
     const TCH = BUILDINGS.towncenter.size / 2, TCR = TCH + 3.5, tcAt = s => [Math.round(s[0] - TCH) + TCH, Math.round(s[1] - TCH) + TCH];   // (the town centre's middle, see 'starting bases')
-    const tcs = starts.map(tcAt), tDist = (x, z) => { let m = 1e9; for (const s of tcs) { const d = Math.hypot(x - s[0], z - s[1]); if (d < m) m = d; } return m; };
+    const tcs = starts.map(tcAt), tDist = (x, z) => { let m = 1e9; for (const s of tcs) { const d = dhypot(x - s[0], z - s[1]); if (d < m) m = d; } return m; };
     const cluster = (type, cx, cz, n, rad, amount) => {
       if (type !== 'deer') return clump(type, cx, cz, n, rad, amount);
       let placed = 0; for (let k = 0; k < n * 8 && placed < n; k++) { const tx = Math.round(cx + (this.rand() * 2 - 1) * rad), tz = Math.round(cz + (this.rand() * 2 - 1) * rad); if (land(tx, tz) && tDist(tx + 0.5, tz + 0.5) > TCR) { this._addRes(type, tx, tz, amount); placed++; } } return placed;
@@ -516,7 +517,7 @@ export class Game {
     const clump = (type, cx, cz, n, rad, amount) => {
       const ok = (x, z) => land(x, z) && tDist(x + 0.5, z + 0.5) > TCR;
       let sx = -1, sz = -1, sd = 1e9;
-      for (let z = Math.floor(cz - rad - 1); z <= Math.ceil(cz + rad + 1); z++) for (let x = Math.floor(cx - rad - 1); x <= Math.ceil(cx + rad + 1); x++) { const d = Math.hypot(x + 0.5 - cx, z + 0.5 - cz); if (d <= rad + 1 && d < sd && ok(x, z)) { sd = d; sx = x; sz = z; } }
+      for (let z = Math.floor(cz - rad - 1); z <= Math.ceil(cz + rad + 1); z++) for (let x = Math.floor(cx - rad - 1); x <= Math.ceil(cx + rad + 1); x++) { const d = dhypot(x + 0.5 - cx, z + 0.5 - cz); if (d <= rad + 1 && d < sd && ok(x, z)) { sd = d; sx = x; sz = z; } }
       if (sx < 0) return 0;
       const inC = new Set(), pts = [];
       const add = (x, z) => { this._addRes(type, x, z, amount); inC.add(z * N + x); pts.push(x, z); };
@@ -527,7 +528,7 @@ export class Game {
         for (let i = 0; i < pts.length; i += 2) for (const [dx, dz] of D4) {
           const x = pts[i] + dx, z = pts[i + 1] + dz; if (inC.has(z * N + x) || !ok(x, z)) continue;
           let nb = 0; for (const [ex, ez] of D4) if (inC.has((z + ez) * N + x + ex)) nb++;
-          const sc = nb * 2 - Math.hypot(x + 0.5 - sx - 0.5, z + 0.5 - sz - 0.5) * 0.35 + this.rand() * 0.9;
+          const sc = nb * 2 - dhypot(x + 0.5 - sx - 0.5, z + 0.5 - sz - 0.5) * 0.35 + this.rand() * 0.9;
           if (sc > bs) { bs = sc; bx = x; bz = z; }
         }
         if (bx < 0) break;
@@ -539,7 +540,7 @@ export class Game {
     const RD = TCH - 3;
     for (let i = 0; i < starts.length; i++) {
       const s = tcs[i], a0 = this.rand() * 6.283;
-      const at = (a, d) => [s[0] + Math.cos(a0 + a) * d, s[1] + Math.sin(a0 + a) * d];
+      const at = (a, d) => [s[0] + dcos(a0 + a) * d, s[1] + dsin(a0 + a) * d];
       // other types: a cluster that mostly fell into water / rock is topped up at turned angles, a bit closer in
       const put = (type, a, d, n, rad, amount) => { d += RD; let q = at(a, d), got = cluster(type, q[0], q[1], n, rad, amount); for (let k = 1; k < 8 && got < (n + 1 >> 1); k++) { q = at(a + k * 0.8, Math.max(8.5 + RD, d - k * 0.6)); got += cluster(type, q[0], q[1], n - got, rad, amount); } };
       put('stone', 0, 11, 4, 1.6, 350);
@@ -688,14 +689,14 @@ export class Game {
       const ui = starts.findIndex(s => !seen[tileOf(s)]);
       if (ui < 0) return it;
       const a = starts[ui]; let b = null, bd = 1e9;
-      for (const s of starts) if (seen[tileOf(s)]) { const d = Math.hypot(s[0] - a[0], s[1] - a[1]); if (d < bd) { bd = d; b = s; } }
+      for (const s of starts) if (seen[tileOf(s)]) { const d = dhypot(s[0] - a[0], s[1] - a[1]); if (d < bd) { bd = d; b = s; } }
       const len = Math.max(1, bd), nx = -(b[1] - a[1]) / len, nz = (b[0] - a[0]) / len;
       const ph = hsh(a[0] * 31 + b[0], a[1] * 31 + b[1], seed + 9) * 6.283, amp = Math.min(4, len * 0.07), R = 2.2;
       for (let k = 0, n = Math.ceil(len * 2); k <= n; k++) {
-        const t = k / n, off = Math.sin(t * 6.283 + ph) * amp * Math.sin(t * 3.1416);
+        const t = k / n, off = dsin(t * 6.283 + ph) * amp * dsin(t * 3.1416);
         const px = a[0] + (b[0] - a[0]) * t + nx * off, pz = a[1] + (b[1] - a[1]) * t + nz * off;
         for (let vz = Math.max(0, Math.ceil(pz - R)); vz <= Math.min(N, Math.floor(pz + R)); vz++) for (let vx = Math.max(0, Math.ceil(px - R)); vx <= Math.min(N, Math.floor(px + R)); vx++) {
-          if (Math.hypot(vx - px, vz - pz) > R) continue;
+          if (dhypot(vx - px, vz - pz) > R) continue;
           const i = vz * V + vx;
           if (heights[i] < -0.12) heights[i] = -0.12; else if (heights[i] > 2.6) heights[i] = 2.6;
         }
@@ -814,8 +815,8 @@ export class Game {
   resourceNear(x, z, r = 1.5, type = null) {
     const N = this.map.size; let best = null, bd = r * r;
     const x0 = Math.max(0, Math.floor(x - r)), x1 = Math.min(N - 1, Math.floor(x + r)), z0 = Math.max(0, Math.floor(z - r)), z1 = Math.min(N - 1, Math.floor(z + r));
-    for (let tz = z0; tz <= z1; tz++) for (let tx = x0; tx <= x1; tx++) { const id = this.resAt[tz * N + tx]; if (!id) continue; const e = this.entities.get(id); if (!e || e.dead || (type && e.type !== type)) continue; const d = (e.x - x) ** 2 + (e.z - z) ** 2; if (d <= bd) { bd = d; best = e; } }
-    if (!type || PREY[type]) for (const e of this.deer) { if (e.dead || e.live || (type && e.type !== type)) continue; const d = (e.x - x) ** 2 + (e.z - z) ** 2; if (d <= bd) { bd = d; best = e; } }
+    for (let tz = z0; tz <= z1; tz++) for (let tx = x0; tx <= x1; tx++) { const id = this.resAt[tz * N + tx]; if (!id) continue; const e = this.entities.get(id); if (!e || e.dead || (type && e.type !== type)) continue; const d = sq(e.x - x) + sq(e.z - z); if (d <= bd) { bd = d; best = e; } }
+    if (!type || PREY[type]) for (const e of this.deer) { if (e.dead || e.live || (type && e.type !== type)) continue; const d = sq(e.x - x) + sq(e.z - z); if (d <= bd) { bd = d; best = e; } }
     return best;
   }
   tradeRate(sell, buy, owner = 0) {
@@ -974,7 +975,7 @@ export class Game {
     if (!us.length) {
       // no builder given: nearest idle villager, else nearest villager
       const b0 = this.entities.get(ids[0]); let best = null, bd = 1e9, bi = false;
-      for (const u of this.units) { if (u.dead || u.owner !== owner || u.type !== 'villager') continue; const idle = !u.order, dd = (u.x - b0.x) ** 2 + (u.z - b0.z) ** 2; if ((idle && !bi) || (idle === bi && dd < bd)) { best = u; bd = dd; bi = idle; } }
+      for (const u of this.units) { if (u.dead || u.owner !== owner || u.type !== 'villager') continue; const idle = !u.order, dd = sq(u.x - b0.x) + sq(u.z - b0.z); if ((idle && !bi) || (idle === bi && dd < bd)) { best = u; bd = dd; bi = idle; } }
       if (best) us = [best];
     }
     const n = ids.length, k = us.length;
@@ -1026,7 +1027,7 @@ export class Game {
     else {
       // no builder given: nearest idle villager, else nearest villager
       let best = null, bd = 1e9, bi = false;
-      for (const u of this.units) { if (u.dead || u.owner !== owner || u.type !== 'villager') continue; const idle = !u.order, dd = (u.x - b.x) ** 2 + (u.z - b.z) ** 2; if ((idle && !bi) || (idle === bi && dd < bd)) { best = u; bd = dd; bi = idle; } }
+      for (const u of this.units) { if (u.dead || u.owner !== owner || u.type !== 'villager') continue; const idle = !u.order, dd = sq(u.x - b.x) + sq(u.z - b.z); if ((idle && !bi) || (idle === bi && dd < bd)) { best = u; bd = dd; bi = idle; } }
       if (best) this.cmdBuild([best.id], b.id);
     }
     return b.id;
@@ -1050,7 +1051,7 @@ export class Game {
     for (let k = 0; k < 40; k++) {
       const tx = 2 + (this.rand() * (N - 4) | 0), tz = 2 + (this.rand() * (N - 4) | 0);
       if (!m.isWalkable(tx, tz)) continue;
-      const d = Math.hypot(tx - u.x, tz - u.z);
+      const d = dhypot(tx - u.x, tz - u.z);
       // humans prefer tiles their team has not explored yet (sim-side team grid, never the local view fog)
       const ep = this.players[u.owner], eg = ep && !ep.isAI && this._tv ? this._tv.get(ep.team) : null;
       const fresh = eg ? (eg[tz * N + tx] === 0 ? 60 : eg[tz * N + tx] === 1 ? 10 : 0) : 30;
@@ -1077,7 +1078,7 @@ export class Game {
     // a flow field pays off for a crowd, or a few units on a long trip; a lone unit (scouts, explorers: often sent
     // at unreachable tiles, where a field costs two whole-map sweeps) and a few units going a short way keep plain A*
     let mx = 0, mz = 0; for (const u of land) { mx += u.x; mz += u.z; }
-    const far = land.length && Math.hypot(mx / land.length - x, mz / land.length - z) > 40;
+    const far = land.length && dhypot(mx / land.length - x, mz / land.length - z) > 40;
     const grp = land.length >= 6 || (far && land.length >= 2) ? { path: null, tx: x, tz: z } : null;
     if (!grp && land.length) {
       if (land.length === 1) { const f = this._freeNear(x, z, land[0].owner); this._setOrder(land[0], mv(land[0], { type: 'move', x: f.x, z: f.z }), queue); }
@@ -1115,7 +1116,7 @@ export class Game {
   // matched to slots left-to-right by their current lateral position so paths do not cross.
   _formation(us, x, z) {
     let cx = 0, cz = 0; for (const u of us) { cx += u.x; cz += u.z; } cx /= us.length; cz /= us.length;
-    let fx = x - cx, fz = z - cz; const fl = Math.hypot(fx, fz);
+    let fx = x - cx, fz = z - cz; const fl = dhypot(fx, fz);
     if (fl < 0.5) { fx = 0; fz = 1; } else { fx /= fl; fz /= fl; }
     const rx = fz, rz = -fx; // right-hand vector
     const rank = u => { const d = UNITS[u.type]; return d.cls === 'siege' ? 3 : d.cls === 'civil' || !(d.atk > 0) ? 4 : d.range > 0 ? 2 : 1; };
@@ -1280,13 +1281,13 @@ export class Game {
       // flag on a drop-off camp (lumber camp, mining camp, mill): work the nearest matching resource around it
       const bd0 = BUILDINGS[t.type], drop = bd0 && t.owner === b.owner && !(bd0.trains || []).length ? bd0.dropoff : null; if (!drop) return null;
       let best = null, bd = 1e9;
-      for (const e of this.entities.values()) { if (e.kind !== 'resource' || e.dead || !(e.amount > 0) || e.type === 'fish' || !drop.includes(RES_OF[e.type])) continue; const d = Math.hypot(e.x - t.x, e.z - t.z); if (d < 16 && d < bd) { bd = d; best = e; } }
+      for (const e of this.entities.values()) { if (e.kind !== 'resource' || e.dead || !(e.amount > 0) || e.type === 'fish' || !drop.includes(RES_OF[e.type])) continue; const d = dhypot(e.x - t.x, e.z - t.z); if (d < 16 && d < bd) { bd = d; best = e; } }
       return best;
     }
     if (t && !t.dead && t.amount > 0) return t;
     const want = ra.rtype; if (!want) return null; // flag on plain ground: villager just walks there
     let best = null, bd = 1e9;
-    for (const e of this.entities.values()) { if (e.kind !== 'resource' || e.dead || !(e.amount > 0)) continue; if (want && e.type !== want) continue; const d = Math.hypot(e.x - ra.x, e.z - ra.z); if (d < (want ? 10 : 1.6) && d < bd) { bd = d; best = e; } }
+    for (const e of this.entities.values()) { if (e.kind !== 'resource' || e.dead || !(e.amount > 0)) continue; if (want && e.type !== want) continue; const d = dhypot(e.x - ra.x, e.z - ra.z); if (d < (want ? 10 : 1.6) && d < bd) { bd = d; best = e; } }
     if (best && want) ra.tid = best.id;
     return best;
   }
@@ -1330,7 +1331,7 @@ export class Game {
   }
   // straight-line walkability (centre + two side samples so corners are not clipped)
   _los(x0, z0, x1, z1, owner) {
-    const dx = x1 - x0, dz = z1 - z0, L = Math.hypot(dx, dz); if (L < 0.01) return true;
+    const dx = x1 - x0, dz = z1 - z0, L = dhypot(dx, dz); if (L < 0.01) return true;
     const n = Math.ceil(L / 0.25), ox = -dz / L * 0.3, oz = dx / L * 0.3;
     for (let i = 0; i <= n; i++) {
       const x = x0 + dx * i / n, z = z0 + dz * i / n;
@@ -1474,18 +1475,18 @@ export class Game {
     return this._smooth(p, u.x, u.z, u.owner);
   }
   _steer(u, x, z, dt) {
-    const dx = x - u.x, dz = z - u.z, L = Math.hypot(dx, dz); if (L < 0.05) return;
+    const dx = x - u.x, dz = z - u.z, L = dhypot(dx, dz); if (L < 0.05) return;
     const s = Math.min(L, this._speed(u) * dt), nx = u.x + dx / L * s, nz = u.z + dz / L * s;
-    if (this._pass(nx | 0, nz | 0, u.owner)) { u.x = nx; u.z = nz; u.rot = Math.atan2(dx, dz); }
+    if (this._pass(nx | 0, nz | 0, u.owner)) { u.x = nx; u.z = nz; u.rot = datan2(dx, dz); }
   }
   _speed(u) { const d = UNITS[u.type], m = this.players[u.owner].mods; let s = d.speed * (1 + (m.speed[d.cls] || 0)); if (u.type === 'villager') s *= 1 + m.vspeed; const t = this.map.tiles[(u.z | 0) * this.map.size + (u.x | 0)]; if (t === 3 && !u.naval) s *= 0.6; return s; }
   _step(u, dt) {
     if (!u.path || u.pi >= u.path.length) return true;
     let d = this._speed(u) * dt;
     while (d > 0 && u.pi < u.path.length) {
-      const px = u.path[u.pi], pz = u.path[u.pi + 1], dx = px - u.x, dz = pz - u.z, L = Math.hypot(dx, dz);
+      const px = u.path[u.pi], pz = u.path[u.pi + 1], dx = px - u.x, dz = pz - u.z, L = dhypot(dx, dz);
       if (L <= d) { u.x = px; u.z = pz; d -= L; u.pi += 2; }
-      else { u.x += dx / L * d; u.z += dz / L * d; u.rot = Math.atan2(dx, dz); d = 0; }
+      else { u.x += dx / L * d; u.z += dz / L * d; u.rot = datan2(dx, dz); d = 0; }
     }
     return u.pi >= u.path.length;
   }
@@ -1510,7 +1511,7 @@ export class Game {
   _edge(u, t) {
     const half = t.kind === 'building' ? t.size / 2 : (t.kind === 'resource' && !PREY[t.type]) ? 0.5 : 0;
     const dx = Math.max(Math.abs(u.x - t.x) - half, 0), dz = Math.max(Math.abs(u.z - t.z) - half, 0);
-    return Math.hypot(dx, dz);
+    return dhypot(dx, dz);
   }
   // walk toward entity t until within reach; true when in reach
   _approach(u, t, dt, reach) {
@@ -1529,8 +1530,8 @@ export class Game {
     }
     if (this._step(u, dt)) {
       // end of path but not in reach: steer directly if close, else fail
-      const dx = t.x - u.x, dz = t.z - u.z, L = Math.hypot(dx, dz);
-      if (L < 3.5 && L > 0.01) { const s = this._speed(u) * dt, nx = u.x + dx / L * s, nz = u.z + dz / L * s; if (this._pass(nx | 0, nz | 0, u.owner)) { u.x = nx; u.z = nz; u.rot = Math.atan2(dx, dz); return false; } }
+      const dx = t.x - u.x, dz = t.z - u.z, L = dhypot(dx, dz);
+      if (L < 3.5 && L > 0.01) { const s = this._speed(u) * dt, nx = u.x + dx / L * s, nz = u.z + dz / L * s; if (this._pass(nx | 0, nz | 0, u.owner)) { u.x = nx; u.z = nz; u.rot = datan2(dx, dz); return false; } }
       if (this.time >= u.rpT) { u.path = null; const o = u.order; if (o) { o.fail = (o.fail || 0) + 1; if (o.fail > 5) this._giveUp(u); } }
     }
     return false;
@@ -1551,7 +1552,7 @@ export class Game {
   // (_lobOver: steep when the foe hugs the wall). Flight time = base + distance / speed, or LOB_T x sqrt(height) for a
   // high lob, whichever is longer. The damage lands when the flight ends.
   _fire(src, target, dmg, proj) {
-    const m = this.map, d = Math.hypot(target.x - src.x, target.z - src.z), sy = m.heightAt(src.x, src.z) + (src.kind === 'building' ? 2.5 : 1.0);
+    const m = this.map, d = dhypot(target.x - src.x, target.z - src.z), sy = m.heightAt(src.x, src.z) + (src.kind === 'building' ? 2.5 : 1.0);
     const bolt = proj === 'arrow' && src.kind === 'unit' && src.type === 'crossbow', A = bolt ? BOLT_ARC : ARROW_ARC, ty = m.heightAt(target.x, target.z) + 0.7;
     let arc = proj === 'bullet' ? 0 : proj === 'arrow' ? A[0] + d * A[1] : d * 0.22, dur = Math.max(0.08, d / PSPEED[proj]);
     if (proj === 'arrow') { if (src.kind === 'unit') arc = Math.max(arc, this._lobOver(src.x, src.z, sy, target.x, target.z, ty)); dur = Math.max(A[2] + d / A[3], arc > A[0] + d * A[1] + 0.01 ? LOB_T * Math.sqrt(arc) : 0); }   // (the slow high lob only over a wall)
@@ -1571,7 +1572,7 @@ export class Game {
     // attack' is annoying, once is enough") - again only after 30 s without any hit on us, or for a fight more than
     // 30 tiles from the last alert (at most every 15 s)
     if (target.owner === this.me) {
-      const far = this._uaX == null || Math.hypot(target.x - this._uaX, target.z - this._uaZ) > 30;
+      const far = this._uaX == null || dhypot(target.x - this._uaX, target.z - this._uaZ) > 30;
       if (this.time - this._uaLast > 30 || (far && this.time > this._uaT)) { this._uaT = this.time + 15; this._uaX = target.x; this._uaZ = target.z; this.events.emit('underAttack', { x: target.x, z: target.z }); this.events.emit('notify', { text: tr('Saldırı altındasın!'), type: 'warn', x: target.x, z: target.z }); }
       this._uaLast = this.time;
     }
@@ -1582,12 +1583,12 @@ export class Game {
       let guard = false;
       this._near(target.x, target.z, 7, e => { if (!guard && !e.dead && e.owner === target.owner && !e.naval && UNITS[e.type].cls !== 'civil' && UNITS[e.type].atk > 0) guard = true; });
       const tc = guard ? null : this._nearestB(target, b => b.type === 'towncenter');
-      if (tc && Math.hypot(tc.x - target.x, tc.z - target.z) > tc.size / 2 + 2) { const old = target.order; this.cmdMove([target.id], tc.x, tc.z + tc.size / 2 + 1); if (target.order && target.order.type === 'move') { old.fail = 0; target.queue.push(old); } }
+      if (tc && dhypot(tc.x - target.x, tc.z - target.z) > tc.size / 2 + 2) { const old = target.order; this.cmdMove([target.id], tc.x, tc.z + tc.size / 2 + 1); if (target.order && target.order.type === 'move') { old.fail = 0; target.queue.push(old); } }
       return;
     }
     if (target.kind === 'unit' && killer && !killer.dead && (!target.order || target.order.auto)) {
       const d = UNITS[target.type];
-      if (d.cls === 'civil') { if (!target.order && !target.naval) { const tc = this._nearestB(target, b => b.type === 'towncenter'); if (tc && Math.hypot(tc.x - target.x, tc.z - target.z) > tc.size / 2 + 1) this.cmdMove([target.id], tc.x, tc.z + tc.size / 2 + 1); } }
+      if (d.cls === 'civil') { if (!target.order && !target.naval) { const tc = this._nearestB(target, b => b.type === 'towncenter'); if (tc && dhypot(tc.x - target.x, tc.z - target.z) > tc.size / 2 + 1) this.cmdMove([target.id], tc.x, tc.z + tc.size / 2 + 1); } }
       else if (d.atk > 0 && !(target.type === 'ram' && killer.kind !== 'building') && !(killer.naval && !(d.range > 0)) && !target.order) this._engage(target, killer);
     } else if (target.kind === 'unit' && killer && !killer.dead && killer.id && target.order && target.order.type === 'move' && this._movFights(target, target.order) && this._canEngage(target, killer)) this._engage(target, killer);
   }
@@ -1613,11 +1614,11 @@ export class Game {
     this._near(victim.x, victim.z, HELP_R, v => {
       if (v.dead || v.kind !== 'unit' || v.aboard || v.order || (v.owner !== victim.owner && !this.isAlly(v.owner, victim.owner))) return;
       if (!this._canEngage(v, foe) || this.time < (foe['nh' + v.owner] || 0)) return;
-      const d = Math.hypot(v.x - victim.x, v.z - victim.z); if (d <= HELP_R) cand.push([d, v.id, v]);
+      const d = dhypot(v.x - victim.x, v.z - victim.z); if (d <= HELP_R) cand.push([d, v.id, v]);
     });
     cand.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
     for (let i = 0, n = 0; i < cand.length && n < HELP_N; i++) {
-      const v = cand[i][2], fd = Math.hypot(v.x - foe.x, v.z - foe.z);
+      const v = cand[i][2], fd = dhypot(v.x - foe.x, v.z - foe.z);
       if (UNITS[v.type].range > 0 && fd > this._wRange(v) && this._walled(v.x, v.z, foe.x, foe.z, foe.kind === 'building' ? foe : null)) continue;   // a shooter behind its wall stays there
       this._engage(v, foe, fd + 4); n++;   // (the leash reaches the attacker)
     }
@@ -1635,7 +1636,7 @@ export class Game {
   // The leash reaches past the attacker's own range so long-range shooters can be chased down.
   _engage(u, t, reach) {
     if (u.stance === 'hold' && this._edge(u, t) > (UNITS[u.type].range > 0 ? this._wRange(u) : 1.0)) return;
-    if (u.stance === 'defensive' && Math.hypot(u.x - t.x, u.z - t.z) > Math.max(DEF_LEASH + 3, UNITS[u.type].range > 0 ? this._wRange(u) : 0)) return;
+    if (u.stance === 'defensive' && dhypot(u.x - t.x, u.z - t.z) > Math.max(DEF_LEASH + 3, UNITS[u.type].range > 0 ? this._wRange(u) : 0)) return;
     const o = u.order;
     if (o && o.type === 'move') { const m = o.grp ? { type: 'move', x: o.x, z: o.z, grp: o.grp } : { type: 'move', x: o.x, z: o.z }; if (o.am) { m.am = 1; if (o.pat) { m.pat = 1; m.px = o.px; m.pz = o.pz; } } if (o.ret) m.ret = 1; u.queue.unshift(m); }   // (an attack-move / patrol / walk back goes on as one)
     const d = UNITS[u.type], tr = t.kind === 'unit' ? UNITS[t.type].range || 0 : t.kind === 'building' ? BUILDINGS[t.type].range || 0 : 0;
@@ -1680,23 +1681,23 @@ export class Game {
   _predTick(d, dt) {
     const q = PRED[d.type]; if (d.cd > 0) d.cd -= dt;
     let t = d.tid ? this.entities.get(d.tid) : null;
-    if (t && (t.dead || t.aboard || Math.hypot(t.x - d.hx, t.z - d.hz) > q.leash)) { t = null; d.tid = 0; d.wx = d.hx; d.wz = d.hz; d.wt = this.time + 4; }
+    if (t && (t.dead || t.aboard || dhypot(t.x - d.hx, t.z - d.hz) > q.leash)) { t = null; d.tid = 0; d.wx = d.hx; d.wz = d.hz; d.wt = this.time + 4; }
     d.st -= dt;
     if (!t && d.st <= 0) {
       d.st = 0.5; const r = this.time - (d.hitT == null ? -9 : d.hitT) < 3 ? 7 : q.aggro; let bd = r * r;
-      this._near(d.x, d.z, r, e => { if (e.dead || !(e.owner >= 0) || e.kind !== 'unit' || e.aboard || e.naval) return; const k = (e.x - d.x) ** 2 + (e.z - d.z) ** 2; if (k < bd || (k === bd && t && e.id < t.id)) { bd = k; t = e; } });
-      if (t && Math.hypot(t.x - d.hx, t.z - d.hz) > q.leash) t = null;
+      this._near(d.x, d.z, r, e => { if (e.dead || !(e.owner >= 0) || e.kind !== 'unit' || e.aboard || e.naval) return; const k = sq(e.x - d.x) + sq(e.z - d.z); if (k < bd || (k === bd && t && e.id < t.id)) { bd = k; t = e; } });
+      if (t && dhypot(t.x - d.hx, t.z - d.hz) > q.leash) t = null;
       if (t) d.tid = t.id;
     }
     if (!t) return false;
     this._angry.push(d);
-    const dx = t.x - d.x, dz = t.z - d.z, L = Math.hypot(dx, dz); d.rot = Math.atan2(dx, dz);
+    const dx = t.x - d.x, dz = t.z - d.z, L = dhypot(dx, dz); d.rot = datan2(dx, dz);
     if (L > 0.85) { const s = Math.min(L - 0.8, q.spd * dt), nx = d.x + dx / L * s, nz = d.z + dz / L * s; if (this.map.isWalkable(nx | 0, nz | 0)) { d.x = nx; d.z = nz; } }
     else if (d.cd <= 0) { d.cd = q.rof; d.attackT = this.time; this._applyDamage(t, q.atk, d, null); }
     d.wx = d.x; d.wz = d.z;
     return true;
   }
-  _nearestB(u, pred) { let best = null, bd = 1e9; for (const b of this.buildings) { if (b.owner !== u.owner || !b.done || b.dead || !pred(b)) continue; const d = (b.x - u.x) ** 2 + (b.z - u.z) ** 2; if (d < bd) { bd = d; best = b; } } return best; }
+  _nearestB(u, pred) { let best = null, bd = 1e9; for (const b of this.buildings) { if (b.owner !== u.owner || !b.done || b.dead || !pred(b)) continue; const d = sq(b.x - u.x) + sq(b.z - u.z); if (d < bd) { bd = d; best = b; } } return best; }
   _near(x, z, r, fn) {
     const hc = this._hc, c0 = Math.max(0, ((x - r) / CELL) | 0), c1 = Math.min(hc - 1, ((x + r) / CELL) | 0), r0 = Math.max(0, ((z - r) / CELL) | 0), r1 = Math.min(hc - 1, ((z + r) / CELL) | 0);
     for (let j = r0; j <= r1; j++) for (let i = c0; i <= c1; i++) { const c = this._cells[j * hc + i]; for (let k = 0; k < c.length; k++) fn(c[k]); }
@@ -1725,13 +1726,13 @@ export class Game {
     let near = null, nd = wr2;
     if (!noUnits) this._near(src.x, src.z, r, e => {
       if (e.dead || !this.isEnemy(src.owner, e.owner) || (melee && e.naval)) return;
-      const d = (e.x - src.x) ** 2 + (e.z - src.z) ** 2;
+      const d = sq(e.x - src.x) + sq(e.z - src.z);
       if (wr && d <= wr2) { if (d < nd || (d === nd && near && e.id < near.id) || !near) { nd = d; near = e; } return; }
       if (nk && this.time < (e[nk] || 0)) return;
       if (melee && d < 9 && d < bd && this._walled(src.x, src.z, e.x, e.z, null)) return;   // (just across a wall / gate: no blow lands there, owner 2026-11-15)
       if (d < bd) { if (far) far.push([d, e]); else { bd = d; best = e; } }
     });
-    if (!noUnits && src.owner >= 0) for (const e of this._angry) { if (!e.live) continue; const d = (e.x - src.x) ** 2 + (e.z - src.z) ** 2; if (d >= bd && !(wr && d <= wr2)) continue; if (wr && d <= wr2) { if (!near || d < nd) { nd = d; near = e; } } else if (far) far.push([d, e]); else { bd = d; best = e; } }
+    if (!noUnits && src.owner >= 0) for (const e of this._angry) { if (!e.live) continue; const d = sq(e.x - src.x) + sq(e.z - src.z); if (d >= bd && !(wr && d <= wr2)) continue; if (wr && d <= wr2) { if (!near || d < nd) { nd = d; near = e; } } else if (far) far.push([d, e]); else { bd = d; best = e; } }
     if (near) return near;
     if (far && far.length) { far.sort((a, b) => a[0] - b[0] || a[1].id - b[1].id); for (let i = 0; i < far.length && i < WALL_TRY; i++) if (!this._walled(src.x, src.z, far[i][1].x, far[i][1].z, null)) { best = far[i][1]; break; } }
     if (best || unitsOnly) return best;
@@ -1742,7 +1743,7 @@ export class Game {
   // the arc height a lob from (x0, sy, z0) to (x1, ty, z1) needs to pass WALL_CLEAR over every wall / gate tile on the
   // way (0 when none; at most LOB_MAX)
   _lobOver(x0, z0, sy, x1, z1, ty) {
-    const dx = x1 - x0, dz = z1 - z0, n = Math.ceil(Math.hypot(dx, dz) / 0.25), N = this.map.size, bl = this.map.blocked;
+    const dx = x1 - x0, dz = z1 - z0, n = Math.ceil(dhypot(dx, dz) / 0.25), N = this.map.size, bl = this.map.blocked;
     let last = -1, lw = false, need = 0;
     for (let i = 1; i < n; i++) {
       const x = (x0 + dx * i / n) | 0, z = (z0 + dz * i / n) | 0; if (x < 0 || z < 0 || x >= N || z >= N) continue;
@@ -1757,7 +1758,7 @@ export class Game {
   _wRange(u) { const d = UNITS[u.type]; return d.range + (this.players[u.owner].mods.range[d.cls] || 0); }
   // a finished wall, gate or tower (other than ign) on the straight line between two points: shooters stand behind it
   _walled(x0, z0, x1, z1, ign) {
-    const dx = x1 - x0, dz = z1 - z0, n = Math.ceil(Math.hypot(dx, dz) / 0.25), N = this.map.size, bl = this.map.blocked;
+    const dx = x1 - x0, dz = z1 - z0, n = Math.ceil(dhypot(dx, dz) / 0.25), N = this.map.size, bl = this.map.blocked;
     let last = -1;
     for (let i = 1; i < n; i++) {
       const x = (x0 + dx * i / n) | 0, z = (z0 + dz * i / n) | 0; if (x < 0 || z < 0 || x >= N || z >= N) continue;
@@ -1806,10 +1807,10 @@ export class Game {
         if (this._step(u, dt)) {
           if (u.fpp) { delete u.fpp; u.path = null; break; }   // end of a flow-field stretch: next one
           // a route that ends short of the goal (a partial search, or something built across it): plan again from here
-          if (Math.hypot(u.x - o.x, u.z - o.z) > 1.6 && (o.rp = (o.rp || 0) + 1) <= 3) { u.path = null; break; }
+          if (dhypot(u.x - o.x, u.z - o.z) > 1.6 && (o.rp = (o.rp || 0) + 1) <= 3) { u.path = null; break; }
           // patrol: turn round (each unit on its own path back: the group's field leads to the old end only); one
           // whose two ends are a step apart just stops there (it would turn and ask for a path every tick)
-          if (o.pat && (o.px - o.x) ** 2 + (o.pz - o.z) ** 2 > 1.6 * 1.6) { const x = o.x, z = o.z; o.x = o.px; o.z = o.pz; o.px = x; o.pz = z; o.rp = 0; delete o.grp; u.path = null; u.pk = null; break; }
+          if (o.pat && sq(o.px - o.x) + sq(o.pz - o.z) > 1.6 * 1.6) { const x = o.x, z = o.z; o.x = o.px; o.z = o.pz; o.px = x; o.pz = z; o.rp = 0; delete o.grp; u.path = null; u.pk = null; break; }
           this._next(u);
         }
         break;
@@ -1869,7 +1870,7 @@ export class Game {
     if (!t || t.dead || !this._foe(u.owner, t) || (t.kind === 'resource' && !t.live)) return this._autoEnd(u, o);
     const m = this.players[u.owner].mods;
     const leash = o.mv ? MOVE_LEASH : o.auto && u.stance === 'defensive' ? DEF_LEASH : (o.lr || d.los) + 5;
-    if (o.auto && Math.hypot(u.x - o.ox, u.z - o.oz) > leash) return this._autoEnd(u, o);
+    if (o.auto && dhypot(u.x - o.ox, u.z - o.oz) > leash) return this._autoEnd(u, o);
     const range = d.range > 0 ? d.range + (m.range[d.cls] || 0) : 1.0;
     if (o.auto && u.stance === 'hold' && this._edge(u, t) > range + 0.05) return this._autoEnd(u, o);   // (holds its ground)
     // a shooter on an auto attack does not leave its wall: a target out of range on the far side is dropped (checked
@@ -1883,7 +1884,7 @@ export class Game {
       reach = 0.05;
     }
     if (this._approach(u, t, dt, reach)) {
-      u.state = 'attack'; u.anim = 'attack'; u.rot = Math.atan2(t.x - u.x, t.z - u.z);
+      u.state = 'attack'; u.anim = 'attack'; u.rot = datan2(t.x - u.x, t.z - u.z);
       if (u.cd <= 0) {
         u.cd = d.rof; u.attackT = this.time;
         const atk = (d.atk + (m.atk[d.cls] || 0)) * (1 + (m.atkMul[d.cls] || 0));
@@ -1895,7 +1896,7 @@ export class Game {
   }
   // an auto fight is over: a defensive or holding unit walks back to where it stood (if it moved and nothing is queued)
   _autoEnd(u, o) {
-    if (o && o.auto && (u.stance === 'defensive' || u.stance === 'hold') && !u.queue.length && o.ox != null && Math.hypot(u.x - o.ox, u.z - o.oz) > 0.8) {
+    if (o && o.auto && (u.stance === 'defensive' || u.stance === 'hold') && !u.queue.length && o.ox != null && dhypot(u.x - o.ox, u.z - o.oz) > 0.8) {
       u.order = { type: 'move', x: o.ox, z: o.oz, ret: 1 }; u.targetId = null; u.path = null; u.pk = null; u.rpT = 0; return;
     }
     this._next(u);
@@ -1915,12 +1916,12 @@ export class Game {
       t.nw++; if (t.nw > 8) return this._next(u);
       const si = t.nw - 1, FO = [-0.9, -0.9, 0.9, 0.9, 0.9, -0.9, -0.9, 0.9, 0, -0.9, 0, 0.9, -0.9, 0, 0.9, 0];
       const k = Math.max(1, t.size / 4);   // (herder spots spread with the pasture: 6x6 since 2026-11-17)
-    const sx = t.x + FO[si * 2] * k + Math.sin(this.time * 0.12 + si * 2.1) * 0.3, sz = t.z + FO[si * 2 + 1] * k + Math.cos(this.time * 0.1 + si * 1.7) * 0.3;
-      const fdx = sx - u.x, fdz = sz - u.z, fd = Math.hypot(fdx, fdz);
+    const sx = t.x + FO[si * 2] * k + dsin(this.time * 0.12 + si * 2.1) * 0.3, sz = t.z + FO[si * 2 + 1] * k + dcos(this.time * 0.1 + si * 1.7) * 0.3;
+      const fdx = sx - u.x, fdz = sz - u.z, fd = dhypot(fdx, fdz);
       u.state = 'gather';
-      if (fd > 0.25) { const st = Math.min(fd, 1.6 * dt); u.x += fdx / fd * st; u.z += fdz / fd * st; u.rot = Math.atan2(fdx, fdz); u.anim = 'walk'; return; }
+      if (fd > 0.25) { const st = Math.min(fd, 1.6 * dt); u.x += fdx / fd * st; u.z += fdz / fd * st; u.rot = datan2(fdx, fdz); u.anim = 'walk'; return; }
       if (fd > 0.01) { const st = Math.min(fd, 0.3 * dt); u.x += fdx / fd * st; u.z += fdz / fd * st; }
-      u.anim = 'farm'; u.rot = si * 1.3 + Math.sin(this.time * 0.2 + si) * 0.6;
+      u.anim = 'farm'; u.rot = si * 1.3 + dsin(this.time * 0.2 + si) * 0.6;
       const c = [1, 0.7, 0.5, 0.4, 0.3, 0.25, 0.2, 0.15][si];
       const f = t.farm, prev = f.stage; f.growth += dt / 30 * c;
       if (f.growth >= 1) f.growth -= 1;
@@ -1943,7 +1944,7 @@ export class Game {
     }
     if (t.alive) { // a live animal: hunt it first (it flees as before), gather the carcass once it is down
       if (!this._approach(u, t, dt, HUNT_RANGE)) return;
-      u.state = 'attack'; u.anim = 'attack'; u.rot = Math.atan2(t.x - u.x, t.z - u.z);
+      u.state = 'attack'; u.anim = 'attack'; u.rot = datan2(t.x - u.x, t.z - u.z);
       if (!(u.cd > 0)) {
         u.cd = HUNT_ROF; u.attackT = this.time;
         this.events.emit('attack', { attacker: u, target: t, ranged: false });
@@ -1955,12 +1956,12 @@ export class Game {
       // stationary resource: every worker stands on its own spot around the tile instead of all stacking on one point
       if (o.sp === t.id && !this._pass(o.sx | 0, o.sz | 0, u.owner)) o.sp = 0;
       if (o.sp === t.id) {
-        const d = Math.hypot(o.sx - u.x, o.sz - u.z);
+        const d = dhypot(o.sx - u.x, o.sz - u.z);
         if (d > (o.so ? 0.45 : 0.05)) { // a shared spot: close is enough (the others standing there keep pushing walkers off it)
           // coming back from the drop-off: path straight to the spot (back to the plain tile approach if that keeps failing)
           if (d > 2.5 && !this._approach(u, { id: 'sp', kind: 'pt', x: o.sx, z: o.sz }, dt, 2.5)) { if (o.fail >= 3) { o.sp = 0; o.fail = 0; } return; }
           // someone already stands there (or a lower id is walking to the same point): choose again
-          if (!o.so) { let hit = false; this._near(o.sx, o.sz, 1.2, e => { if (hit || e === u || e.dead) return; const q = e.order; if (!q || q.type !== 'gather' || !q.sp || Math.hypot(q.sx - o.sx, q.sz - o.sz) >= 0.5) return; if (e.id < u.id || Math.hypot(e.x - q.sx, e.z - q.sz) < 0.1) hit = true; }); if (hit) { o.sp = 0; u.path = null; u.pk = null; return; } }
+          if (!o.so) { let hit = false; this._near(o.sx, o.sz, 1.2, e => { if (hit || e === u || e.dead) return; const q = e.order; if (!q || q.type !== 'gather' || !q.sp || dhypot(q.sx - o.sx, q.sz - o.sz) >= 0.5) return; if (e.id < u.id || dhypot(e.x - q.sx, e.z - q.sz) < 0.1) hit = true; }); if (hit) { o.sp = 0; u.path = null; u.pk = null; return; } }
           if (!u.path || u.pk !== 'sp') { const pa = this._losC(u.x, u.z, o.sx, o.sz, u.owner) ? [o.sx, o.sz] : this._spotPath(u, t, o.sx, o.sz); if (!pa) { o.sp = 0; return; } u.path = pa; u.pi = 0; u.pk = 'sp'; }
           u.state = 'move'; u.anim = 'walk';
           if (!this._step(u, dt)) return;
@@ -1978,19 +1979,19 @@ export class Game {
       }
     } else if (!this._approach(u, t, dt, 1.0)) return;
     if (PREY[t.type]) t.hunted = true;
-    u.state = 'gather'; u.anim = ANIM_OF[t.type]; u.rot = Math.atan2(t.x - u.x, t.z - u.z);
+    u.state = 'gather'; u.anim = ANIM_OF[t.type]; u.rot = datan2(t.x - u.x, t.z - u.z);
     o.acc += RATE[t.type] * p.mods.gather[o.res] * dt;
     while (o.acc >= 1 && t.amount > 0) { o.acc -= 1; if (t.type !== 'stone' && t.type !== 'gold') t.amount--; /* mines never run out */ if (!u.carry) u.carry = { type: o.res, amount: 0 }; u.carry.amount++; }
     o.tick += dt; if (o.tick >= 1) { o.tick = 0; this.events.emit('gatherTick', { unit: u, res: o.res }); }
     if (t.amount <= 0) this._kill(t, u);
   }
   // center-line walkability between two close points (local moves to a stand spot)
-  _losC(x0, z0, x1, z1, owner) { const L = Math.hypot(x1 - x0, z1 - z0), n = Math.ceil(L / 0.2); for (let i = 1; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, z = z0 + (z1 - z0) * i / n; if (!this._pass(x | 0, z | 0, owner)) return false; } return true; }
+  _losC(x0, z0, x1, z1, owner) { const L = dhypot(x1 - x0, z1 - z0), n = Math.ceil(L / 0.2); for (let i = 1; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, z = z0 + (z1 - z0) * i / n; if (!this._pass(x | 0, z | 0, owner)) return false; } return true; }
   // stand spots around a resource tile: 4 sides then 4 corners, only on tiles this owner can walk
   _spotCands(t, owner) { const out = []; for (let i = 0; i < 16; i += 2) { const x = t.x + SPOT_O[i], z = t.z + SPOT_O[i + 1]; if (this._pass(x | 0, z | 0, owner)) out.push(x, z); } return out; }
   // spots claimed by other gatherers near (x, z): derived from their orders every time, nothing stored besides the order itself
   _spotClaims(u, x, z) { const cl = []; this._near(x, z, 2.6, e => { if (e === u || e.dead) return; const q = e.order; if (q && q.type === 'gather' && q.sp && Math.abs(q.sx - x) < 2.6 && Math.abs(q.sz - z) < 2.6) cl.push(q.sx, q.sz, q.sp); }); return cl; }
-  _spotFree(cl, x, z) { for (let k = 0; k < cl.length; k += 3) if (Math.hypot(cl[k] - x, cl[k + 1] - z) < 0.55) return false; return true; }
+  _spotFree(cl, x, z) { for (let k = 0; k < cl.length; k += 3) if (dhypot(cl[k] - x, cl[k + 1] - z) < 0.55) return false; return true; }
   // local BFS (8-way, no corner cutting, like _findPath) from the unit's tile in a box around t: steps per tile, -1 = not reached
   _spotBfs(u, t) {
     const B = SPOT_BOX, W = B * 2 + 1, ox = (t.x | 0) - B, oz = (t.z | 0) - B, dist = new Int16Array(W * W).fill(-1), q = [];
@@ -2025,7 +2026,7 @@ export class Game {
     for (const s of ms) {
       if (s.dep) continue;
       s.dep = s.id; const st = [s];
-      while (st.length) { const a = st.pop(); for (const b of ms) if (!b.dep && b.type === a.type && (b.x - a.x) ** 2 + (b.z - a.z) ** 2 <= 9) { b.dep = s.id; st.push(b); } }
+      while (st.length) { const a = st.pop(); for (const b of ms) if (!b.dep && b.type === a.type && sq(b.x - a.x) + sq(b.z - a.z) <= 9) { b.dep = s.id; st.push(b); } }
     }
   }
   _depOf(t) { if (!t.dep) this._markDeps(); return t.dep || t.id; }
@@ -2047,7 +2048,7 @@ export class Game {
     const full = new Map();
     for (const e of this.entities.values()) {
       if (e.kind !== 'resource' || e.type !== t.type || e.dead) continue;
-      const d = (e.x - u.x) ** 2 + (e.z - u.z) ** 2; if (d >= bd) continue;
+      const d = sq(e.x - u.x) + sq(e.z - u.z); if (d >= bd) continue;
       const k = this._depOf(e); if (k === dep) continue;
       let f = full.get(k); if (f === undefined) { f = this.mineLoad(k, u.owner) - (o.dadm === k ? 1 : 0) >= MINE_CAP; full.set(k, f); }
       if (!f) { bd = d; best = e; }
@@ -2070,7 +2071,7 @@ export class Game {
     if (on < K) {
       // the free reachable spot with the shortest walk (straight distance breaks ties, then candidate order)
       let bi = -1, bd = 1e9;
-      for (let i = 0; i < c.length; i += 2) { const s = this._bfsAt(bf, c[i], c[i + 1]); if (s < 0 || !this._spotFree(cl, c[i], c[i + 1])) continue; const d = s * 2 + Math.hypot(c[i] - u.x, c[i + 1] - u.z); if (d < bd - 1e-9) { bd = d; bi = i; } }
+      for (let i = 0; i < c.length; i += 2) { const s = this._bfsAt(bf, c[i], c[i + 1]); if (s < 0 || !this._spotFree(cl, c[i], c[i + 1])) continue; const d = s * 2 + dhypot(c[i] - u.x, c[i + 1] - u.z); if (d < bd - 1e-9) { bd = d; bi = i; } }
       if (bi >= 0) { o.sp = t.id; o.sx = c[bi]; o.sz = c[bi + 1]; return; }
     }
     // full: another tile of the same type (same deposit / forest) with a free reachable spot, the shortest walk from here
@@ -2078,7 +2079,7 @@ export class Game {
     const N = this.map.size, R = SPOT_R, tx = t.x | 0, tz = t.z | 0, alt = [];
     for (let z = Math.max(0, tz - R); z <= Math.min(N - 1, tz + R); z++) for (let x = Math.max(0, tx - R); x <= Math.min(N - 1, tx + R); x++) {
       const id = this.resAt[z * N + x]; if (!id || id === t.id) continue; const e = this.entities.get(id);
-      if (!e || e.dead || e.type !== t.type || !(e.amount > 0)) continue; const d = Math.hypot(e.x - t.x, e.z - t.z); if (d > R) continue;
+      if (!e || e.dead || e.type !== t.type || !(e.amount > 0)) continue; const d = dhypot(e.x - t.x, e.z - t.z); if (d > R) continue;
       if ((e.type === 'stone' || e.type === 'gold') && this._depOf(e) !== this._depOf(t)) continue;   // (stay on this deposit: its places are counted)
       alt.push([d, e.id, e]);
     }
@@ -2092,7 +2093,7 @@ export class Game {
     if (be) { o.targetId = be.id; u.targetId = be.id; o.x = be.x; o.z = be.z; o.fail = 0; u.path = null; u.pk = null; return; }
     // nothing free nearby: share the least crowded reachable spot (no freezing)
     let bi = -1, bn = 1e9;
-    for (let i = 0; i < c.length; i += 2) { if (this._bfsAt(bf, c[i], c[i + 1]) < 0) continue; let n = 0; for (let k = 0; k < cl.length; k += 3) if (Math.hypot(cl[k] - c[i], cl[k + 1] - c[i + 1]) < 0.55) n++; if (n < bn) { bn = n; bi = i; } }
+    for (let i = 0; i < c.length; i += 2) { if (this._bfsAt(bf, c[i], c[i + 1]) < 0) continue; let n = 0; for (let k = 0; k < cl.length; k += 3) if (dhypot(cl[k] - c[i], cl[k + 1] - c[i + 1]) < 0.55) n++; if (n < bn) { bn = n; bi = i; } }
     if (bi >= 0) { o.sp = t.id; o.sx = c[bi]; o.sz = c[bi + 1]; o.so = 1; }
   }
   _uReturn(u, o, dt) {
@@ -2119,7 +2120,7 @@ export class Game {
         for (const r of this.entities.values()) {
           if (r.kind !== 'resource' || r.dead || !(r.amount > 0)) continue;
           if (b.type === 'lumbercamp' ? r.type !== 'tree' : (r.type !== 'stone' && r.type !== 'gold')) continue;
-          const d = Math.hypot(r.x - b.x, r.z - b.z); if (!(d < 10 && d < bd)) continue;
+          const d = dhypot(r.x - b.x, r.z - b.z); if (!(d < 10 && d < bd)) continue;
           if (b.type === 'minecamp' && this.mineLoad(this._depOf(r), u.owner) >= MINE_CAP) continue;   // (a full deposit)
           bd = d; best = r;
         }
@@ -2128,7 +2129,7 @@ export class Game {
       return this._nextBuild(u, o);
     }
     if (!this._approach(u, b, dt, 1.0)) return;
-    u.state = 'build'; u.anim = 'build'; u.rot = Math.atan2(b.x - u.x, b.z - u.z);
+    u.state = 'build'; u.anim = 'build'; u.rot = datan2(b.x - u.x, b.z - u.z);
     b.nb++; const c = 1 / b.nb, d = BUILDINGS[b.type];
     o.tick = (o.tick || 0) + dt; if (o.tick >= 1) { o.tick = 0; this.events.emit('buildTick', { unit: u, building: b }); } // view only (hammer sound)
     if (!b.done) {
@@ -2158,7 +2159,7 @@ export class Game {
       // frame and credit gold ~15x per second (an unlimited-gold exploit for any player)
       if (this.time - (o.lt != null ? o.lt : -99) < 5) { u.state = 'idle'; u.anim = 'idle'; return; }
       o.lt = this.time;
-      if (o.phase) { const g = Math.round((8 + Math.hypot(m.x - tc.x, m.z - tc.z) * 0.6) * (1 + this.players[u.owner].mods.cart)); this._credit(this.players[u.owner], 'gold', g); this.events.emit('deposit', { unit: u, owner: u.owner, res: 'gold', amount: g }); }
+      if (o.phase) { const g = Math.round((8 + dhypot(m.x - tc.x, m.z - tc.z) * 0.6) * (1 + this.players[u.owner].mods.cart)); this._credit(this.players[u.owner], 'gold', g); this.events.emit('deposit', { unit: u, owner: u.owner, res: 'gold', amount: g }); }
       o.phase = o.phase ? 0 : 1; o.fail = 0;
     }
   }
@@ -2204,7 +2205,7 @@ export class Game {
       // heal own units within 7 tiles that have not been hit for 5 s: 1 hp/s, faster with techs
       b.healT = (b.healT || 0) + dt;
       if (b.healT >= 1) { b.healT -= 1; b.healAcc = (b.healAcc || 0) + 1 + p.mods.heal; const n = b.healAcc | 0; b.healAcc -= n;
-        if (n > 0) this._near(b.x, b.z, TEMPLE_HEAL_R, e => { if (e.dead || e.owner !== b.owner || e.hp >= e.maxHp || e.state === 'attack' || this.time - (e.hitT || -99) < 5 || Math.hypot(e.x - b.x, e.z - b.z) > TEMPLE_HEAL_R) return; e.hp = Math.min(e.maxHp, e.hp + n); }); }
+        if (n > 0) this._near(b.x, b.z, TEMPLE_HEAL_R, e => { if (e.dead || e.owner !== b.owner || e.hp >= e.maxHp || e.state === 'attack' || this.time - (e.hitT || -99) < 5 || dhypot(e.x - b.x, e.z - b.z) > TEMPLE_HEAL_R) return; e.hp = Math.min(e.maxHp, e.hp + n); }); }
     }
     const q = b.queue[0]; if (!q) return;
     const sp = (this.cfg.sandbox && b.owner === 0 ? 2 : 1) / QUEUE_TIME_MUL * (q.kind === 'unit' ? 1 + p.mods.train + (b.type === 'factory' ? p.mods.factory : 0) : 1) * (this.cfg.tutorial && q.kind === 'age' && b.owner === 0 ? 4 : 1);   // (tutorial: the age-up 4x faster)
@@ -2261,10 +2262,10 @@ export class Game {
       if (u.order && u.state !== 'move' && !(u.state === 'attack' && ru === SEP_R.siege)) continue;
       const mv = !!u.order && u.state === 'move';   // (a walking unit keeps the old small gap: a bigger push stalls slow siege)
       let px = 0, pz = 0;
-      this._near(u.x, u.z, u.naval ? 1.2 : mv ? 0.7 : ru + SEP_R.siege + 0.15, e => { if (e === u || e.dead || !e.naval !== !u.naval) return; let dx = u.x - e.x, dz = u.z - e.z; const d = Math.hypot(dx, dz), sr = u.naval || mv ? (u.order ? 0.42 : 0.55) : ru + (SEP_R[UNITS[e.type].cls] || SEP_R.other); if (d < sr) { if (d < 0.01) { const a = u.id * 2.39996; dx = Math.cos(a); dz = Math.sin(a); px += dx; pz += dz; } else { px += dx / d; pz += dz / d; } } });
+      this._near(u.x, u.z, u.naval ? 1.2 : mv ? 0.7 : ru + SEP_R.siege + 0.15, e => { if (e === u || e.dead || !e.naval !== !u.naval) return; let dx = u.x - e.x, dz = u.z - e.z; const d = dhypot(dx, dz), sr = u.naval || mv ? (u.order ? 0.42 : 0.55) : ru + (SEP_R[UNITS[e.type].cls] || SEP_R.other); if (d < sr) { if (d < 0.01) { const a = u.id * 2.39996; dx = dcos(a); dz = dsin(a); px += dx; pz += dz; } else { px += dx / d; pz += dz / d; } } });
       // a walking unit is nudged at most at half its own speed, whatever the crowd (2026-11-17: four cannons at a ford
       // pushed each other back as fast as they walk and never got through)
-      if (mv && (px || pz)) { const L = Math.hypot(px, pz), c = Math.min(1.2, this._speed(u) * 0.5) / Math.max(1, L) / 1.2; px *= c; pz *= c; }
+      if (mv && (px || pz)) { const L = dhypot(px, pz), c = Math.min(1.2, this._speed(u) * 0.5) / Math.max(1, L) / 1.2; px *= c; pz *= c; }
       if (px || pz) { const nx = u.x + px * dt * 1.2, nz = u.z + pz * dt * 1.2; this._navMode = !!u.naval; if (this._pass(nx | 0, nz | 0, u.owner)) { u.x = nx; u.z = nz; } this._navMode = false; }
     }
     const bs = this.buildings; for (let i = bs.length - 1; i >= 0; i--) { const b = bs[i]; if (b && !b.dead) this._updateBuilding(b, dt); }
@@ -2276,12 +2277,12 @@ export class Game {
       const p = pr[i]; p.t += dt; const t = this.entities.get(p.targetId);
       if (t && !t.dead) { p.tx = t.x; p.tz = t.z; }
       const f = Math.min(1, p.t / p.dur);
-      p.x = p.sx + (p.tx - p.sx) * f; p.z = p.sz + (p.tz - p.sz) * f; p.y = p.sy + (p.ty - p.sy) * f + (p.type === 'arrow' ? 4 * f * (1 - f) : Math.sin(f * Math.PI)) * p.arc;   // (arrows: a true parabola)
+      p.x = p.sx + (p.tx - p.sx) * f; p.z = p.sz + (p.tz - p.sz) * f; p.y = p.sy + (p.ty - p.sy) * f + (p.type === 'arrow' ? 4 * f * (1 - f) : dsin(f * Math.PI)) * p.arc;   // (arrows: a true parabola)
       if (f >= 1) {
         pr.splice(i, 1); const src = this.entities.get(p.srcId) || { owner: p.owner, dead: true, kind: 'unit', id: 0 };
         if (t && !t.dead) this._applyDamage(t, p.dmg, src, p.type);
         else this.events.emit('hit', { target: null, x: p.tx, y: p.ty, z: p.tz, dmg: 0, proj: p.type });
-        if (p.type === 'stone' || p.type === 'cannonball') { const hit = []; this._near(p.tx, p.tz, 1.6, e => { if (!e.dead && this.isEnemy(p.owner, e.owner) && e !== t && Math.hypot(e.x - p.tx, e.z - p.tz) < 1.6) hit.push(e); }); for (const e of hit) this._applyDamage(e, Math.max(1, Math.round(p.dmg * 0.4)), src, p.type); }
+        if (p.type === 'stone' || p.type === 'cannonball') { const hit = []; this._near(p.tx, p.tz, 1.6, e => { if (!e.dead && this.isEnemy(p.owner, e.owner) && e !== t && dhypot(e.x - p.tx, e.z - p.tz) < 1.6) hit.push(e); }); for (const e of hit) this._applyDamage(e, Math.max(1, Math.round(p.dmg * 0.4)), src, p.type); }
       }
     }
     // deer wander
@@ -2292,16 +2293,16 @@ export class Game {
       // flee briefly from an approaching hunter (once per 9 s so it can still be caught)
       if (!(this.time < d.fleeCd)) {
         let hx = 0, hz = 0, hit = false;
-        this._near(d.x, d.z, 3.5, e => { if (hit || e.dead || !e.order || e.order.type !== 'gather' || e.order.targetId !== d.id) return; if ((e.x - d.x) ** 2 + (e.z - d.z) ** 2 < 12.25) { hit = true; hx = e.x; hz = e.z; } });
+        this._near(d.x, d.z, 3.5, e => { if (hit || e.dead || !e.order || e.order.type !== 'gather' || e.order.targetId !== d.id) return; if (sq(e.x - d.x) + sq(e.z - d.z) < 12.25) { hit = true; hx = e.x; hz = e.z; } });
         if (hit) {
           d.fleeCd = this.time + 9; d.fleeT = this.time + 1.6; d.wt = this.time + 4;
-          const ax = d.x - hx, az = d.z - hz, al = Math.hypot(ax, az) || 1, nx = d.x + ax / al * 4, nz = d.z + az / al * 4;
+          const ax = d.x - hx, az = d.z - hz, al = dhypot(ax, az) || 1, nx = d.x + ax / al * 4, nz = d.z + az / al * 4;
           if (this.map.isWalkable(nx | 0, nz | 0) && this.map.tiles[(nz | 0) * this.map.size + (nx | 0)] !== 3 && this._los(d.x, d.z, nx, nz, -1)) { d.wx = nx; d.wz = nz; } else d.fleeT = 0;
         }
       }
       if (this.time >= d.wt) { d.wt = this.time + 3 + this.rand() * 6; const nx = d.x + (this.rand() * 2 - 1) * 2.5, nz = d.z + (this.rand() * 2 - 1) * 2.5; if (this.map.isWalkable(nx | 0, nz | 0) && this.map.tiles[(nz | 0) * this.map.size + (nx | 0)] !== 3) { d.wx = nx; d.wz = nz; } }
-      const dx = d.wx - d.x, dz = d.wz - d.z, L = Math.hypot(dx, dz);
-      if (L > 0.05) { const s = Math.min(L, (this.time < d.fleeT ? 2.2 : 0.6) * dt); d.x += dx / L * s; d.z += dz / L * s; d.rot = Math.atan2(dx, dz); }
+      const dx = d.wx - d.x, dz = d.wz - d.z, L = dhypot(dx, dz);
+      if (L > 0.05) { const s = Math.min(L, (this.time < d.fleeT ? 2.2 : 0.6) * dt); d.x += dx / L * s; d.z += dz / L * s; d.rot = datan2(dx, dz); }
     }
     try { this._navTick(dt); } catch (err) { if (!this._navErr) { this._navErr = true; console.error('naval tick', err); } }
     // remove corpses
@@ -2406,14 +2407,14 @@ export class Game {
     t.nw++;
     const cell = FARM_CELLS[si], cx = t.x + (cell[0] - 1) * P, cz = t.z + (cell[1] - 1) * P;
     const walk = (x, z) => {
-      const dx = x - u.x, dz = z - u.z, d = Math.hypot(dx, dz);
+      const dx = x - u.x, dz = z - u.z, d = dhypot(dx, dz);
       if (d <= 0.25) return true;
-      const st = Math.min(d, 1.6 * dt); u.x += dx / d * st; u.z += dz / d * st; u.rot = Math.atan2(dx, dz); u.anim = 'walk'; u.state = 'gather';
+      const st = Math.min(d, 1.6 * dt); u.x += dx / d * st; u.z += dz / d * st; u.rot = datan2(dx, dz); u.anim = 'walk'; u.state = 'gather';
       return false;
     };
     // a full load goes to the granary (its door side facing the plot)
     if (o.haul) {
-      const ax = cx - t.x, az = cz - t.z, al = Math.hypot(ax, az) || 1;
+      const ax = cx - t.x, az = cz - t.z, al = dhypot(ax, az) || 1;
       if (!walk(t.x + ax / al * 1.7, t.z + az / al * 1.7)) return;
       const n = u.carry && u.carry.type === 'food' ? Math.floor(u.carry.amount) : 0;
       if (n > 0) { this._credit(p, 'food', n); this.events.emit('deposit', { unit: u, owner: u.owner, res: 'food', amount: n }); }
@@ -2426,10 +2427,10 @@ export class Game {
     const slot = Math.floor((this.time + si * 2.3) / FARM_SPOT_S), k = slot % 6;
     const row = (k % 3) - 1, back = k >= 3 ? 1 : -1;
     const tx = cx + row * P * 0.26, tz = cz + back * P * 0.22;
-    const dx = tx - u.x, dz = tz - u.z, d = Math.hypot(dx, dz);
+    const dx = tx - u.x, dz = tz - u.z, d = dhypot(dx, dz);
     if (d > 0.05) {
       const st = Math.min(d, (d > 1.5 ? 1.6 : 0.7) * dt);   // a slow stroll between spots, a normal walk from afar
-      u.x += dx / d * st; u.z += dz / d * st; u.rot = Math.atan2(dx, dz); u.anim = 'walk'; u.state = 'gather';
+      u.x += dx / d * st; u.z += dz / d * st; u.rot = datan2(dx, dz); u.anim = 'walk'; u.state = 'gather';
       if (d > 1.5) return;   // (still on his way to the plot: nothing grows yet)
     } else { u.state = 'gather'; u.anim = 'farm'; u.rot = back > 0 ? 0 : Math.PI; }
     // (stepping along the rows is part of the work: the plot grows and is harvested the whole time he is on it)
@@ -2456,12 +2457,12 @@ export class Game {
     t.nw++; if (t.nw > 6) return this._next(u);
     const si = t.nw - 1, FO = [-0.9, -0.9, 0.9, 0.9, 0.9, -0.9, -0.9, 0.9, 0, -0.9, 0, 0.9];
     const k = Math.max(1, (t.size - 3) / 3);   // (the herders spread with the pen: as before in a 6x6 one, 2x in the 9x9 of 2026-11-20)
-    const sx = t.x + FO[si * 2] * k + Math.sin(this.time * 0.12 + si * 2.1) * 0.3, sz = t.z + FO[si * 2 + 1] * k + Math.cos(this.time * 0.1 + si * 1.7) * 0.3;
-    const fdx = sx - u.x, fdz = sz - u.z, fd = Math.hypot(fdx, fdz);
+    const sx = t.x + FO[si * 2] * k + dsin(this.time * 0.12 + si * 2.1) * 0.3, sz = t.z + FO[si * 2 + 1] * k + dcos(this.time * 0.1 + si * 1.7) * 0.3;
+    const fdx = sx - u.x, fdz = sz - u.z, fd = dhypot(fdx, fdz);
     u.state = 'gather';
-    if (fd > 0.25) { const st = Math.min(fd, 1.6 * dt); u.x += fdx / fd * st; u.z += fdz / fd * st; u.rot = Math.atan2(fdx, fdz); u.anim = 'walk'; return; }
+    if (fd > 0.25) { const st = Math.min(fd, 1.6 * dt); u.x += fdx / fd * st; u.z += fdz / fd * st; u.rot = datan2(fdx, fdz); u.anim = 'walk'; return; }
     if (fd > 0.01) { const st = Math.min(fd, 0.3 * dt); u.x += fdx / fd * st; u.z += fdz / fd * st; }
-    u.anim = 'farm'; u.rot = si * 1.3 + Math.sin(this.time * 0.2 + si) * 0.6;
+    u.anim = 'farm'; u.rot = si * 1.3 + dsin(this.time * 0.2 + si) * 0.6;
     const ps = t.pasture;
     const c = [1, 0.7, 0.5, 0.4, 0.3, 0.25][si];
     // base 0.5 food/s at 5 sheep: 2 herders ~= a 2-farmer farm on average, but steady. (2026-11-20, owner: the pasture
@@ -2523,7 +2524,7 @@ export class Game {
   _railSpawn(q) {
     const [tx, tz] = q.path[0], u = this._addUnit('train', q.owner, tx + 0.5, tz + 0.5);
     u.train = { a: q.a, b: q.b, path: q.path, i: 0, dir: 1, s: 0, wait: 2 };
-    if (q.path.length > 1) u.rot = Math.atan2(q.path[1][0] - tx, q.path[1][1] - tz);
+    if (q.path.length > 1) u.rot = datan2(q.path[1][0] - tx, q.path[1][1] - tz);
     q.trainId = u.id; q.deadT = null; return u;
   }
   _railUpdate(dt) {
@@ -2556,7 +2557,7 @@ export class Game {
       const i0 = Math.max(0, Math.min(L, Math.floor(tr.s))), i1 = Math.min(L, i0 + 1), f = tr.s - i0;
       tr.i = Math.round(tr.s);
       u.x = P[i0][0] + 0.5 + (P[i1][0] - P[i0][0]) * f; u.z = P[i0][1] + 0.5 + (P[i1][1] - P[i0][1]) * f;
-      if (L > 0) { const a = Math.min(L - 1, i0), dx = (P[a + 1][0] - P[a][0]) * tr.dir, dz = (P[a + 1][1] - P[a][1]) * tr.dir; if (dx || dz) u.rot = Math.atan2(dx, dz); }
+      if (L > 0) { const a = Math.min(L - 1, i0), dx = (P[a + 1][0] - P[a][0]) * tr.dir, dz = (P[a + 1][1] - P[a][1]) * tr.dir; if (dx || dz) u.rot = datan2(dx, dz); }
     }
   }
 
@@ -2590,12 +2591,12 @@ export class Game {
     }
     if (!best) { const f = this._freeNear(b.x, b.z, b.owner); return { x: f.x, z: f.z, rx: f.x, rz: f.z }; }
     const x = best.tx + 0.5, z = best.tz + 0.5;
-    let dx = x - b.x, dz = z - b.z; const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+    let dx = x - b.x, dz = z - b.z; const L = dhypot(dx, dz) || 1; dx /= L; dz /= L;
     let rx = x, rz = z;
     const clear = (ux, uz, k) => { for (let s = 0.5; s <= k; s += 0.5) if (!this._navPass((x + ux * s) | 0, (z + uz * s) | 0)) return false; return true; };
     let alt = null; // first clear spot; a deep-water one wins
     outer: for (const k of [3, 2]) for (const a of [0, 0.4, -0.4, 0.8, -0.8]) {
-      const ux = dx * Math.cos(a) - dz * Math.sin(a), uz = dx * Math.sin(a) + dz * Math.cos(a); if (!clear(ux, uz, k)) continue;
+      const ux = dx * dcos(a) - dz * dsin(a), uz = dx * dsin(a) + dz * dcos(a); if (!clear(ux, uz, k)) continue;
       const px = (x + ux * k) | 0, pz = (z + uz * k) | 0, c = { x: px + 0.5, z: pz + 0.5 };
       if (T[pz * N + px] === 4) { alt = c; break outer; } if (!alt) alt = c;
     }
@@ -2615,7 +2616,7 @@ export class Game {
     return false;
   }
   _navShoals() { if (!this._navFishC) { this._navFishC = []; for (const e of this.entities.values()) if (e.kind === 'resource' && e.type === 'fish' && !e.dead) this._navFishC.push(e); } return this._navFishC; }
-  _navNearestShoal(x, z, not) { let best = null, bd = 1e9; for (const s of this._navShoals()) { if (s === not || s.dead || s.amount < 5) continue; const d = (s.x - x) ** 2 + (s.z - z) ** 2; if (d < bd) { bd = d; best = s; } } return best; }
+  _navNearestShoal(x, z, not) { let best = null, bd = 1e9; for (const s of this._navShoals()) { if (s === not || s.dead || s.amount < 5) continue; const d = sq(s.x - x) + sq(s.z - z); if (d < bd) { bd = d; best = s; } } return best; }
   _navCmdFish(ids, t) {
     const us = this._live(ids).filter(u => u.type === 'fishboat'); if (!us.length) return false;
     for (const u of us) this._setOrder(u, { type: 'fish', targetId: t.id, phase: 'go', acc: 0, tick: 0 });
@@ -2631,7 +2632,7 @@ export class Game {
         if (!dx && !dz) continue; const ax = tx + dx, az = tz + dz;
         const land = fromWater ? ax : tx, landz = fromWater ? az : tz, wat = fromWater ? tx : ax, watz = fromWater ? tz : az;
         if (!this._navLandPass(land, landz, owner) || this._navWater(land, landz) || !this._navPass(wat, watz)) continue;
-        const d = (tx + 0.5 - x) ** 2 + (tz + 0.5 - z) ** 2 + ((dx && dz) ? 0.3 : 0);
+        const d = sq(tx + 0.5 - x) + sq(tz + 0.5 - z) + ((dx && dz) ? 0.3 : 0);
         if (d < bd) { bd = d; best = { lx: land + 0.5, lz: landz + 0.5, wx: wat + 0.5, wz: watz + 0.5 }; }
       }
     }
@@ -2711,7 +2712,7 @@ export class Game {
     }
     if (!this._approach(u, t, dt, 0.5)) return; // edge distance: stop within ~1 tile of the shoal centre
     o.fail = 0; o.bad = 0;
-    u.state = 'gather'; u.anim = 'fish'; u.rot = Math.atan2(t.x - u.x, t.z - u.z) + 1.57;
+    u.state = 'gather'; u.anim = 'fish'; u.rot = datan2(t.x - u.x, t.z - u.z) + 1.57;
     o.acc += 0.65 * (p.mods.gather.fish || 1) * dt;
     while (o.acc >= 1 && t.amount >= 1) { o.acc -= 1; t.amount--; if (!u.carry || u.carry.type !== 'food') u.carry = { type: 'food', amount: 0 }; u.carry.amount++; }
     o.tick += dt; if (o.tick >= 1) { o.tick = 0; this.events.emit('gatherTick', { unit: u, res: 'food' }); }
@@ -2721,7 +2722,7 @@ export class Game {
     if (!t || t.dead || t.owner !== u.owner || t.type !== 'transport') return this._next(u);
     if (!t.cargo) t.cargo = [];
     if (t.cargo.length >= 10) return this._next(u);
-    const d = Math.hypot(t.x - u.x, t.z - u.z), ds = Math.hypot(o.x - u.x, o.z - u.z);
+    const d = dhypot(t.x - u.x, t.z - u.z), ds = dhypot(o.x - u.x, o.z - u.z);
     if (d <= 1.6 || (ds < 1.6 && d <= 2.6)) {
       u.aboard = t.id; t.cargo.push(u.id);
       u.order = null; u.queue.length = 0; u.path = null; u.pk = null; u.targetId = null; u.state = 'idle'; u.anim = 'idle'; u.x = t.x; u.z = t.z;
@@ -2734,17 +2735,17 @@ export class Game {
   _navUnloadStep(u, o, dt) {
     if (!u.cargo || !u.cargo.length) return this._next(u);
     const arrived = this._navPt(u, o.wx, o.wz, dt, 0.5);
-    if (!arrived && Math.hypot(o.wx - u.x, o.wz - u.z) > 2.2) return;
+    if (!arrived && dhypot(o.wx - u.x, o.wz - u.z) > 2.2) return;
     // free land tiles around the ship, nearest first
     const cx = Math.floor(u.x), cz = Math.floor(u.z), spots = [];
-    for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) { const tx = cx + i, tz = cz + j; if (!this._navLandPass(tx, tz, u.owner)) continue; const w = this._navWater(tx, tz); spots.push({ x: tx + 0.5, z: tz + 0.5, d: Math.hypot(i, j) + (w ? 3 : 0) }); }
+    for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) { const tx = cx + i, tz = cz + j; if (!this._navLandPass(tx, tz, u.owner)) continue; const w = this._navWater(tx, tz); spots.push({ x: tx + 0.5, z: tz + 0.5, d: dhypot(i, j) + (w ? 3 : 0) }); }
     if (!spots.length) { if (arrived) this._next(u); return; }
     spots.sort((a, b) => a.d - b.d);
     const n = Math.min(spots.length, 6), out = [];
     u.cargo.forEach((id, k) => {
       const e = this.entities.get(id); if (!e || e.dead) return;
       const s = spots[k % n], r = Math.floor(k / n) * 0.3;
-      e.aboard = null; delete e.aboard; e.x = s.x + Math.cos(k * 2.4) * r; e.z = s.z + Math.sin(k * 2.4) * r;
+      e.aboard = null; delete e.aboard; e.x = s.x + dcos(k * 2.4) * r; e.z = s.z + dsin(k * 2.4) * r;
       e.order = null; e.queue.length = 0; e.path = null; e.pk = null; e.targetId = null; e.state = 'idle'; e.anim = 'idle';
       out.push(e);
     });
@@ -2769,17 +2770,17 @@ export class Game {
       if (t === 4) deep.push([tx, tz]); else if (!shoreNear(tx, tz, 1)) shallow.push([tx, tz]);
     }
     const placed = [];
-    const ok = (c, sp) => placed.every(p => Math.hypot(p[0] - c[0], p[1] - c[1]) >= sp);
+    const ok = (c, sp) => placed.every(p => dhypot(p[0] - c[0], p[1] - c[1]) >= sp);
     const put = c => { this._addRes('fish', c[0], c[1], 800); placed.push(c); };
     const pool = deep.length >= 6 ? deep : deep.concat(shallow);
     for (let i = pool.length - 1; i > 0; i--) { const j = (this.rand() * (i + 1)) | 0; const x = pool[i]; pool[i] = pool[j]; pool[j] = x; }
     const want = Math.max(6, Math.min(12, Math.round(pool.length / 30)));
     for (const c of pool) { if (placed.length >= want) break; if (ok(c, 10)) put(c); }
     for (const p of this.players) {
-      const all = deep.concat(shallow).filter(c => { const d = Math.hypot(c[0] + 0.5 - p.startX, c[1] + 0.5 - p.startZ); return d >= 7 && d <= 25 && free(c[0], c[1]); });
+      const all = deep.concat(shallow).filter(c => { const d = dhypot(c[0] + 0.5 - p.startX, c[1] + 0.5 - p.startZ); return d >= 7 && d <= 25 && free(c[0], c[1]); });
       if (!all.length) continue;
-      all.sort((a, b) => (Math.hypot(a[0] - p.startX, a[1] - p.startZ) + (T[a[1] * N + a[0]] === 4 ? 0 : 4)) - (Math.hypot(b[0] - p.startX, b[1] - p.startZ) + (T[b[1] * N + b[0]] === 4 ? 0 : 4)));
-      let n = placed.filter(c => Math.hypot(c[0] - p.startX, c[1] - p.startZ) <= 25).length;
+      all.sort((a, b) => (dhypot(a[0] - p.startX, a[1] - p.startZ) + (T[a[1] * N + a[0]] === 4 ? 0 : 4)) - (dhypot(b[0] - p.startX, b[1] - p.startZ) + (T[b[1] * N + b[0]] === 4 ? 0 : 4)));
+      let n = placed.filter(c => dhypot(c[0] - p.startX, c[1] - p.startZ) <= 25).length;
       for (const c of all) { if (n >= 2) break; if (ok(c, 4)) { put(c); n++; } }
     }
     this._navFishC = null;

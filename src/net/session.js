@@ -35,6 +35,19 @@ export const STALL_NOPROG_MS = 3000;
 // an honest list is at most our own scheduled lists (MAX_DELAY) + the sender's delay ahead of our turn; REDUNDANCY on
 // top is slack. Lists further ahead are not stored (one dropped by mistake is fetched again through 'need')
 export const MAX_AHEAD = 2 * MAX_DELAY + REDUNDANCY;
+
+// who split off when the state hashes of one turn differ: the players whose hash is not the majority's. On a tie the
+// side of the authority (the lowest-index human still here) counts as the real match. me / authority: pids; hashes:
+// Map pid -> hash of the others. Returns { diverged: am I off the real match, odd: [pids off], good: [pids on] }.
+export function desyncVerdict(me, mine, hashes, authority) {
+  const all = new Map(hashes); all.set(me, mine >>> 0);
+  const count = new Map(); for (const [, h] of all) count.set(h >>> 0, (count.get(h >>> 0) || 0) + 1);
+  let best = null, bn = -1;
+  for (const [h, n] of count) if (n > bn || (n === bn && all.get(authority) >>> 0 === h)) { best = h; bn = n; }
+  const odd = [], good = [];
+  for (const [p, h] of [...all].sort((a, b) => a[0] - b[0])) ((h >>> 0) === best ? good : odd).push(p);
+  return { diverged: (mine >>> 0) !== best, odd, good };
+}
 export const LOBBY_GONE_MS = 8000;    // lobby: a peer the relay reports gone is removed only if it stays gone this long
 export const METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload',
   'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol', 'cmdRotateBuilding'];
@@ -870,10 +883,16 @@ export class NetSession {
   _checkHash(ht) {
     const mine = this.myHashes.get(ht), ph = this.peerHashes.get(ht);
     if (mine == null || !ph || this.desynced) return;
-    for (const [, h] of ph) if (h !== mine) {
+    let bad = false; for (const [, h] of ph) if (h !== mine) bad = true;
+    if (bad) {
+      // wait until every human still in the match sent this turn's hash, so the verdict (who split off) is a full vote
+      const others = this.humans.filter(p => p !== this.me && !this.leftAt.has(p) && !this.goneAt.has(p));
+      if (!others.every(p => ph.has(p))) return;
       this.desynced = true;
       const nm = (p) => (this.start0 && this.start0.slots[p] ? this.start0.slots[p].name : '?');
-      this.emit('desync', { tick: ht * TURN_TICKS, ht, mine, peers: [...ph].map(([pid, hh]) => ({ pid, name: nm(pid), h: hh >>> 0 })), parts: (this.myParts && this.myParts.get(ht)) || null });
+      const v = desyncVerdict(this.me, mine, ph, this._authority());
+      this.emit('desync', { tick: ht * TURN_TICKS, ht, mine, peers: [...ph].map(([pid, hh]) => ({ pid, name: nm(pid), h: hh >>> 0 })), parts: (this.myParts && this.myParts.get(ht)) || null,
+        diverged: v.diverged, odd: v.odd.map(p => ({ pid: p, name: nm(p) })), good: v.good.map(p => ({ pid: p, name: nm(p) })) });
       return;
     }
     // keep maps small

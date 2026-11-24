@@ -2355,7 +2355,8 @@ export class UI {
     if (!this.netEl) { this.netEl = el('div', 'netbanner panel'); this.root.append(this.netEl); }
     this.netEl.className = 'netbanner panel ' + (st.type || '');
     this.netEl.textContent = st.text || tr('Bekleniyor…');
-    if (st.type === 'desync') { const n = this.netEl; setTimeout(() => { if (this.netEl === n) { n.remove(); this.netEl = null; } }, 6000); }
+    if (st.type === 'desync' && st.sticky) this.netEl.classList.add('sticky');
+    else if (st.type === 'desync') { const n = this.netEl; setTimeout(() => { if (this.netEl === n) { n.remove(); this.netEl = null; } }, 6000); }
   }
   // ------------------------------------------------------------------ in-game chat (multiplayer; single player: @claude feedback only)
   _chatAllowed() { return this.mode === 'hud' && (!!this.app.net || (!!this.game && !this.app.demo)); }

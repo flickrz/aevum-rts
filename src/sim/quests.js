@@ -1,5 +1,6 @@
 // Dynamic quest chain for player 0. Pure JS, uses only the public Game API.
 import { UNITS } from '../data.js';
+import { dhypot } from './dmath.js';
 import { tr } from '../i18n.js';
 
 const MAX_ACTIVE = 3;
@@ -111,7 +112,7 @@ export class QuestSystem {
     this.s = { soldiers: 0, techs: 0, foundEnemy: false, attacked: false, lastAttack: 0, razed: 0, tcKilled: 0 };
     const hasEnemy = ((game.cfg && game.cfg.enemies) || 0) > 0;
     let hasShore = false;
-    try { const p0 = game.players[0]; hasShore = typeof game._navShoals === 'function' && game._navShoals().some(f => Math.hypot(f.x - p0.startX, f.z - p0.startZ) < 32); } catch (e) { hasShore = false; }
+    try { const p0 = game.players[0]; hasShore = typeof game._navShoals === 'function' && game._navShoals().some(f => dhypot(f.x - p0.startX, f.z - p0.startZ) < 32); } catch (e) { hasShore = false; }
     this.defs = {};
     this.list = [];
     for (const d of DEFS) {

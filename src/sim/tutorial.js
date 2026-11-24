@@ -5,6 +5,7 @@
 // performance.now. The Game constructor forces cfg.tutorial off in multiplayer, so none of this can run in lockstep.
 // All player-facing Turkish text of the tutorial lives in this file (CHAPTERS and the few lines next to it).
 import { UNITS, BUILDINGS } from '../data.js';
+import { dhypot } from './dmath.js';
 import { tr } from '../i18n.js';
 
 export const TUT_SEED = 41017;
@@ -66,8 +67,8 @@ const CHAPTERS = [
       g.events.emit('notify', { text: tr('Doğan\'ı buraya gönder'), type: 'info', x: m.x, z: m.z });
     },
     pings: (g, s) => [s.ids.marker],
-    check: (g, s) => { const u = g.getEntity(s.ids.spear), m = s.ids.marker; return !!u && !u.dead && !!m && Math.hypot(u.x - m.x, u.z - m.z) <= 3; },
-    prog: (g, s) => { const u = g.getEntity(s.ids.spear), m = s.ids.marker; return u && !u.dead && m ? tr('İşarete uzaklık: {0}', Math.max(0, Math.round(Math.hypot(u.x - m.x, u.z - m.z)))) : tr('Mızrakçı bekleniyor'); },
+    check: (g, s) => { const u = g.getEntity(s.ids.spear), m = s.ids.marker; return !!u && !u.dead && !!m && dhypot(u.x - m.x, u.z - m.z) <= 3; },
+    prog: (g, s) => { const u = g.getEntity(s.ids.spear), m = s.ids.marker; return u && !u.dead && m ? tr('İşarete uzaklık: {0}', Math.max(0, Math.round(dhypot(u.x - m.x, u.z - m.z)))) : tr('Mızrakçı bekleniyor'); },
     stuck: (g, s) => {
       if (!alive(g, s.ids.spear)) { const c = nearTc(g); s.ids.spear = spawn(g, 'spearman', 0, 1, c.x, c.z)[0]; }
       const m = s.ids.marker || {};
@@ -180,7 +181,7 @@ const CHAPTERS = [
     stuck: (g, s) => {
       if (!s.ids.raid) { if (!cntB(g, ['archery'])) topUp(g, { wood: 150 }); else topUp(g, { wood: 120, gold: 75 }); return { text: tr('İnşa: Askeri sayfasında Okçuluk Alanı var. Okçular uzaktan vurur, onları mızrakçıların arkasında tut.') }; }
       const tc = myTc(g); let best = null, bd = 1e9;
-      for (const id of s.ids.raid) { const e = g.getEntity(id); if (!e || e.dead) continue; const d = tc ? Math.hypot(e.x - tc.x, e.z - tc.z) : 0; if (d < bd) { bd = d; best = e; } }
+      for (const id of s.ids.raid) { const e = g.getEntity(id); if (!e || e.dead) continue; const d = tc ? dhypot(e.x - tc.x, e.z - tc.z) : 0; if (d < bd) { bd = d; best = e; } }
       return { text: tr('Bütün askerlerini seç ve düşmana sağ tıkla. Köylüler de savaşabilir ama zayıftır.'), x: best && best.x, z: best && best.z };
     },
   },
@@ -199,7 +200,7 @@ const CHAPTERS = [
     tick: (g, s) => {
       if (s.arrived) return;
       const e = g.getEntity(s.ids.enemyTc); if (!e || e.dead) return;
-      if (soldiers(g).some(u => Math.hypot(u.x - e.x, u.z - e.z) < 16)) { s.arrived = true; say(s, 'info', [tr('Kuleleri yok, sadece birkaç muhafız var. Önce muhafızları, sonra ocağı!')]); }
+      if (soldiers(g).some(u => dhypot(u.x - e.x, u.z - e.z) < 16)) { s.arrived = true; say(s, 'info', [tr('Kuleleri yok, sadece birkaç muhafız var. Önce muhafızları, sonra ocağı!')]); }
     },
     check: (g, s) => !alive(g, s.ids.enemyTc),
     prog: (g, s) => { const e = g.getEntity(s.ids.enemyTc); return tr('Şehir Merkezi canı: %{0}', e && !e.dead ? Math.max(1, Math.round(e.hp / e.maxHp * 100)) : 0); },
@@ -224,7 +225,7 @@ function say(s, kind, lines, x, z) { s.msg = { seq: (s.msg ? s.msg.seq : 0) + 1,
 function startRaid(g, s) {
   const tc = myTc(g), e = g.getEntity(s.ids.enemyTc), p = g.players[0];
   const ax = tc ? tc.x : p.startX, az = tc ? tc.z : p.startZ, bx = e ? e.x : g.players[1].startX, bz = e ? e.z : g.players[1].startZ;
-  const L = Math.hypot(bx - ax, bz - az) || 1, px = ax + (bx - ax) / L * 30, pz = az + (bz - az) / L * 30;
+  const L = dhypot(bx - ax, bz - az) || 1, px = ax + (bx - ax) / L * 30, pz = az + (bz - az) / L * 30;
   const ids = spawn(g, 'spearman', 1, 4, px, pz).concat(spawn(g, 'archer', 1, 2, px, pz + 2.6));
   s.ids.raid = ids; s.raidAt = g.time;
   if (tc) g.cmdAttack(ids, tc.id);
