@@ -480,6 +480,12 @@
       }, (e) => fail(e, 'stats'));
       return;
     }
+    // one screenshot of a @claude line, only when the owner asks for it (one Firestore read)
+    if (url.pathname === '/mp/admin/shot' && req.method === 'GET') {
+      if (!ADMIN) { reply(res, 503, J, '{"error":"Veri deposu yok (AEVUM_SA)."}'); return; }
+      ADMIN.shot(String(url.searchParams.get('id') || '')).then((img) => (img ? reply(res, 200, J, JSON.stringify({ img })) : reply(res, 404, J, '{"error":"Görüntü yok."}')), (e) => fail(e, 'shot'));
+      return;
+    }
     if (url.pathname !== '/mp/admin/feedback') { req.resume(); reply(res, 404, J, '{"error":"not found"}'); return; }
     if (!ADMIN) { req.resume(); reply(res, 503, J, '{"error":"Veri deposu yok (AEVUM_SA)."}'); return; }
     if (req.method === 'GET') { ADMIN.feedback({ fresh: url.searchParams.get('fresh') === '1' }).then((r) => reply(res, 200, J, JSON.stringify(r)), (e) => fail(e, 'feedback')); return; }

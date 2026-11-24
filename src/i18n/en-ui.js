@@ -424,6 +424,8 @@ export default {
   " odasına katıl": ": join room",
   "Mesaj yaz, Enter · @claude: hata / öneri bildir": "Type a message, Enter · @claude: report a bug / idea",
   "✔ Geri bildirimin geliştiriciye iletildi, teşekkürler!": "✔ Your feedback was sent to the developer, thanks!",
+  "Ekran görüntüsü ekle (yalnız @claude mesajlarına)": "Attach a screenshot (only to @claude messages)",
+  "✔ Ekran görüntüsüyle birlikte geliştiriciye iletildi, teşekkürler!": "✔ Sent to the developer with a screenshot, thanks!",
   "Takım ": "Team ",
   "<h2>Lobi</h2><div class=\"lb-hint\">Sağdaki listeden çevrimiçi oyuncuları davet et; daveti kabul eden lobine girer.</div>": "<h2>Lobby</h2><div class=\"lb-hint\">Invite online players from the list on the right; whoever accepts joins your lobby.</div>",
   "Yapay Zekâ": "AI",

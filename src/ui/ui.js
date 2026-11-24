@@ -5,7 +5,7 @@ import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATION
 import { firstLaunch, menuProfile } from './profile-ui.js';
 import { levelOf } from '../rank.js';
 import { menuHud, saveBadge, saveBadgeTitle, confirmDeleteSave, loginScreen, avatarEl, tpText } from './cloud-ui.js';
-import { logChat } from '../chatlog.js';
+import { logChat, clipChat, FB_MAX } from '../chatlog.js';
 import { withMention } from './mention.js';
 import { menuUpdates, hasUnseen } from './updates-ui.js';
 import { mapPreview, previewClimate } from './map-preview.js';
@@ -2245,7 +2245,7 @@ export class UI {
     const head = el('div', 'lb-head');
     const body = el('div', 'lb-body');
     const chat = el('div', 'lb-chat', '<div class="lb-log"></div>');
-    const ci = el('input', 'mpinput'); ci.placeholder = tr('Mesaj yaz, Enter · @claude: hata / öneri bildir'); ci.maxLength = 160;
+    const ci = el('input', 'mpinput'); ci.placeholder = tr('Mesaj yaz, Enter · @claude: hata / öneri bildir'); ci.maxLength = FB_MAX;
     chat.append(withMention(ci));
     const foot = el('div', 'lb-foot');
     // online friends with "Davet Et" (the code below works as before)
@@ -2386,8 +2386,13 @@ export class UI {
       head.append(tg, el('span', 'chattitle', tr('Sohbet · Enter: gönder · Esc: kapat')));
       const feed = el('div', 'chatfeed', '<div class="cspacer"></div>');
       const row = el('div', 'chatin');
-      const i = el('input', 'mpinput'); i.maxLength = 200; i.placeholder = tr('Mesaj yaz… (@claude: hata / öneri bildir)'); i.autocomplete = 'off'; i.spellcheck = false;
-      row.append(withMention(i));
+      const i = el('input', 'mpinput'); i.maxLength = FB_MAX; i.placeholder = tr('Mesaj yaz… (@claude: hata / öneri bildir)'); i.autocomplete = 'off'; i.spellcheck = false;
+      // 📷: attach a screenshot of the game to the next @claude line (2026-11-25)
+      const cam = el('button', 'chatshot', '📷'); cam.type = 'button'; cam.title = tr('Ekran görüntüsü ekle (yalnız @claude mesajlarına)');
+      cam.setAttribute('aria-pressed', 'false');
+      cam.onmousedown = (ev) => ev.preventDefault();
+      cam.onclick = () => { this._click(); this._chatShot = !this._chatShot; cam.classList.toggle('on', this._chatShot); cam.setAttribute('aria-pressed', String(this._chatShot)); i.focus(); };
+      row.append(withMention(i), cam);
       d.append(head, feed, row);
       const stop = (ev) => ev.stopPropagation();
       i.addEventListener('keyup', stop); i.addEventListener('keypress', stop);
@@ -2395,7 +2400,7 @@ export class UI {
         ev.stopPropagation();
         if (ev.key === 'Enter') {
           ev.preventDefault();
-          const t = i.value.trim().slice(0, 200);
+          const t = clipChat(i.value.trim());
           if (!t) { this.closeChat(); return; }
           if (this._chatSend(t)) i.value = '';
         } else if (ev.key === 'Escape') { ev.preventDefault(); this.closeChat(); }
@@ -2422,12 +2427,15 @@ export class UI {
   // @claude lines go anywhere (the cloud chat log, read with tools/read-chatlog.mjs --claude)
   _chatSend(t) {
     const s = this.app.net, fb = /@claude/i.test(t);
-    if (s) safe(() => (s.chat || s.sendChat || s.say)?.call(s, t));
+    // the screenshot is taken only when a @claude line is sent with 📷 on; then 📷 turns off again
+    const shot = fb && this._chatShot ? safe(() => this.app.renderer?.snapshot?.()) || null : null;
+    if (fb && this._chatShot) { this._chatShot = false; const b = this.chatDock?.querySelector('.chatshot'); if (b) { b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); } }
+    if (s) safe(() => (s.chat || s.sendChat || s.say)?.call(s, t, shot ? { shot } : undefined));
     else if (fb) {
       this._chatPush({ mine: true, text: t });
-      safe(() => logChat({ room: 'TEK', name: this._mpName() || '?', text: t, mine: true }));
+      safe(() => logChat({ room: 'TEK', name: this._mpName() || '?', text: t, mine: true, shot }));
     } else { this._chatPush({ sys: true, text: tr('Tek oyunculu oyunda sohbet geri bildirim içindir: mesajının başına @claude yaz.') }); return false; }
-    if (fb) setTimeout(() => this._chatPush({ sys: true, text: tr('✔ Geri bildirimin geliştiriciye iletildi, teşekkürler!') }), 300);
+    if (fb) setTimeout(() => this._chatPush({ sys: true, text: shot ? tr('✔ Ekran görüntüsüyle birlikte geliştiriciye iletildi, teşekkürler!') : tr('✔ Geri bildirimin geliştiriciye iletildi, teşekkürler!') }), 300);
     return true;
   }
   _chatBadge() {
@@ -2452,7 +2460,7 @@ export class UI {
       line.append(n);
     }
     const tx = el('span', 'cx');
-    for (const part of String(m.text || '').slice(0, 200).split(/(@claude)/i)) {
+    for (const part of clipChat(m.text).split(/(@claude)/i)) {
       if (/^@claude$/i.test(part)) tx.append(el('span', 'cmention', '@claude')); else if (part) tx.append(document.createTextNode(part));
     }
     line.append(tx);

@@ -16,16 +16,22 @@ export const feedbackId = (docName) => 'f' + crypto.createHash('sha1').update(St
 // are now also written to users/{uid}/claude/{id} (CloudSync.logChat), and only that small collection is read. A
 // copy keeps the id of its chatlog original: the path is hashed as if it were users/{uid}/chatlog/{id}.
 export const FEEDBACK_COLLECTION = 'claude';
+// (2026-11-25) a screenshot attached to a line: users/{uid}/claudeshot/{same id} {img: JPEG data URL}; the line has
+// shot: true. Read one at a time, only when asked (shot(id)), never with the list.
+export const SHOT_COLLECTION = 'claudeshot';
+export const shotPath = (docName) => { const m = /(users\/[^/]+)\/claude\/([^/]+)$/.exec(String(docName)); return m ? m[1] + '/' + SHOT_COLLECTION + '/' + m[2] : null; };
 export const lineId = (docName) => feedbackId(String(docName).replace(/\/claude\/([^/]+)$/, '/chatlog/$1'));
 
 // a Firestore REST value -> plain
-export const val = (v) => (!v ? null : 'stringValue' in v ? v.stringValue : 'timestampValue' in v ? v.timestampValue : 'integerValue' in v ? +v.integerValue : 'doubleValue' in v ? v.doubleValue : null);
+export const val = (v) => (!v ? null : 'booleanValue' in v ? v.booleanValue : 'stringValue' in v ? v.stringValue : 'timestampValue' in v ? v.timestampValue : 'integerValue' in v ? +v.integerValue : 'doubleValue' in v ? v.doubleValue : null);
 
 // raw chatlog documents -> the @claude lines, newest first (exactly what aevum-admin/sync.mjs computed)
 export function feedbackRows(docs) {
   return (docs || []).map((d) => {
     const f = d.fields || {};
-    return { id: lineId(d.name), at: String(val(f.at) || val(f.t) || ''), room: String(val(f.room) || ''), name: String(val(f.name) || '?'), text: String(val(f.text) || '') };
+    const r = { id: lineId(d.name), at: String(val(f.at) || val(f.t) || ''), room: String(val(f.room) || ''), name: String(val(f.name) || '?'), text: String(val(f.text) || '') };
+    if (val(f.shot) === true && shotPath(d.name)) r.shot = true;
+    return r;
   }).filter((r) => /@claude/i.test(r.text)).map((r) => ({ ...r, text: r.text.replace(/@claude/ig, '').trim() }))
     .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
 }
@@ -83,10 +89,12 @@ export function createAdmin({ store, now = () => Date.now(), ttlMs = 10 * 60000,
       loading = (async () => {
         const t0 = now();
         const [chat, dec] = await Promise.all([
-          store.query(FEEDBACK_COLLECTION, { allDescendants: true, fields: ['at', 't', 'room', 'name', 'text'] }),
+          store.query(FEEDBACK_COLLECTION, { allDescendants: true, fields: ['at', 't', 'room', 'name', 'text', 'shot'] }),
           old ? null : store.query(COLLECTION),
         ]);
-        cache = { rows: feedbackRows(chat), decisions: old || decisionMap(dec) };
+        const shots = new Map();
+        for (const d of chat || []) { const p = shotPath(d.name); if (p && val((d.fields || {}).shot) === true) shots.set(lineId(d.name), p); }
+        cache = { rows: feedbackRows(chat), decisions: old || decisionMap(dec), shots };
         for (const [id, w] of recent) { if (w.t >= t0) cache.decisions.set(id, w.next); else recent.delete(id); }
         cacheT = now();
         return cache;
@@ -110,6 +118,16 @@ export function createAdmin({ store, now = () => Date.now(), ttlMs = 10 * 60000,
       recent.set(d.id, { next, t: now() });
       return Object.assign({ id: d.id }, next);
     },
+    // the screenshot of a line (one document read) -> a JPEG data URL, or null (no such line / no screenshot)
+    async shot(id) {
+      if (!ID_RE.test(String(id))) return null;
+      const c = await load(false);
+      const p = c.shots && c.shots.get(id);
+      if (!p) return null;
+      const d = await store.doc(p);
+      const img = d && d.fields ? val(d.fields.img) : null;
+      return typeof img === 'string' && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(img) ? img : null;
+    },
     // the number of accounts (profiles), counted at most every countTtlMs
     async accounts() {
       if (accounts != null && now() - accountsT < countTtlMs) return accounts;
@@ -125,7 +143,8 @@ export function createMemoryAdminStore(seed = {}) {
   const chat = Array.isArray(seed.chat) ? seed.chat : [];
   const dec = new Map();
   for (const d of Array.isArray(seed.decisions) ? seed.decisions : []) dec.set(String(d.name).split('/').pop(), d.fields || {});
-  const calls = { query: 0, patch: 0, count: 0 };
+  const calls = { query: 0, patch: 0, count: 0, doc: 0 };
+  const shots = new Map(Object.entries(seed.shots || {}));   // docPath -> img
   return {
     calls,
     async query(collectionId) {
@@ -134,6 +153,7 @@ export function createMemoryAdminStore(seed = {}) {
       if (collectionId === COLLECTION) return [...dec].map(([id, fields]) => ({ name: 'projects/x/databases/(default)/documents/' + COLLECTION + '/' + id, fields }));
       return [];
     },
+    async doc(docPath) { calls.doc++; return shots.has(docPath) ? { name: docPath, fields: { img: { stringValue: shots.get(docPath) } } } : null; },
     async count() { calls.count++; return Number(seed.accounts) || 0; },
     async patch(docPath, fields) {
       calls.patch++;

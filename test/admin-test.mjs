@@ -24,6 +24,21 @@ const CHAT = [
 ];
 const ID1 = feedbackId(CHAT[0].name), ID3 = feedbackId(CHAT[2].name);
 
+// ---- screenshots of @claude lines (2026-11-25): listed as shot: true, read one at a time only on request ----
+{
+  const IMG = 'data:image/jpeg;base64,/9j/AAAA';
+  const lineDoc = (uid, id, text, shot) => ({ name: `${DOCS}/users/${uid}/claude/${id}`, fields: Object.assign({ at: { timestampValue: '2026-11-25T10:00:00Z' }, name: { stringValue: 'A' }, room: { stringValue: 'TEK' }, text: { stringValue: text } }, shot ? { shot: { booleanValue: true } } : {}) });
+  const docs = [lineDoc('u9', 's1', '@claude look ' + 'x'.repeat(990), true), lineDoc('u9', 's2', '@claude no image', false)];
+  const store = createMemoryAdminStore({ chat: docs, shots: { 'users/u9/claudeshot/s1': IMG, 'users/u9/claudeshot/s2': IMG } });
+  const adm = createAdmin({ store });
+  const items = (await adm.feedback()).items, a = items.find((x) => x.text.startsWith('look')), b = items.find((x) => x.text === 'no image');
+  ok(a && a.shot === true && !('img' in a) && b && !b.shot, 'shot: the list flags lines with a screenshot and carries no image');
+  ok(a.text.length > 900, 'shot: a long (1000 char) feedback line is listed whole');
+  ok(store.calls.doc === 0, 'shot: listing reads no screenshot documents');
+  ok((await adm.shot(a.id)) === IMG && store.calls.doc === 1, 'shot: one document read returns the image');
+  ok((await adm.shot(b.id)) === null && (await adm.shot('nope')) === null && store.calls.doc === 1, 'shot: a line without one / a bad id reads nothing');
+}
+
 // ---- pure helpers ----
 {
   ok(/^f[0-9a-f]{16}$/.test(ID1) && ID1 === 'f' + crypto.createHash('sha1').update(CHAT[0].name).digest('hex').slice(0, 16), 'id: f + 16 hex of sha1(document path), like aevum-admin/sync.mjs');
