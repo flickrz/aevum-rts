@@ -10,7 +10,7 @@
 //    A selected own / allied healer (Büyücü) shows her healing circle round her.
 import * as THREE from 'three';
 import { BUILDINGS } from '../data.js';
-import { towerAgeBonus, TEMPLE_HEAL_R, HEALER_R, healerStats } from '../sim/game.js';
+import { towerAgeBonus, HEALER_R, healerStats } from '../sim/game.js';
 
 const MAX_Q = 1600;          // quads per ribbon mesh (rally / waypoints)
 const MAX_MARK = 96;         // waypoint markers
@@ -147,8 +147,8 @@ export class OrderLines {
   // the reach / healing outline of a selected building (nothing for other buildings)
   _range(game, e, hf) {
     const d = BUILDINGS[e.type]; if (!d || !e.done) return false;
-    if (e.type === 'temple') { const pts = [], R = TEMPLE_HEAL_R; for (let i = 0; i < 72; i++) { const a = i / 72 * Math.PI * 2; pts.push([e.x + Math.cos(a) * R, e.z + Math.sin(a) * R]); } this._loop(this.rHeal, pts, hf); return true; }
-    if (!(d.atk > 0)) return false;
+    // (owner 2026-11-24: "the extra dashed lines on the temple and the town center are not needed") no outline for those two
+    if (e.type === 'temple' || e.type === 'towncenter' || !(d.atk > 0)) return false;
     const p = game.players && game.players[e.owner], m = p && p.mods;
     const R = d.range + (m ? m.towerRange || 0 : 0) + towerAgeBonus(e.type, p ? p.age : 0), h = (e.size || 1) / 2, pts = [];
     for (const [cx, cz, a0] of [[h, h, 0], [-h, h, 0.5], [-h, -h, 1], [h, -h, 1.5]]) for (let i = 0; i <= 12; i++) { const a = (a0 + i / 24) * Math.PI; pts.push([e.x + cx + Math.cos(a) * R, e.z + cz + Math.sin(a) * R]); }
