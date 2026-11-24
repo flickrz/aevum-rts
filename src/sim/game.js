@@ -303,7 +303,9 @@ export class Game {
     const key = (tbl, v) => typeof v === 'string' && Object.hasOwn(tbl, v);
     switch (method) {
       case 'cmdMove': case 'cmdAttackMove': case 'cmdPatrol':   // (cmdMove's 5th argument, the mode, stays internal)
-        a[0] = ids(a[0]); if (!a[0].length || !fin(a[1]) || !fin(a[2])) return false; if (a.length > 4) a.length = 4; break;
+        a[0] = ids(a[0]); if (!a[0].length || !fin(a[1]) || !fin(a[2])) return false;
+        // 6th: the facing a right-drag set ([dx, dz], cmdMove only); the mode (5th) stays internal
+        if (method === 'cmdMove' && Array.isArray(a[5]) && fin(a[5][0]) && fin(a[5][1])) { a[4] = null; a[5] = [a[5][0], a[5][1]]; a.length = 6; } else if (a.length > 4) a.length = 4; break;
       case 'cmdStance': a[0] = ids(a[0]); if (!a[0].length || !STANCES.includes(a[1])) return false; break;
       case 'cmdFormation': a[0] = ids(a[0]); if (!a[0].length || !FORMATIONS.includes(a[1])) return false; break;
       case 'cmdAttack': case 'cmdGather': case 'cmdBuild': case 'cmdStop': case 'cmdExplore': case 'cmdBoard': case 'cmdReturn':
@@ -1069,7 +1071,8 @@ export class Game {
   _unhunt(o) { const t = this.entities.get(o.targetId); if (t && PREY[t.type] && !t.live && t.anim !== 'die') t.hunted = false; }
   // mode 'am' (attack-move) / 'pat' (patrol): only units that can fight get the marks (see the move case); villagers,
   // carts, healers and unarmed ships of the selection walk there as on a plain move, in the same formation
-  cmdMove(ids, x, z, queue = false, mode = null) {
+  // face ([dx, dz], a right-drag: BFME-style): the formation faces that way instead of the direction of travel
+  cmdMove(ids, x, z, queue = false, mode = null, face = null) {
     const us = this._live(ids); if (!us.length) return false;
     const N = this.map.size; x = Math.min(N - 1.01, Math.max(1, x)); z = Math.min(N - 1.01, Math.max(1, z));
     const land = us.filter(u => !u.naval), sea = us.filter(u => u.naval);
@@ -1080,8 +1083,8 @@ export class Game {
     const far = land.length && Math.hypot(mx / land.length - x, mz / land.length - z) > 40;
     const grp = land.length >= 6 || (far && land.length >= 2) ? { path: null, tx: x, tz: z } : null;
     if (!grp && land.length) {
-      if (land.length === 1) { const f = this._freeNear(x, z, land[0].owner); this._setOrder(land[0], mv(land[0], { type: 'move', x: f.x, z: f.z }), queue); }
-      else for (const s of this._formation(land, x, z)) { const f = this._freeNear(s.x, s.z, s.u.owner); this._setOrder(s.u, mv(s.u, { type: 'move', x: f.x, z: f.z }), queue); }
+      if (land.length === 1 && !face) { const f = this._freeNear(x, z, land[0].owner); this._setOrder(land[0], mv(land[0], { type: 'move', x: f.x, z: f.z }), queue); }
+      else for (const s of this._formation(land, x, z, face)) { const f = this._freeNear(s.x, s.z, s.u.owner); this._setOrder(s.u, mv(s.u, { type: 'move', x: f.x, z: f.z }), queue); }
     }
     if (grp) {
       const owner = land[0].owner, d = this._flowField(grp, owner, land[0], land), used = new Set();
@@ -1096,7 +1099,7 @@ export class Game {
         }
         return this._freeNear(sx, sz, owner);
       };
-      for (const s of this._formation(land, grp.sx + 0.5, grp.sz + 0.5)) { const p = spot(s.x, s.z); this._setOrder(s.u, mv(s.u, { type: 'move', x: p.x, z: p.z, grp }), queue); }
+      for (const s of this._formation(land, grp.sx + 0.5, grp.sz + 0.5, face)) { const p = spot(s.x, s.z); this._setOrder(s.u, mv(s.u, { type: 'move', x: p.x, z: p.z, grp }), queue); }
     }
     const cols = Math.ceil(Math.sqrt(sea.length));
     sea.forEach((u, i) => {
@@ -1113,9 +1116,9 @@ export class Game {
   // Line formation facing the direction of travel: melee in the front ranks, ranged behind them,
   // siege and civilians at the back. Each rank is wide and shallow ("like a rope"), and units are
   // matched to slots left-to-right by their current lateral position so paths do not cross.
-  _formation(us, x, z) {
+  _formation(us, x, z, face = null) {
     let cx = 0, cz = 0; for (const u of us) { cx += u.x; cz += u.z; } cx /= us.length; cz /= us.length;
-    let fx = x - cx, fz = z - cz; const fl = Math.hypot(fx, fz);
+    let fx = x - cx, fz = z - cz; if (face && Math.hypot(face[0], face[1]) > 0.01) { fx = face[0]; fz = face[1]; } const fl = Math.hypot(fx, fz);
     if (fl < 0.5) { fx = 0; fz = 1; } else { fx /= fl; fz /= fl; }
     const rx = fz, rz = -fx; // right-hand vector
     const rank = u => { const d = UNITS[u.type]; return d.cls === 'siege' ? 3 : d.cls === 'civil' || !(d.atk > 0) ? 4 : d.range > 0 ? 2 : 1; };

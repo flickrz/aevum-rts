@@ -31,6 +31,12 @@ export class Input {
     this.box.style.cssText = 'position:fixed;display:none;z-index:50;pointer-events:none;' +
       'border:1px solid #9dff8a;background:rgba(120,255,110,0.12);box-shadow:0 0 0 1px rgba(0,0,0,.5)';
     document.body.appendChild(this.box);
+    // right-drag formation facing (BFME-style): a ghost arrow from the press point along the drag
+    this.fline = document.createElement('div');
+    this.fline.style.cssText = 'position:fixed;display:none;z-index:50;pointer-events:none;height:3px;transform-origin:0 50%;' +
+      'background:rgba(120,255,110,0.85);box-shadow:0 0 0 1px rgba(0,0,0,.5)';
+    this.fline.innerHTML = '<span style="position:absolute;right:-9px;top:-8px;color:#9dff8a;font-size:16px;line-height:18px;text-shadow:0 0 2px #000">▶</span>';
+    document.body.appendChild(this.fline);
 
     const c = this.canvas;
     c.addEventListener('mousedown', e => this.onDown(e));
@@ -299,7 +305,11 @@ export class Input {
     } else if (e.button === 2) {
       e.preventDefault();
       if (this.placing) { this.cancelPlacement(); return; }
+      this._lastMove = null; this.fdrag = null;
       this.contextCommand(e);
+      // a plain ground move: holding the button and dragging then sets the formation's facing (on release)
+      const lm = this._lastMove; this._lastMove = null;
+      if (lm) this.fdrag = { x0: e.clientX, y0: e.clientY, ...lm, active: false };
     }
   }
 
@@ -315,6 +325,11 @@ export class Input {
       cam.pitch += (e.clientY - this.rot.y) * 0.003;
       this.rot.x = e.clientX; this.rot.y = e.clientY;
       return;
+    }
+    if (this.fdrag) {
+      const f = this.fdrag, dx = e.clientX - f.x0, dy = e.clientY - f.y0, len = Math.hypot(dx, dy);
+      if (len > 12) f.active = true;
+      if (f.active) { const s = this.fline.style; s.display = 'block'; s.left = f.x0 + 'px'; s.top = (f.y0 - 1) + 'px'; s.width = len + 'px'; s.transform = 'rotate(' + Math.atan2(dy, dx) + 'rad)'; }
     }
     if (this.drag) {
       const d = this.drag;
@@ -332,6 +347,17 @@ export class Input {
 
   onUp(e) {
     if (e.button === 1) { if (!(this.rot && this.rot.space)) this.rot = null; return; }
+    if (e.button === 2 && this.fdrag) {
+      const f = this.fdrag; this.fdrag = null; this.fline.style.display = 'none';
+      if (!f.active || !this.active) return;
+      const g = this.app.renderer.screenToGround(e.clientX, e.clientY);
+      if (!g) return;
+      const dx = g.x - f.x, dz = g.z - f.z;
+      if (Math.hypot(dx, dz) < 0.5) return;
+      // the same move again, now facing the drag direction (replaces the order the press gave)
+      if (this.game.cmdMove(f.units, f.x, f.z, false, null, [dx, dz])) { this.app.renderer.addMarker(f.x, f.z, C_MOVE); this.sfx('command'); }
+      return;
+    }
     if (e.button !== 0) return;
     if (this.placing && this.placeDown) {
       this.placeDown = false;
@@ -541,7 +567,7 @@ export class Input {
     if (!this.active) return;
     const units = this.ownUnits();
     if (units.length) {
-      if (this.game.cmdMove(units, x, z, queue)) { this.app.renderer.addMarker(x, z, C_MOVE); this.sfx('command'); }
+      if (this.game.cmdMove(units, x, z, queue)) { this.app.renderer.addMarker(x, z, C_MOVE); this.sfx('command'); if (!queue) this._lastMove = { units: units.slice(), x, z }; }
       return;
     }
     const blds = this.ownBuildings().filter(id => this._trains(id));
