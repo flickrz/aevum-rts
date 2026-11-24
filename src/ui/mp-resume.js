@@ -4,7 +4,7 @@ import { PLAYER_COLORS } from '../data.js';
 import { withMention } from './mention.js';
 import { saveBadge, saveBadgeTitle, confirmDeleteSave } from './cloud-ui.js';
 import { ask } from './ask.js';
-import { tr } from '../i18n.js';
+import { tr, loc, pn } from '../i18n.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
@@ -28,9 +28,9 @@ export function menuResume(ui, errText) {
     list.innerHTML = '';
     if (!l || !l.length) { list.innerHTML = tr('<div style="color:var(--dim);text-align:center;padding:20px">Çok oyunculu kayıt yok. Maç sırasında 💾 Kaydet\'e bas (kurucu 2 dakikada bir otomatik kaydeder).</div>'); return; }
     for (const s of l) {
-      const ppl = (s.players || []).map((p) => (p.kind === 'ai' ? '🤖 ' : '') + esc(p.name) + ' <small>T' + (p.team | 0) + '</small>').join(' · ');
+      const ppl = (s.players || []).map((p) => (p.kind === 'ai' ? '🤖 ' : '') + esc(pn(p.name)) + ' <small>T' + (p.team | 0) + '</small>').join(' · ');
       // (☁: the save is in the account's cloud only / newer there; downloaded when it is opened, e.g. on another PC)
-      const d = el('div', 'saveitem', `<span>${esc(saveBadge(s) + (s.name || s.key))}<br><small>${ppl}</small></span><small>${s.time ? new Date(s.time).toLocaleString('tr-TR') : ''}</small>`);
+      const d = el('div', 'saveitem', `<span>${esc(saveBadge(s) + (s.name || s.key))}<br><small>${ppl}</small></span><small>${s.time ? new Date(s.time).toLocaleString(loc()) : ''}</small>`);
       if (s.cloud) d.title = saveBadgeTitle(s);
       const del = el('button', 'lb-x', '✕'); del.title = tr('Kaydı sil');
       del.onclick = async (ev) => {
@@ -98,8 +98,8 @@ export function showResumeLobby(ui, session) {
     lastKey = key;
     const rs = st.resume || {};
     head.innerHTML = tr('<h2>Kayıtlı Maça Devam</h2>') +
-      `<div class="lb-hint">${esc(rs.name || '')}${rs.tick ? ' · ' + mins(rs.tick) + '. dakika' : ''}</div>` +
-      `<div class="lb-hint">Oyuncuları sağdaki listeden ya da aşağıdan davet et. Gelince hesabından tanınır ve kendi yerine oturur.</div>`;
+      `<div class="lb-hint">${esc(tr(rs.name || ''))}${rs.tick ? ' · ' + tr('{0}. dakika', mins(rs.tick)) : ''}</div>` +
+      '<div class="lb-hint">' + tr('Oyuncuları sağdaki listeden ya da aşağıdan davet et. Gelince hesabından tanınır ve kendi yerine oturur.') + '</div>';
     body.innerHTML = '';
     const amWaiting = waiting.some((w) => w.peer === my);
     const list = el('div', 'lb-slots');
@@ -107,7 +107,7 @@ export function showResumeLobby(ui, session) {
       const mine = s.kind === 'human' && s.peer && s.peer === my;
       const row = el('div', 'lb-slot team' + (s.team || 1) + (mine ? ' mine' : ''));
       row.append(el('span', 'lb-sw', '')); row.lastChild.style.background = hex(PLAYER_COLORS[i] ?? 0xffffff);
-      row.append(el('span', 'lb-name', esc(s.name) + (s.peer && s.peer === st.hostPeer ? ' <small>👑</small>' : '') + (mine ? ' <small>' + tr('(sen)') + '</small>' : '')));
+      row.append(el('span', 'lb-name', esc(pn(s.name)) + (s.peer && s.peer === st.hostPeer ? ' <small>👑</small>' : '') + (mine ? ' <small>' + tr('(sen)') + '</small>' : '')));
       row.append(el('span', 'lb-teamtag', tr('Takım {0}', esc(s.team || 1))));
       if (s.kind === 'ai') {
         row.append(el('span', 'lb-kind ai', tr('Yapay Zekâ')));

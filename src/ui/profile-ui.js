@@ -9,7 +9,7 @@ import { avatarOf } from '../avatars.js';
 import { levelOf } from '../rank.js';
 import { ask } from './ask.js';
 import { RES_ICONS, keepIcons } from '../icons.js';
-import { tr } from '../i18n.js';
+import { tr, loc, pn } from '../i18n.js';
 
 const MAP_TR = { random: tr('Rastgele'), river: tr('Nehir Vadisi'), continent: tr('Kıta'), highlands: tr('Yaylalar'), plains: tr('Ovalar'), inlandsea: tr('İç Deniz'), islands: tr('Adalar') };
 const SIZE_TR = { 96: tr('Eski Küçük'), 128: tr('Eski Orta'), 160: tr('Eski Büyük'), 192: tr('Minik'), 256: tr('Küçük'), 320: tr('Orta'), 384: tr('Büyük'), 448: tr('Çok Büyük'), 512: tr('Dev') };
@@ -28,8 +28,8 @@ const safe = (fn, fb) => { try { return fn(); } catch (e) { console.warn(e); ret
 const mapName = (m) => (Object.hasOwn(MAP_TR, m) ? MAP_TR[m] : String(m || '-'));
 const fmtClock = (s) => { s = Math.max(0, Math.floor(s || 0)); const m = Math.floor(s / 60); return (m < 10 ? '0' : '') + m + ':' + String(s % 60).padStart(2, '0'); };
 const fmtDur = (s) => { s = Math.max(0, Math.floor(s || 0)); const hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60); return hh ? tr('{0} sa {1} dk', hh, mm) : tr('{0} dk {1} sn', mm, s % 60); };
-const fmtDate = (t) => safe(() => new Date(t).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }), '');
-const fmtNum = (n) => safe(() => Math.floor(n || 0).toLocaleString('tr-TR'), String(Math.floor(n || 0)));
+const fmtDate = (t) => safe(() => new Date(t).toLocaleString(loc(), { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }), '');
+const fmtNum = (n) => safe(() => Math.floor(n || 0).toLocaleString(loc()), String(Math.floor(n || 0)));
 const pct = (x) => Math.round((x || 0) * 100) + '%';
 const ageName = (a) => (AGES[a] && tr(AGES[a].name)) || String(a);
 
@@ -87,7 +87,7 @@ export function menuProfile(ui, note, bad) {
       safe(() => ui._click());
       for (const x of pickWrap.querySelectorAll('.av-pick')) x.classList.remove('on');
       btn.classList.add('on');
-      say('Avatar kaydediliyor...', true);
+      say(tr('Avatar kaydediliyor...'), true);
       const r = await cloud.setAvatar(id);
       if (!r.ok) { say(r.error, false); safe(() => ui._error()); return; }
       menuProfile(ui, tr('Avatar değiştirildi.'));
@@ -98,11 +98,11 @@ export function menuProfile(ui, note, bad) {
   const rename = async () => {
     if (renaming) return;
     if (P.checkName(inp.value).name === app.getProfile().name) { say(tr('Ad değişmedi.'), true); return; }
-    renaming = true; sv.disabled = true; say('Ad kontrol ediliyor...', true);
+    renaming = true; sv.disabled = true; say(tr('Ad kontrol ediliyor...'), true);
     const r = await cloud.rename(inp.value);
     renaming = false; sv.disabled = false;
     if (!r.ok) { say(r.error, false); safe(() => ui._error()); return; }
-    inp.value = r.profile.name; say('Ad kaydedildi: ' + r.profile.name, true);
+    inp.value = r.profile.name; say(tr('Ad kaydedildi: {0}', r.profile.name), true);
   };
   form.onsubmit = (ev) => { ev.preventDefault(); safe(() => ui._click()); rename(); };
   inp.onkeydown = (ev) => ev.stopPropagation();   // the game's hotkeys must not see the typing (Enter submits the form)
@@ -221,7 +221,7 @@ function renderBody(body, history, prof) {
     for (const o of hh) {
       const tr = h('tr');
       const wl = (b) => (b.games ? tr('{0} G - {1} M', b.wins, b.losses) + (b.abandoned ? ' · ' + tr('{0} yarıda', b.abandoned) : '') : '-');
-      tr.append(h('td', 'prof-pn', o.name), h('td', o.vs.wins > o.vs.losses ? 'prof-w' : o.vs.losses > o.vs.wins ? 'prof-l' : '', wl(o.vs)), h('td', '', wl(o.with)), h('td', 'prof-dim', fmtDate(o.lastAt)));
+      tr.append(h('td', 'prof-pn', pn(o.name)), h('td', o.vs.wins > o.vs.losses ? 'prof-w' : o.vs.losses > o.vs.wins ? 'prof-l' : '', wl(o.vs)), h('td', '', wl(o.with)), h('td', 'prof-dim', fmtDate(o.lastAt)));
       tb.append(tr);
     }
     const wrap = h('div', 'prof-scroll'); wrap.append(tb); body.append(wrap);
@@ -258,7 +258,7 @@ function matchItem(r) {
   const mine = ps[r.me | 0] || {};
   const opp = ps.filter((p, i) => i !== (r.me | 0) && p.team !== mine.team);
   const ally = ps.filter((p, i) => i !== (r.me | 0) && p.team === mine.team);
-  const who = (p) => (p.ai ? '🤖 ' + (p.name || tr('Yapay Zekâ')) + (p.difficulty ? ' (' + (DIFF_TR[p.difficulty] || p.difficulty) + ')' : '') : '👤 ' + (p.name || tr('Oyuncu')));
+  const who = (p) => (p.ai ? '🤖 ' + (pn(p.name) || tr('Yapay Zekâ')) + (p.difficulty ? ' (' + (DIFF_TR[p.difficulty] || p.difficulty) + ')' : '') : '👤 ' + (pn(p.name) || tr('Oyuncu')));
   const d = h('div', 'saveitem prof-item res-' + r.result);
   const top = h('div', 'prof-row');
   const left = h('span', 'prof-main');

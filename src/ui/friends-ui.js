@@ -71,7 +71,7 @@ export function menuFriends(ui, note) {
   };
   const addBtn = (c) => {
     if (friendSet.has(c.fb)) return h('span', 'fr-tag', tr('✔ Arkadaşın'));
-    const b = btn('mbtn small', '+ Ekle', async () => {
+    const b = btn('mbtn small', tr('+ Ekle'), async () => {
       b.disabled = true;
       const r = await cloud.addFriend(c);
       if (!r.ok) { b.disabled = false; say(r.error, false); return; }
@@ -95,7 +95,7 @@ export function menuFriends(ui, note) {
     try {
       foundCard = await cloud.findPlayer(q);
       if (!foundCard) say(tr('"{0}" adında bir oyuncu yok.', q), false);
-      else if (foundCard.fb === cloud.user.uid) { foundCard = null; say('Bu sensin.', true); }
+      else if (foundCard.fb === cloud.user.uid) { foundCard = null; say(tr('Bu sensin.'), true); }
       else { say('', true); msg.className = 'mperr hidden'; }
       drawFound();
     } catch (e) { say(tr('Aranamadı: {0}', errText(e)), false); }
@@ -121,7 +121,7 @@ export function menuFriends(ui, note) {
 // "Davet Et" on the friends screen: open a room, invite the friend, show the lobby
 async function inviteFromMenu(ui, f, say, b) {
   safe(() => ui._click());
-  b.disabled = true; say('Oda kuruluyor...', true);
+  b.disabled = true; say(tr('Oda kuruluyor...'), true);
   try {
     const s = await ui._mpSession();
     await s.host();

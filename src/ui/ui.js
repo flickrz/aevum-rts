@@ -14,7 +14,7 @@ import { TUT_CFG } from '../sim/tutorial.js';
 import { ico, applyIcons, keepIcons, stripIcons, RES_ICONS, CAT_ICONS, NATURE_ICONS } from '../icons.js';
 import { ask, askOpen } from './ask.js';
 import { interruptedEntry } from './notice-ui.js';
-import { tr, LANG, setLang } from '../i18n.js';
+import { tr, LANG, setLang, loc, pn } from '../i18n.js';
 import { graphPanel } from './graphs-ui.js';
 import { playerScore } from '../sim/history.js';
 // a tab on the previous build (the server runs a new one): no rooms until it reloads
@@ -140,7 +140,7 @@ export class UI {
     return g.fog[tz * N + tx] !== 2;
   }
   _ally(a, b) { const g = this.app.game; if (a == null || b == null || a < 0 || b < 0) return false; const r = safe(() => g?.isAlly?.(a, b), undefined); return r === undefined ? a === b : !!r; }
-  _pname(pid) { const g = this.app.game, p = g?.players?.[pid]; if (!p) return tr('Oyuncu ') + pid; if (p.name) return p.name; if (pid === this._me()) return tr('Sen'); return (p.kind === 'human' ? tr('Oyuncu ') : tr('Yapay Zekâ ')) + (pid + 1); }
+  _pname(pid) { const g = this.app.game, p = g?.players?.[pid]; if (!p) return tr('Oyuncu ') + pid; if (p.name) return pn(p.name); if (pid === this._me()) return tr('Sen'); return (p.kind === 'human' ? tr('Oyuncu ') : tr('Yapay Zekâ ')) + (pid + 1); }
   _teamOf(pid) { const g = this.app.game; return safe(() => g?.teamOf?.(pid), undefined) ?? g?.players?.[pid]?.team ?? (pid === 0 ? 1 : 2); }
 
   // ------------------------------------------------------------------ DOM
@@ -446,7 +446,7 @@ export class UI {
   // the map types as cards with a real picture each (src/ui/map-preview.js), the chosen one large with a line on what
   // it plays like, and every other setting in fixed-width rows on the right, so nothing moves when something is picked
   _menuSetup() {
-    const box = this._menuBox('<h2>Yeni Oyun</h2>');
+    const box = this._menuBox('<h2>' + tr('Yeni Oyun') + '</h2>');
     box.classList.add('setup');
     const S = this.setup;
     const grid = el('div', 'su-grid'); box.append(grid);
@@ -572,7 +572,7 @@ export class UI {
       if (!l || !l.length) { list.innerHTML = tr('<div style="color:var(--dim);text-align:center;padding:20px">Kayıt bulunamadı.</div>'); return; }
       for (const s of l) {
         // (cloud: ☁ = only in the cloud / ☁↓ = newer in the cloud; downloaded when opened)
-        const d = el('div', 'saveitem', `<span>${esc(saveBadge(s) + (s.name || s.key))}</span><small>${s.time ? new Date(s.time).toLocaleString('tr-TR') : ''}</small>`);
+        const d = el('div', 'saveitem', `<span>${esc(saveBadge(s) + (s.name || s.key))}</span><small>${s.time ? new Date(s.time).toLocaleString(loc()) : ''}</small>`);
         if (s.cloud) d.title = saveBadgeTitle(s);
         if (s.cloud === 'only' || s.cloud === 'newer') d.classList.add('cloud-only');
         d.onclick = async () => {
@@ -660,7 +660,7 @@ export class UI {
     lrow.append(lseg); parent.append(lrow);
   }
   _menuSettings() {
-    const box = this._menuBox('<h2>Ayarlar</h2>');
+    const box = this._menuBox('<h2>' + tr('Ayarlar') + '</h2>');
     this._settingsBody(box);
     this._mbtn(box, tr('Geri'), () => this._menuMain());
   }
@@ -1879,7 +1879,7 @@ export class UI {
     const now = this._armyNow();
     h += row(tr('Ordu (şu an)'), (p) => now.army[p.id] || 0);
     h += row(tr('Köylü (şu an)'), (p) => now.vil[p.id] || 0);
-    for (const r of RES_LIST) h += row(`${RES_ICON[r]} Toplanan ${RES_NAME[r]}`, (p) => Math.floor(st(p).gathered?.[r] || 0));
+    for (const r of RES_LIST) h += row(`${RES_ICON[r]} ${tr('Toplanan {0}', RES_NAME[r])}`, (p) => Math.floor(st(p).gathered?.[r] || 0));
     h += row(tr('Eğitilen Birim'), (p) => st(p).unitsTrained || 0);
     h += row(tr('Kaybedilen Birim'), (p) => st(p).unitsLost || 0);
     h += row(tr('Öldürülen Düşman'), (p) => st(p).kills || 0);
@@ -2095,7 +2095,7 @@ export class UI {
     } else {
       body = `<ul>${(a.unlockText || []).map((x) => tr(x)).map((t, i) => `<li style="animation-delay:${1.1 + i * 0.25}s">${esc(t)}</li>`).join('')}</ul>`;
     }
-    const o = el('div', 'ageup long age-' + age, `<div class="rays"></div><div class="lab">${tr('Yeni bir çağ başlıyor')}</div><div class="big">${esc(tr(a.name).toLocaleUpperCase(LANG === 'en' ? 'en-US' : 'tr-TR'))}</div>${body}<div class="auskip">${tr('Geçmek için tıkla')}</div>`);
+    const o = el('div', 'ageup long age-' + age, `<div class="rays"></div><div class="lab">${tr('Yeni bir çağ başlıyor')}</div><div class="big">${esc(tr(a.name).toLocaleUpperCase(loc()))}</div>${body}<div class="auskip">${tr('Geçmek için tıkla')}</div>`);
     for (let i = 0; i < 36; i++) {
       const s = el('span', 'spark');
       s.style.left = Math.random() * 100 + '%';
@@ -2283,7 +2283,7 @@ export class UI {
         row.append(el('span', 'lb-sw', ''));
         row.lastChild.style.background = hex(PLAYER_COLORS[i] ?? 0xffffff);
         if (s.kind === 'human') row.append(avatarEl(s.av, s.uid, 'av-sm'));
-        row.append(el('span', 'lb-name', esc(s.name || (s.kind === 'ai' ? tr('Yapay Zekâ') : tr('Oyuncu'))) + (s.peer && s.peer === st.hostPeer ? ' <small>' + ico('x-crown') + '</small>' : '') + (mine ? ' <small>' + tr('(sen)') + '</small>' : '')));
+        row.append(el('span', 'lb-name', esc(pn(s.name) || (s.kind === 'ai' ? tr('Yapay Zekâ') : tr('Oyuncu'))) + (s.peer && s.peer === st.hostPeer ? ' <small>' + ico('x-crown') + '</small>' : '') + (mine ? ' <small>' + tr('(sen)') + '</small>' : '')));
         if (s.kind === 'human' && s.tp != null) row.append(el('span', 'lb-tp', tr('Sv ') + levelOf(s.tp).level + ' · ' + esc(tpText(s.tp))));
         row.append(el('span', 'lb-kind ' + s.kind, s.kind === 'ai' ? tr('Yapay Zekâ') : tr('İnsan')));
         const canTeam = mine || (host && s.kind === 'ai');
@@ -2302,7 +2302,7 @@ export class UI {
       if (host) {
         const add = el('div', 'lb-add');
         add.append(el('span', '', tr('Yapay zekâ ekle:')), sel(TEAMS, aTeam, (v) => { aTeam = +v; }), sel(DIFF, aDiff, (v) => { aDiff = v; }));
-        const ab = el('button', 'mbtn small', '+ Ekle'); ab.disabled = slots.length >= 8;
+        const ab = el('button', 'mbtn small', tr('+ Ekle')); ab.disabled = slots.length >= 8;
         ab.onclick = () => call('addAI', aTeam, aDiff); add.append(ab); body.append(add);
         const sets = st.settings || {}, sg = el('div', 'lb-settings');
         body.append(this._lobbyMap(sets, slots.length, (t) => call('setSettings', { mapType: t })));

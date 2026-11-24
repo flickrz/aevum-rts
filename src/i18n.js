@@ -33,3 +33,28 @@ export function setLang(l) {
   if (l !== LANG && typeof location !== 'undefined') location.reload();
 }
 if (typeof document !== 'undefined') { try { document.documentElement.lang = LANG; } catch (e) { /* */ } }
+
+// the locale for dates and numbers ('en-US' in English, else 'tr-TR')
+export const loc = () => (LANG === 'en' ? 'en-US' : 'tr-TR');
+
+// default player names made in Turkish by the simulation / lobby ("Oyuncu 2", "Yapay Zekâ 3", "Bilgisayar 1")
+export function pn(n) {
+  const s = String(n == null ? '' : n);
+  if (LANG !== 'en') return s;
+  const m = /^(Oyuncu|Yapay Zekâ|Bilgisayar|Komutan)(?: (\d+))?$/.exec(s);
+  if (!m) return s;
+  return ({ Oyuncu: 'Player', 'Yapay Zekâ': 'AI', Bilgisayar: 'Computer', Komutan: 'Commander' })[m[1]] + (m[2] ? ' ' + m[2] : '');
+}
+
+// a message the server sent (in Turkish, the protocol keeps it): its English text, also for the ones with numbers in them
+const SRV_RX = [
+  [/^Herkesi davet etmek için (\d+) sn bekle\.$/, 'Herkesi davet etmek için {0} sn bekle.'],
+  [/^Maç (\d+) dakikadan kısa sürdü: TP verilmez\.$/, 'Maç {0} dakikadan kısa sürdü: TP verilmez.'],
+  [/^Bir saatte en çok (\d+) galibiyet TP verir\.$/, 'Bir saatte en çok {0} galibiyet TP verir.'],
+];
+export function srvTr(s) {
+  if (typeof s !== 'string' || LANG !== 'en') return s;
+  if (EN[s] != null) return EN[s];
+  for (const [rx, k] of SRV_RX) { const m = rx.exec(s); if (m) return tr(k, ...m.slice(1)); }
+  return s;
+}

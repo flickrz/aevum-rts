@@ -16,7 +16,7 @@ import { AUTH_KEY } from './cloud/auth.js';
 import { GoogleSignIn } from './cloud/google.js';
 import { createNotice, markInterrupted, clearInterrupted } from './net/notice.js';
 import { mountNoticeBanner, hostNameOf } from './ui/notice-ui.js';
-import { tr } from './i18n.js';
+import { tr, loc } from './i18n.js';
 
 const STEP = 1 / 30;
 const AUTOSAVE_EVERY = 90;
@@ -213,7 +213,7 @@ const app = {
     const time = Date.now();
     const k = key || ('manual-' + time);
     const d = new Date(time);
-    const stamp = d.toLocaleDateString('tr-TR') + ' ' + d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    const stamp = d.toLocaleDateString(loc()) + ' ' + d.toLocaleTimeString(loc(), { hour: '2-digit', minute: '2-digit' });
     let ok = false;
     try {
       const hc = histCtx.get(app.game);
@@ -349,7 +349,7 @@ function saveMpRecord(session, game, ev) {
   let rec, key;
   try {
     const time = Date.now(), d = new Date(time);
-    const stamp = d.toLocaleDateString('tr-TR') + ' ' + d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    const stamp = d.toLocaleDateString(loc()) + ' ' + d.toLocaleTimeString(loc(), { hour: '2-digit', minute: '2-digit' });
     const match = session.match || session.code || 'MP';
     const humans = game.players.filter(p => !p.isAI).map(p => p.name).join(', ');
     const mins = Math.floor(game.tick / 1800);

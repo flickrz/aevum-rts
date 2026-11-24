@@ -595,7 +595,7 @@ export class NetSession {
   setTeam(t) { this._req('setTeam', t); }
   setReady(b) { this._req('setReady', b); }
 
-  _hostOnly() { if (!this.isHost || this.phase !== 'lobby') throw new Error('Bunu sadece oda kurucusu yapabilir.'); }
+  _hostOnly() { if (!this.isHost || this.phase !== 'lobby') throw new Error(tr('Bunu sadece oda kurucusu yapabilir.')); }
   _notResume() { if (this.state && this.state.resume) throw new Error(tr('Kayıtlı maçta oyuncu dizilişi kayıttan gelir.')); }
   addAI(team = 2, difficulty = 'normal') {
     this._hostOnly(); this._notResume();
