@@ -1089,18 +1089,43 @@ function towerH1() {
   }
   return TOWER_H1;
 }
-// the dock model pushed toward the water by the land share of its footprint: a dock mostly on land (a pond's edge)
-// reaches out .4 of its size, one mostly over the sea (a straight coast, at least 3 land tiles) stays where it is
+// the dock model pushed out along its water side (owner 2026-11-25: on a pond edge and on an open coast alike the
+// pier has to stand over the water): stepped out until the tile under the pier tip is water, but never so far that the
+// back of the hut leaves the land by more than about a tile
 function dockPush(map, e, U, size) {
-  let land = 0, n = 0;
-  try {
-    const N = map.size, s = e.size || size;
-    for (let j = 0; j < s; j++) for (let i = 0; i < s; i++) { const t = map.tiles[(e.tz + j) * N + e.tx + i]; n++; if (t !== 3 && t !== 4) land++; }
-  } catch (err) { return; }
-  const f = Math.max(0, Math.min(1, (land / (n || 1) - DOCK_PUSH[0]) / (DOCK_PUSH[1] - DOCK_PUSH[0]))), off = size * DOCK_PUSH[2] * f;
-  U.dockM.position.x += Math.sin(U.dockRy) * off; U.dockM.position.z += Math.cos(U.dockRy) * off;
+  // (by the ground height, not the tile type: shallow water down to about -1 still reads as beach on screen)
+  const h = (x, z) => { try { return map.heightAt(x, z); } catch (err) { return 0; } };
+  // (a pond is shallow all over: then the first shallower depth any side reaches)
+  let deep = -1;
+  const wet = (x, z) => h(x, z) < deep, dry = (x, z) => h(x, z) > 0;
+  const half = size * 1.15 / 2;
+  // for one side: the push (in tenths of the size, up to 8) that puts the pier tip over water with the hut's back still
+  // on land (-1: none does)
+  const need = (ry) => {
+    const dx = Math.sin(ry), dz = Math.cos(ry);
+    for (let k = 0; k <= 8; k++) {
+      const o = size * .1 * k;
+      if (k > 0 && !dry(e.x - dx * (half - o - 1), e.z - dz * (half - o - 1))) return -1;   // the hut would float out
+      if (wet(e.x + dx * (half - .1 + o), e.z + dz * (half - .1 + o))) return k;
+    }
+    return -1;
+  };
+  // the mask's side first; another side only when it needs a shorter push (the pier toward the nearest open water)
+  let ry = U.dockRy, best = -1;
+  for (const d of [-1, -.5, -.3, -.15]) {
+    deep = d; ry = U.dockRy; best = need(ry);
+    for (const r of [Math.PI, Math.PI / 2, 0, -Math.PI / 2]) {
+      if (r === U.dockRy) continue;
+      const k = need(r);
+      if (k >= 0 && (best < 0 || k < best)) { best = k; ry = r; }
+    }
+    if (best >= 0) break;
+  }
+  if (best < 0) ry = U.dockRy;
+  const off = size * .1 * Math.max(0, best);
+  U.dockM.rotation.y = ry;
+  U.dockM.position.x += Math.sin(ry) * off; U.dockM.position.z += Math.cos(ry) * off;
 }
-const DOCK_PUSH = [.34, .78, .4];   // [land share pushed 0, land share pushed fully, full push x size]
 function makeBuilding(type, size, age, color, mask, seed, noGlb) {
   const root = new THREE.Group();
   const era = Math.max(0, Math.min(4, age | 0));
