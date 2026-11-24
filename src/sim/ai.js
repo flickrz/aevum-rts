@@ -208,7 +208,7 @@ export class AIController {
     if (!me || me.defeated || g.over) return;
     const t0 = nowMs();
     const c = this._ctx();
-    const steps = ['_vision', '_income', '_plan', '_economy', '_spend', '_walls', 'camps', 'market', '_navAI', '_railAI', '_scout', '_defend', '_groupsUpdate', '_raidPlanner', '_pushPlanner', '_poolTidy', '_healers'];
+    const steps = ['_vision', '_income', '_plan', '_economy', '_spend', '_walls', 'camps', 'market', '_navAI', '_ferryAI', '_railAI', '_scout', '_defend', '_groupsUpdate', '_raidPlanner', '_pushPlanner', '_poolTidy', '_healers'];
     for (const s of steps) { try { this[s](c); } catch (e) { this._err(s, e); } }
     if (this.debug) { try { this._dbg(c); } catch (e) { this._err('dbg', e); } }
     this.stats.thinks++; this.stats.ms += nowMs() - t0;
@@ -224,6 +224,7 @@ export class AIController {
     const tc = tcs.find(b => b.done) || tcs[0] || null;
     const home = tc ? { x: tc.x, z: tc.z } : (blds[0] ? { x: blds[0].x, z: blds[0].z } : { x: me.startX, z: me.startZ });
     const inGroup = new Set(); for (const gr of this.groups) for (const id of gr.ids) inGroup.add(id);
+    if (this.ferry) for (const id of this.ferry.ids) inGroup.add(id);   // (soldiers boarding / aboard the AI's transport)
     const pool = mil.filter(u => !inGroup.has(u.id) && u.id !== this.scoutId);
     const c = { g, me, units, blds, vills, mil, tcs, tc, home, inGroup, pool, reserve: { food: 0, wood: 0, gold: 0, stone: 0 }, placed: 0 };
     // direction to the enemy (known base, else the map centre)
@@ -1597,9 +1598,10 @@ export class AIController {
     const docks = blds.filter(b => b.type === 'dock');
     const shoals = g._navShoals().filter(s => this.explored(s.x, s.z));
     if (!docks.length) {
-      if (me.age > 1 || vills.length < 6 || !this.unlocked('building', 'dock') || !c.can(BUILDINGS.dock.cost)) return;
+      const cut = this._seaMode(c);
+      if ((me.age > 1 && !cut) || vills.length < 6 || !this.unlocked('building', 'dock') || !c.can(BUILDINGS.dock.cost)) return;
       if ((this.navTries || 0) >= 3) { this.navNo = Infinity; return; }
-      if (!shoals.some(s => d2(s.x, s.z, c.home.x, c.home.z) < 32 * 32)) { this.navNo = g.time + 60; return; }
+      if (!cut && !shoals.some(s => d2(s.x, s.z, c.home.x, c.home.z) < 32 * 32)) { this.navNo = g.time + 60; return; }
       const hx = Math.floor(c.home.x), hz = Math.floor(c.home.z); let best = null, bd = 1e9;
       for (let tz = hz - 25; tz <= hz + 25; tz++) for (let tx = hx - 25; tx <= hx + 25; tx++) {
         const dd = d2(tx + 1.5, tz + 1.5, c.home.x, c.home.z); if (dd > 625 || dd >= bd) continue;
@@ -1615,10 +1617,15 @@ export class AIController {
     const dock = docks.find(b => b.done); if (!dock) return;
     const boats = units.filter(u => u.type === 'fishboat'), war = units.filter(u => UNITS[u.type] && UNITS[u.type].naval && UNITS[u.type].atk > 0);
     const wantBoats = this.difficulty === 'easy' ? 2 : this.difficulty === 'normal' ? 3 : 4;
+    const wantWar = this.difficulty === 'easy' ? 1 : this.difficulty === 'normal' ? 3 : 5;   // (warships that contest the sea)
+    const cut = this._seaMode(c), tps = units.filter(u => u.type === 'transport');
     for (const b of boats) if (!b.order) { const s = this._shoalNear(shoals, dock); if (s) g.cmdGather([b.id], s.id); }
     if (!(dock.queue || []).length) {
-      if (boats.length < wantBoats) { if (c.can(UNITS.fishboat.cost)) g.train(dock.id, 'fishboat'); }
-      else if (me.age >= 1 && war.length < (wantBoats > 2 ? 3 : 2)) {
+      const needT = cut && this.difficulty !== 'easy' && UNITS.transport && me.age >= 1 && !tps.length && c.pool.length >= 4 && this.unlocked('unit', 'transport');
+      if (boats.length < wantBoats && shoals.length && !(needT && boats.length >= 2)) { if (c.can(UNITS.fishboat.cost)) g.train(dock.id, 'fishboat'); }
+      // island map: a transport to land the army on the enemy's coast (easy never invades)
+      else if (needT) { if (c.can(UNITS.transport.cost)) g.train(dock.id, 'transport'); }
+      else if (me.age >= 1 && war.length < wantWar) {
         for (const id of ['ironclad', 'galleon', 'galley']) { const ud = UNITS[id]; if (ud && this.unlocked('unit', id) && c.can(ud.cost)) { g.train(dock.id, id); break; } }
       }
     }
@@ -1631,6 +1638,93 @@ export class AIController {
     const s = this._shoalNear(shoals, dock), gx = s ? s.x : dock.x, gz = s ? s.z : dock.z;
     const idle = war.filter(w => !w.order && d2(w.x, w.z, gx, gz) > 8 * 8);
     if (idle.length) g.cmdMove(idle.map(w => w.id), gx, gz);
+  }
+
+  // true when no foe's start can be reached over land from home (islands; shallow fords count as land). Computed once.
+  _navCut(c) {
+    if (this.navCutV != null) return this.navCutV;
+    const g = this.game, m = g.map, N = m.size, T = m.tiles, seen = new Uint8Array(N * N);
+    const land = i => T[i] !== 4 && T[i] !== 5;
+    const me = c.me, s0 = Math.floor(me.startZ) * N + Math.floor(me.startX), st = [s0]; seen[s0] = 1;
+    while (st.length) {
+      const i = st.pop(), x = i % N, z = (i / N) | 0;
+      for (let k = 0; k < 4; k++) {
+        const nx = x + (k === 0 ? 1 : k === 1 ? -1 : 0), nz = z + (k === 2 ? 1 : k === 3 ? -1 : 0);
+        if (nx < 1 || nz < 1 || nx >= N - 1 || nz >= N - 1) continue;
+        const j = nz * N + nx; if (seen[j] || !land(j)) continue; seen[j] = 1; st.push(j);
+      }
+    }
+    let cut = false, any = false;
+    g.players.forEach((p, i) => {
+      if (i === this.pid || !p || !this.foe(i) || p.startX == null) return; any = true;
+      const px = Math.floor(p.startX), pz = Math.floor(p.startZ); let r = false;
+      for (let j = -3; j <= 3 && !r; j++) for (let k = -3; k <= 3 && !r; k++) { const x = px + k, z = pz + j; if (x >= 0 && z >= 0 && x < N && z < N && seen[z * N + x]) r = true; }
+      if (!r) cut = true;
+    });
+    this.navCutV = any && cut;
+    return this.navCutV;
+  }
+
+  // islands map (the generator always leaves a ford, but the sea is the short way) or no land path at all
+  _seaMode(c) { return this._navCut(c) || this.game.cfg.mapType === 'islands'; }
+
+  // island maps: fill the transport with up to 10 soldiers at home, sail to the coast nearest the enemy base, unload
+  // them there and hand them over as a push group
+  _ferryAI(c) {
+    const g = this.game, now = g.time;
+    if (this.difficulty === 'easy' || typeof g.cmdBoard !== 'function' || !this._seaMode(c)) return;
+    const cut = this._navCut(c);   // (cut off: every push goes by sea; else landings come on their own timer beside the land pushes)
+    if (this.nextFerry == null) this.nextFerry = (this.d.pushFrom + 2) * MIN;
+    if (now - (this.ferryT || 0) < 2) return; this.ferryT = now;
+    const f = this.ferry;
+    const tp = f ? c.units.find(u => u.id === f.tid) : c.units.find(u => u.type === 'transport');
+    if (f && (!tp || tp.dead)) { this.ferry = null; this.nextFerry = now + this.d.pushGap; return; }
+    if (!tp) return;
+    if (!f) {
+      if (this._baseThreat || (cut ? now < this.nextPush || this.groups.some(gr => gr.kind === 'push') : now < this.nextFerry)) return;
+      if (this.d.attackAge && c.age < this.d.attackAge) return;
+      const want = Math.min(10, Math.max(4, this.pushN === 0 ? this.d.firstPush : this.d.pushBase + this.d.pushGrow * (this.pushN - 1)));
+      const cand = c.pool.filter(u => UNITS[u.type].cls !== 'siege');
+      if (cand.length < Math.min(want, 6) + (cut ? 0 : Math.max(2, Math.ceil((c.minDef || 0) * 0.5)))) return;
+      const ids = cand.sort((a, b) => d2(a.x, a.z, tp.x, tp.z) - d2(b.x, b.z, tp.x, tp.z) || a.id - b.id).slice(0, want).map(u => u.id);
+      if (!g.cmdBoard(ids, tp.id)) { this.nextPush = Math.max(this.nextPush, now + 30); this.nextFerry = now + 30; return; }
+      this.ferry = { tid: tp.id, ids, phase: 'load', t: now };
+      return;
+    }
+    const cargo = tp.cargo || [];
+    f.ids = f.ids.filter(id => { const u = this.alive(id); return u && u.owner === this.pid; });
+    if (f.phase === 'load') {
+      const waiting = f.ids.filter(id => { const u = this.alive(id); return !u.aboard && u.order && u.order.type === 'board'; });
+      if (!(cargo.length && (!waiting.length || now - f.t > 60)) && !(now - f.t > 90)) return;
+      if (!cargo.length) { this.ferry = null; this.nextFerry = now + 30; if (cut) this.nextPush = Math.max(this.nextPush, now + 30); return; }
+      if (waiting.length) g.cmdStop(waiting);
+      f.ids = cargo.slice();
+      const eb = this.enemyBase(), me = c.me;
+      let bx = eb ? eb.x : null, bz = eb ? eb.z : null;
+      if (bx == null) { let bd = Infinity; g.players.forEach((p, i) => { if (i !== this.pid && p && this.foe(i)) { const dd = d2(p.startX, p.startZ, me.startX, me.startZ); if (dd < bd) { bd = dd; bx = p.startX; bz = p.startZ; } } }); }
+      if (bx == null) { this.ferry = null; return; }
+      let s = null; for (const R of [16, 28, 40]) { s = g._navShore(bx, bz, this.pid, R, true); if (s) break; }
+      if (!s || !g.cmdUnload(tp.id, s.wx, s.wz)) { this.ferry = null; return; }
+      f.phase = 'sail'; f.t = now; f.bx = bx; f.bz = bz; f.wx = s.wx; f.wz = s.wz;
+      return;
+    }
+    if (cargo.length) {
+      if (now - f.t > 300) { this.ferry = null; return; }
+      if (!tp.order) g.cmdUnload(tp.id, f.wx, f.wz);
+      return;
+    }
+    // landed: the soldiers become a push group
+    const ids = f.ids.filter(id => !this.alive(id).aboard);
+    this.ferry = null;
+    const home = g._navShore(c.home.x, c.home.z, this.pid, 28, true); if (home) g.cmdMove([tp.id], home.wx, home.wz);
+    if (!ids.length) return;
+    const tgt = this._pushTarget({ x: f.wx, z: f.wz });
+    const tx = tgt ? tgt.x : f.bx, tz = tgt ? tgt.z : f.bz;
+    this.groups.push({ kind: 'push', ids, initial: ids.length, phase: 'fight', rx: f.wx, rz: f.wz, tx, tz, targetId: tgt ? tgt.id : null, start: now, phaseT: now, kills: 0, razed: 0, sea: true });
+    this.pushN++; this.stats.pushes++; this.stats.landings = (this.stats.landings || 0) + 1; if (this.stats.firstPush == null) this.stats.firstPush = now;
+    g.cmdMove(ids, tx, tz);
+    if (cut) this.nextPush = Math.max(this.nextPush, now + this.d.pushGap * 0.5);
+    this.nextFerry = now + this.d.pushGap * (this.difficulty === 'hard' ? 1 : 1.5);
   }
 
   _shoalNear(shoals, at) { let best = null, bd = Infinity; for (const s of shoals) { if (s.dead || s.amount <= 0) continue; const dd = d2(s.x, s.z, at.x, at.z); if (dd < bd) { bd = dd; best = s; } } return best; }
@@ -1800,6 +1894,7 @@ export class AIController {
     const g = this.game, d = this.d, now = g.time;
     if (now < this.nextRaid || this._baseThreat) return;
     if (d.attackAge && c.age < d.attackAge) return;
+    if (this._navCut(c)) return;   // (no land path to the enemy: only the transport landings attack)
     if (this.groups.some(gr => gr.kind === 'raid')) return;
     const size = Math.min(d.raidSize, c.age === 0 ? 3 : d.raidSize);
     const keep = 2;
@@ -1823,6 +1918,7 @@ export class AIController {
     if (live) { this._reinforce(c, live); return; }
     if (now < this.nextPush || this._baseThreat) return;
     if (d.attackAge && c.age < d.attackAge) return;
+    if (this._navCut(c)) return;   // (island map: _ferryAI lands the army by sea)
     const pool = c.pool;
     const first = this.pushN === 0;
     const size = first ? d.firstPush : d.pushBase + d.pushGrow * (this.pushN - 1);

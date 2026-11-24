@@ -438,7 +438,9 @@ export class Game {
       if (h >= -0.02 && h < 0.2) h = 0.2;
       heights[vz * V + vx] = h;
     }
-    this._mapConnect(heights, N, starts.slice(0, np), seed, hsh);
+    // (islands, owner 2026-11-25: no land link between players at all - war there is by ship only)
+    if (mt === 'islands') this._mapSeparate(heights, N, starts.slice(0, np), SEA);
+    else this._mapConnect(heights, N, starts.slice(0, np), seed, hsh);
     // Forests take a fixed share (P.fs) of the open land on every seed: the fbm threshold is the matching quantile,
     // so one seed cannot bury the map in trees. Forest is held back from the starts (none within FC0 tiles, thinning
     // in up to FC1) so every player has room to build a town; the start's own wood cluster sits inside that ring.
@@ -596,7 +598,7 @@ export class Game {
       }
     }
     try { this._navGenFish(); } catch (err) { console.error('fish gen', err); }
-    this._ensureWalkable(starts.slice(0, this.players.length));
+    if (this.cfg.mapType !== 'islands') this._ensureWalkable(starts.slice(0, this.players.length));
     // no stray trees: a tree with fewer than two others touching it (left by a pass cut through a grove, or a start
     // clump squeezed by water) goes (2026-11-14, owner: no lone trees on open grass)
     for (const e of [...this.entities.values()]) {
@@ -692,6 +694,42 @@ export class Game {
       }
     }
     return carved;
+  }
+  // islands: every start gets its own landmass. Land (walkable: not deep water, not mountain) is split between the
+  // starts by a multi-source flood; where two starts' floods touch, the ground is sunk to deep water (radius 3), never
+  // within 13 tiles of a start. Repeats until no flood reaches a tile next to another's. No rand().
+  _mapSeparate(heights, N, starts, SEA) {
+    if (!starts || starts.length < 2) return 0;
+    const V = N + 1, lab = new Int8Array(N * N), q = new Int32Array(N * N);
+    const tileOf = s => Math.max(0, Math.min(N - 1, s[1] | 0)) * N + Math.max(0, Math.min(N - 1, s[0] | 0));
+    const walk = (tx, tz) => { const i = tz * V + tx, ha = (heights[i] + heights[i + 1] + heights[i + V] + heights[i + V + 1]) / 4; return ha >= -0.4 && ha <= 3.3; };
+    for (let it = 0; it < 12; it++) {
+      lab.fill(-1); let qh = 0, qt = 0;
+      starts.forEach((s, k) => { const i = tileOf(s); if (lab[i] < 0) { lab[i] = k; q[qt++] = i; } });
+      const cut = [];
+      while (qh < qt) {
+        const c = q[qh++], cx = c % N, cz = (c / N) | 0;
+        for (let d = 0; d < 4; d++) {
+          const nx = cx + (d === 0 ? 1 : d === 1 ? -1 : 0), nz = cz + (d === 2 ? 1 : d === 3 ? -1 : 0);
+          if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
+          const j = nz * N + nx;
+          if (lab[j] >= 0) { if (lab[j] !== lab[c]) cut.push(c); continue; }
+          if (!walk(nx, nz)) continue;
+          lab[j] = lab[c]; q[qt++] = j;
+        }
+      }
+      if (!cut.length) return it;
+      const R = 3;
+      for (const c of cut) {
+        const px = c % N + 0.5, pz = ((c / N) | 0) + 0.5;
+        for (let vz = Math.max(0, Math.ceil(pz - R)); vz <= Math.min(N, Math.floor(pz + R)); vz++) for (let vx = Math.max(0, Math.ceil(px - R)); vx <= Math.min(N, Math.floor(px + R)); vx++) {
+          if (dhypot(vx - px, vz - pz) > R) continue;
+          let near = false; for (const s of starts) if (dhypot(vx - s[0], vz - s[1]) < 13) { near = true; break; }
+          if (!near) heights[vz * V + vx] = SEA;
+        }
+      }
+    }
+    return -1;
   }
   _mapConnect(heights, N, starts, seed, hsh) {
     const V = N + 1, cls = new Uint8Array(N * N), seen = new Uint8Array(N * N), q = new Int32Array(N * N);

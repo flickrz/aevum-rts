@@ -310,6 +310,8 @@ export default {
   "Keşfet": "Explore",
   "Seçili birimler haritada kendi kendine dolaşıp keşfedilmemiş bölgeleri açar. Başka bir emir verene kadar sürer.": "Selected units roam the map on their own, revealing unexplored areas. Lasts until another order.",
   "Boşalt": "Unload",
+  "İndir": "Unload",
+  "Nakliye gemisindeki birimleri en yakın kıyıya indirir. Başka bir kıyı için: gemi seçiliyken karaya sağ tıkla.": "Unloads the units on the transport at the nearest shore. For another shore: with the ship selected, right-click on land.",
   "Nakliye gemisindeki birimleri kıyıya indir: ardından kıyıda bir noktaya sol tıkla (Esc: iptal).": "Land the units on the transport: then left click a point on the shore (Esc: cancel).",
   "Gemi boş": "Ship is empty",
   "Döndür": "Rotate",

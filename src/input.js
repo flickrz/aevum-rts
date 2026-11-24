@@ -561,6 +561,12 @@ export class Input {
       }
     }
     const p = g || (target ? { x: target.x, z: target.z } : null);
+    // loaded transports ordered onto land: sail to the nearest coast point there and unload everyone
+    if (p && game.cmdUnload && game._navWater && !game._navWater(Math.floor(p.x), Math.floor(p.z))) {
+      const full = ships.filter(id => { const u = this.ent(id); return u && u.type === 'transport' && (u.cargo || []).length; });
+      const done = full.filter(id => game.cmdUnload(id, p.x, p.z));
+      if (done.length) { ok(p.x, p.z, C_GATHER); ships = ships.filter(id => !done.includes(id)); if (!ships.length) return; }
+    }
     if (p && game.cmdMove(ships, p.x, p.z, queue)) ok(p.x, p.z, C_MOVE);
   }
 
