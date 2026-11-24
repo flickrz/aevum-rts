@@ -5,7 +5,7 @@ import { BUILDINGS } from '../data.js';
 import { updateConstruction, disposeConstruction, updateRepair } from './construction.js';
 import { SEA_BUILD, SEA_UNITS, makeSeaUnit, seaAnimUnit, seaAnimBuilding, makeFish, seaAnimFish, seaMask, pastureSheepK, dockY } from './models-sea.js';
 import { StaticBatches } from './static-batch.js';
-import { loadGlbModels, loadEra, glbVersion, hasGlb, glbPlanned, eraSettled, addGlbBuilding, addGlbPiece, loadCrop, cropGeo } from './glb-models.js';
+import { loadGlbModels, loadEra, glbVersion, hasGlb, glbPlanned, eraSettled, addGlbBuilding, addGlbPiece, loadCrop, cropGeo, loadSea, hasSea, dockFile, addSeaModel } from './glb-models.js';
 
 const PI = Math.PI;
 
@@ -1089,6 +1089,43 @@ function towerH1() {
   }
   return TOWER_H1;
 }
+// the dock model pushed out along its water side (owner 2026-11-25: on a pond edge and on an open coast alike the
+// pier has to stand over the water): stepped out until the tile under the pier tip is water, but never so far that the
+// back of the hut leaves the land by more than about a tile
+function dockPush(map, e, U, size) {
+  // (by the ground height, not the tile type: shallow water down to about -1 still reads as beach on screen)
+  const h = (x, z) => { try { return map.heightAt(x, z); } catch (err) { return 0; } };
+  // (a pond is shallow all over: then the first shallower depth any side reaches)
+  let deep = -1;
+  const wet = (x, z) => h(x, z) < deep, dry = (x, z) => h(x, z) > 0;
+  const half = size * 1.15 / 2;
+  // for one side: the push (in tenths of the size, up to 8) that puts the pier tip over water with the hut's back still
+  // on land (-1: none does)
+  const need = (ry) => {
+    const dx = Math.sin(ry), dz = Math.cos(ry);
+    for (let k = 0; k <= 8; k++) {
+      const o = size * .1 * k;
+      if (k > 0 && !dry(e.x - dx * (half - o - 1), e.z - dz * (half - o - 1))) return -1;   // the hut would float out
+      if (wet(e.x + dx * (half - .1 + o), e.z + dz * (half - .1 + o))) return k;
+    }
+    return -1;
+  };
+  // the mask's side first; another side only when it needs a shorter push (the pier toward the nearest open water)
+  let ry = U.dockRy, best = -1;
+  for (const d of [-1, -.5, -.3, -.15]) {
+    deep = d; ry = U.dockRy; best = need(ry);
+    for (const r of [Math.PI, Math.PI / 2, 0, -Math.PI / 2]) {
+      if (r === U.dockRy) continue;
+      const k = need(r);
+      if (k >= 0 && (best < 0 || k < best)) { best = k; ry = r; }
+    }
+    if (best >= 0) break;
+  }
+  if (best < 0) ry = U.dockRy;
+  const off = size * .1 * Math.max(0, best);
+  U.dockM.rotation.y = ry;
+  U.dockM.position.x += Math.sin(ry) * off; U.dockM.position.z += Math.cos(ry) * off;
+}
 function makeBuilding(type, size, age, color, mask, seed, noGlb) {
   const root = new THREE.Group();
   const era = Math.max(0, Math.min(4, age | 0));
@@ -1164,6 +1201,20 @@ function makeBuilding(type, size, age, color, mask, seed, noGlb) {
       if (type === 'gate' && era >= 2) slab.clear();   // (its plate showed under the open arch, owner 2026-11-18)
       glbWall(c, type, era, color);
       U.glb = true;
+    }
+    // the dock's generated model (glb-models.js, sea set), its pier turned to the water like the procedural one
+    if (type === 'dock' && !noGlb) {
+      try { loadSea(); } catch (err) { /* procedural dock */ }
+      if (hasSea(dockFile(era))) {
+        body.clear(); roof.clear(); slab.clear(); c.chim.length = 0; c.spin = null;
+        let d = 2; for (let i = 0; i < 4; i++) if ((mask & 15) === 1 << i) d = i;
+        const ry = [Math.PI, Math.PI / 2, 0, -Math.PI / 2][d], dm = addSeaModel(body, dockFile(era), color, size * 1.15, -.35, ry);
+        // (owner 2026-11-25: "biraz daha suya doğru") the model is pushed out over the water side
+        // (owner 2026-11-25, open sea: a dock mostly on water floated out) how far depends on the land in its footprint,
+        // set by EntityView (dockPush) once the map is known; U.dockM / U.dockRy carry the mesh and its turn
+        if (dm) { U.dockM = dm; U.dockRy = ry; }
+        U.glb = true;
+      }
     }
     // a generated 3D model for this type and era (glb-models.js): it replaces the procedural body, roof and pad
     // (the model stands on its own grass base); chimney smoke and spinning parts belong to the old model
@@ -1532,6 +1583,7 @@ function makeUnit(type, color, age) {
   const A = Math.max(0, Math.min(4, age | 0));
   try {
     const u = makeUnitRaw(type, color, A);
+    if (u.P.glb) return u;   // (a generated ship model: its own textured mesh, drawn as it is)
     try { bakeUnit(u, type + '|' + A + '|' + color); return u; }
     catch (err) {
       if (!_ubakeWarned) { _ubakeWarned = true; console.warn('[entities] unit bake failed, drawing unmerged:', type, A, err); }
@@ -1962,6 +2014,7 @@ export class EntityView {
     v.bs = bs; v.k = (e.size || bs) / bs;
     v.root = makeBuilding(e.type, bs, v.age, this._color(e.owner), v.mask | 0, (e.tx | 0) * 92821 + (e.tz | 0) * 68917);   // (seed: wall logs vary per tile)
     if (v.k !== 1) v.root.scale.setScalar(v.k);
+    if (v.root.userData.dockM) dockPush(this.game.map, e, v.root.userData, bs);
     if (v.ry == null) v.ry = bYaw(e.type, e.rot);   // (a remade model keeps the turn it is drawn at; _updBuilding eases it)
     v.root.rotation.y = v.ry;
     const quiet = v.quiet; v.quiet = false;
@@ -2147,7 +2200,7 @@ export class EntityView {
     // the building keeps its old model until that era's files are in (or failed)
     if (age !== v.age) { if (glbPlanned(e.type, age) && !hasGlb(glbKey(e.type), age) && !eraSettled(age)) loadEra(age); else this._buildBuildingMesh(v, e, age); }
     // a generated model finished loading after this building was drawn: swap it in (quietly, no finish bounce)
-    else if (v.glbv !== glbVersion() && !v.root.userData.glb && hasGlb(glbKey(e.type), age)) { v.quiet = true; this._buildBuildingMesh(v, e, age); }
+    else if (v.glbv !== glbVersion() && !v.root.userData.glb && (hasGlb(glbKey(e.type), age) || (e.type === 'dock' && hasSea(dockFile(age))))) { v.quiet = true; this._buildBuildingMesh(v, e, age); }
     const root = v.root, U = root.userData;
     if (v.pop > 0) this._pop(v, dt);
     root.position.set(e.x, y, e.z);
@@ -2288,7 +2341,8 @@ export class EntityView {
   _updUnit(v, e, dt, time, gt) {
     if (e.kind === 'unit' && !e.dead) {
       const age = this._vage(v, e);
-      if (age !== v.age || v.utype !== e.type) { this._buildUnitMesh(v, e, age); v.pop = .5; }   // (type: a final-form upgrade)
+      if (age !== v.age || v.utype !== e.type) { this._buildUnitMesh(v, e, age); v.pop = .5; }
+      else if (v.rig === 'ship' && !v.P.glb && hasSea(e.type)) this._buildUnitMesh(v, e, age);   // (its generated model arrived)   // (type: a final-form upgrade)
     }
     if (v.pop > 0) this._pop(v, dt);
     const map = this.game.map, k = Math.min(1, dt * 14);
