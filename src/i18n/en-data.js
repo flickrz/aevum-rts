@@ -40,7 +40,7 @@ export default {
   'Sahra Topu': 'Field Gun',
   'En uzun menzilli kuşatma silahı.': 'The longest-range siege weapon.',
   'Büyücü': 'Healer',
-  'Dost birlikleri savaş sırasında da iyileştirir. Taş Devri’nde en yaralı tek birliği, sonra çevresindeki herkesi; alanı (6-8 kare) ve hızı (2-6 can/sn) her çağda artar. Saldırmaz.': 'Heals friendly units, in combat too. In the Stone Age the single most wounded unit, then everyone around her; her area (6-8 tiles) and speed (2-6 HP/s) grow with every age. Does not attack.',
+  'Dost birlikleri savaş sırasında da iyileştirir. Taş Devri’nde en yaralı tek birliği, sonra çevresindeki herkesi; alanı (6-8 kare) ve hızı (2-6 can/sn) her çağda artar. Tunç Çağı’ndan itibaren düşmana büyü oku atar, Orta Çağ’dan itibaren oku küçük bir alana vurur.': 'Heals friendly units, in combat too. In the Stone Age the single most wounded unit, then everyone around her; her area (6-8 tiles) and speed (2-6 HP/s) grow with every age. From the Bronze Age she casts a magic bolt at enemies; from the Middle Ages it hits a small area.',
   'Balıkçı Teknesi': 'Fishing Boat',
   'Balık sürülerinden yiyecek toplar ve en yakın iskeleye taşır.': 'Gathers food from fish shoals and carries it to the nearest dock.',
   'Nakliye Gemisi': 'Transport Ship',

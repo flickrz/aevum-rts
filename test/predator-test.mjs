@@ -1,5 +1,5 @@
 // Wild predators (wolf packs, lone bears; player feedback 2026-11-23): node test/predator-test.mjs
-import { Game, PRED, PREY } from '../src/sim/game.js';
+import { Game, PRED, PREY, PRED_START, PRED_START_K } from '../src/sim/game.js';
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m); console.log((c ? '  ok   ' : '  FAIL ') + m); };
 const step = (g, s, fn) => { for (let i = 0; i < Math.round(s * 30); i++) { g.update(1 / 30); if (fn && fn()) return true; } return false; };
 const CX = 128, CZ = 128;
@@ -62,6 +62,23 @@ for (const [mapSize, seed] of [[256, 3], [384, 9]]) {
   ok(sig(a) === sig(b), 'two runs of the same seed match (animals)');
   const c = Game.deserialize(a.serialize());
   ok(c.deer.length === a.deer.length && c.deer.filter(e => e.live).length === a.deer.filter(e => e.live).length, 'save/load keeps the predators');
+}
+// 9) (owner 2026-11-24) far from every start; a bear aggroes within its radius; a hit bear / wolf always fights back
+for (const [mapSize, seed] of [[256, 3], [384, 9], [192, 5]]) {
+  const g = new Game({ mapSize, enemies: 1, difficulty: 'easy', startAge: 0, seed });
+  const pr = g.deer.filter(e => e.live), tc = g.buildings.filter(x => x.type === 'towncenter'), min = Math.min(PRED_START, Math.max(18, mapSize * PRED_START_K)) - 1;
+  const md = Math.min(...pr.map(e => Math.min(...tc.map(t => Math.hypot(t.x - e.x, t.z - e.z)))));
+  ok(pr.length >= 2 && md >= min, `map ${mapSize}: ${pr.length} predators, nearest ${md.toFixed(1)} tiles from a start (>= ${min})`);
+}
+{
+  const g = mk(); const bear = g._addRes('bear', CX, CZ, PRED.bear.food); const v = g._addUnit('villager', 0, CX + 4, CZ);
+  step(g, 6); ok(v.hp < v.maxHp || v.dead, `a bear attacks a villager 4 tiles off (hp ${v.hp}/${v.maxHp})`);
+}
+for (const type of ['bear', 'wolf']) {
+  const g = mk(); const a = g._addRes(type, CX, CZ, PRED[type].food); const ar = g._addUnit('archer', 0, CX + 6, CZ); ar.stance = 'hold';
+  g.cmdAttack([ar.id], a.id); const h0 = ar.hp; step(g, 2.5);
+  ok(a.hp < a.maxHp && a.foe === ar.id, `${type}: hit by an archer outside its aggro radius, marks it as foe`);
+  step(g, 6); ok(ar.hp < h0 || ar.dead || !a.live, `${type}: fights back (archer hp ${ar.hp}/${h0}, ${type} hp ${a.hp})`);
 }
 console.log(fails.length ? `\n${fails.length} FAIL` : '\nALL OK');
 process.exit(fails.length ? 1 : 0);

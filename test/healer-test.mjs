@@ -1,5 +1,5 @@
 // The healer (Büyücü, owner 2026-11-21) and the Stone Age temple: node test/healer-test.mjs
-import { Game, HEALER_R, HEALER_HP, HEALER_AGE, healerStats, healerRate, PROD_B } from '../src/sim/game.js';
+import { Game, HEALER_R, HEALER_HP, HEALER_AGE, healerStats, healerRate, healerBolt, PROD_B } from '../src/sim/game.js';
 import { AIController } from '../src/sim/ai.js';
 import { UNITS, BUILDINGS } from '../src/data.js';
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m); console.log((c ? '  ok   ' : '  FAIL ') + m); };
@@ -188,5 +188,16 @@ const script = (saveAt) => {
   }
 }
 
+// (owner 2026-11-24) the magic bolt: none in the Stone Age, one target in the Bronze Age, splash from the Middle Ages
+for (const age of [0, 1, 2, 3]) {
+  const g = mk(); g.players[0].age = age; const b = healerBolt(age);
+  const h = g._addUnit('healer', 0, CX, CZ), e1 = g._addUnit('spearman', 1, CX + 4, CZ), e2 = g._addUnit('spearman', 1, CX + 4.6, CZ + 0.4);
+  for (const e of [e1, e2]) { e.stance = 'hold'; e.hp = e.maxHp = 500; } g.cmdStop([e1.id, e2.id]);
+  step(g, 4.2);
+  if (!b) ok(e1.hp === 500 && e2.hp === 500, 'age 0: she does not attack');
+  else if (!b.spl) ok(e1.hp < 500 && e2.hp === 500, `age 1: single-target bolt (${500 - e1.hp} dmg, neighbour ${e2.hp})`);
+  else ok(e1.hp < 500 && e2.hp < 500 && 500 - e1.hp > 500 - e2.hp, `age ${age}: bolt splashes ${b.spl} tiles (${500 - e1.hp} / ${500 - e2.hp} dmg)`);
+  ok(!b || b.atk <= 8, 'modest damage');
+}
 console.log(fails.length ? `\n${fails.length} FAILED` : '\nALL OK');
 process.exit(fails.length ? 1 : 0);
