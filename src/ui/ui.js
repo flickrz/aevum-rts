@@ -1419,9 +1419,9 @@ export class UI {
       const tp = ents.find((u) => u.type === 'transport');
       if (tp) {
         put({
-          icon: ico('x-unload'), name: tr('Boşalt'), desc: tr('Nakliye gemisindeki birimleri kıyıya indir: ardından kıyıda bir noktaya sol tıkla (Esc: iptal).'),
+          icon: ico('x-unload'), name: tr('İndir'), desc: tr('Nakliye gemisindeki birimleri en yakın kıyıya indirir. Başka bir kıyı için: gemi seçiliyken karaya sağ tıkla.'),
           check: () => ((tp.cargo || []).length ? { ok: true } : { ok: false, reason: tr('Gemi boş') }),
-          run: () => !!safe(() => this.app.input?.startUnload?.(tp.id), false),
+          run: () => !!safe(() => g.cmdUnload(tp.id, tp.x, tp.z) || this.app.input?.startUnload?.(tp.id), false),
         }, 12);
       }
       put(del, 14);

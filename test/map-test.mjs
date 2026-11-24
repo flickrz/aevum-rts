@@ -20,6 +20,16 @@ function reach(g) {
   }
   return g.players.every(p => seen[at(p)]);
 }
+// islands: no start may reach another over any non-deep-water / non-mountain tile (shallow fords count as land)
+function separate(g) {
+  const N = g.map.size, t = g.map.tiles, at = p => (p.startZ | 0) * N + (p.startX | 0);
+  for (const a of g.players) {
+    const seen = new Uint8Array(N * N), q = [at(a)]; seen[at(a)] = 1;
+    for (let h = 0; h < q.length; h++) { const c = q[h], x = c % N, z = (c / N) | 0; for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Z = z + dz; if (X < 0 || Z < 0 || X >= N || Z >= N) continue; const j = Z * N + X; if (!seen[j] && t[j] !== 4 && t[j] !== 5) { seen[j] = 1; q.push(j); } } }
+    for (const b of g.players) if (b !== a && seen[at(b)]) return false;
+  }
+  return true;
+}
 const near = (g, p, type, r) => { for (const e of g.entities.values()) if (e.kind === 'resource' && e.type === type && Math.hypot(e.x - p.startX, e.z - p.startZ) <= r) return true; return false; };
 
 // ---- generation matrix
@@ -29,7 +39,8 @@ for (const mt of MAP_TYPES) {
   for (const size of SIZES) for (const seed of SEEDS) for (const lay of LAYOUTS) {
     const g = mk(mt, size, seed, lay), N = size, t = g.map.tiles; maps++;
     if (g.cfg.mapType !== mt) fails.push(mt + ' cfg.mapType changed to ' + g.cfg.mapType);
-    if (reach(g)) conn++; else miss.push(`${size}/${seed}/${lay} unreachable start`);
+    if (mt === 'islands') { if (separate(g)) conn++; else miss.push(`${size}/${seed}/${lay} starts land-connected`); }
+    else if (reach(g)) conn++; else miss.push(`${size}/${seed}/${lay} unreachable start`);
     // river keeps the legacy generator bit-for-bit, where one 8-player 96 start has its gold at ~17 tiles
     const R = mt === 'river' ? 18 : 16;
     const lack = []; for (const p of g.players) for (const r of ['stone', 'gold', 'berries', 'tree']) if (!near(g, p, r, R)) lack.push('p' + p.id + ' ' + r);
@@ -44,7 +55,7 @@ for (const mt of MAP_TYPES) {
     if (seed === 7 && lay === 4) { const g2 = mk(mt, size, seed, lay); if (g2.hash() === g.hash() && g2.map.tiles.every((v, i) => v === t[i]) && g2.map.heights.every((v, i) => v === g.map.heights[i])) same++; else miss.push(size + ' not deterministic'); }
   }
   const pc = v => (v * 100).toFixed(0) + '%';
-  ok(conn === maps, `${mt}: all starts mutually reachable on ${conn}/${maps} maps`);
+  ok(conn === maps, mt === 'islands' ? `islands: no two starts land-connected on ${conn}/${maps} maps` : `${mt}: all starts mutually reachable on ${conn}/${maps} maps`);
   ok(resOk === maps, `${mt}: stone/gold/berries/trees near every start on ${resOk}/${maps} maps`);
   ok(same === SIZES.length, `${mt}: same seed twice gives the same map + hash`);
   if (miss.length) console.log('    ' + miss.slice(0, 6).join('\n    '));
