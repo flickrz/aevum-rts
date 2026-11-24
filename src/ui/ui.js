@@ -1093,7 +1093,7 @@ export class UI {
       const paused = this.gameMenuVisible();
       safe(() => this._refreshScore());
       safe(() => this._chatTick());
-      if (paused && this.pauseInfoEl) { const mt = this.game.cfg?.mapType; this.pauseInfoEl.textContent = (mt && MAP_TYPE_TR[mt] ? tr('Harita: ') + MAP_TYPE_TR[mt] : '') + (this.app.renderer?.climate ? tr(' · İklim: ') + this.app.renderer.climate.name : ''); }
+      if (paused && this.pauseInfoEl) { const mt = this.game.cfg?.mapType; this.pauseInfoEl.textContent = (mt && MAP_TYPE_TR[mt] ? tr('Harita: ') + MAP_TYPE_TR[mt] : '') + (this.app.renderer?.climate ? tr(' · İklim: ') + tr(this.app.renderer.climate.name) : ''); }
       safe(() => this._syncPauseMenu());
       if (this.game.over && !this.gameOverShown) this.showGameOver(!!this.game.over.won);
     }
@@ -1186,7 +1186,7 @@ export class UI {
       s.push(`<span>${ico('x-speed')} <b>${d.speed ?? '-'}</b></span>`);
       if (e.type === 'transport' || Array.isArray(e.cargo)) s.push(`<span>${ico('u-transport')} <b>${(e.cargo || []).length}/10</b></span>`);
       if (e.carry && e.carry.amount > 0) s.push(`<span>${RES_ICON[e.carry.type] || ico('x-cargo')} <b>${Math.floor(e.carry.amount)}</b></span>`);
-      s.push(`<span>Durum: <b>${STATE_TR[e.state] || e.state || '-'}</b></span>`);
+      s.push(`<span>${tr('Durum')}: <b>${STATE_TR[e.state] || e.state || '-'}</b></span>`);
     } else if (e.kind === 'building' && this._fogged(e)) {
       if (d.popCap) s.push(`<span>${ico('x-pop')} <b>+${d.popCap}</b></span>`);
       s.push(tr('<span style="color:var(--dim)">Ne olup bittiğini görmek için oraya git.</span>'));

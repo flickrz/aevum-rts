@@ -1,5 +1,11 @@
 // English texts for tr() (src/i18n.js): { 'Türkçe': 'English' }, area: ui
 export default {
+  'Kurak': 'Arid',
+  'Kış': 'Winter',
+  'Sonbahar': 'Autumn',
+  'İlkbahar': 'Spring',
+  'Ilıman': 'Temperate',
+  'Durum': 'Status',
   "Oyunun yeni sürümü yayında. Sayfayı yenileyip tekrar dene.": "A new version of the game is live. Refresh the page and try again.",
   "Yiyecek": "Food",
   "Odun": "Wood",
