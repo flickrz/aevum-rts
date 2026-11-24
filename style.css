@@ -1073,7 +1073,7 @@ html.touch .chathead { flex-direction: row-reverse; }
 /* ---- "Duyurular" box on the right of the main menu (src/ui/news-ui.js) ---- */
 .news-wrap { position: absolute; right: clamp(28px, 6vw, 120px); top: clamp(16px, 3vh, 28px); z-index: 3; pointer-events: none; }
 .news-wrap > * { pointer-events: auto; }
-.news-box { position: relative; width: 320px; padding: 12px 14px; box-sizing: border-box; text-align: left; }
+.news-box { position: relative; width: min(400px, 30vw); padding: 12px 14px; box-sizing: border-box; text-align: left; }
 .news-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .news-lbl { color: var(--gold); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; font-weight: 600; }
 .news-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff5a4a; box-shadow: 0 0 8px rgba(255,90,74,.8); }

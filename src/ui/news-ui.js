@@ -82,6 +82,15 @@ export function newsBox(ui) {
   if (unread) btn.append(dot());
   btn.onclick = () => open(top);
   wrap.append(card, btn);
+  // (owner 2026-11-25: "yerleşim aevum menüsüyle aynı olsa") the card's top lines up with the main menu box's top
+  const align = () => {
+    if (!wrap.isConnected) { removeEventListener('resize', align); return; }
+    const box = wrap.parentElement && wrap.parentElement.querySelector('.menu-box.main');
+    if (!box || getComputedStyle(card).display === 'none') { wrap.style.top = ''; return; }
+    if (!box.offsetHeight) return;   // (a hidden page lays nothing out: try again when shown)
+    wrap.style.top = Math.max(10, box.offsetTop) + 'px';   // (offsetTop: not moved by the menu's rise-in transform)
+  };
+  addEventListener('resize', align); document.addEventListener('visibilitychange', align); requestAnimationFrame(() => { if (typeof ResizeObserver !== 'undefined' && wrap.parentElement) new ResizeObserver(align).observe(wrap.parentElement); requestAnimationFrame(align); }); setTimeout(align, 700); setTimeout(align, 1600); addEventListener('animationend', align, { capture: true });   // (again once the menu's fonts / rise-in settled)
   return wrap;
 }
 
