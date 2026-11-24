@@ -818,7 +818,7 @@ export class UI {
     this._recentToasts = (this._recentToasts || []).filter((r) => now - r.t < 1500);
     if (this._recentToasts.some((r) => r.key === key)) return;
     this._recentToasts.push({ key, t: now });
-    if (this.app.net && /kaydedildi|Senkron bozuldu|ayrıldı|düştü|koptu/i.test(text)) this._chatSys(String(text));   // system line in the chat feed
+    if (this.app.net && /kaydedildi|Senkron bozuldu|ayrıldı|düştü|koptu|saved|out of sync|left the game|host left|dropped|connection lost/i.test(text)) this._chatSys(String(text));   // system line in the chat feed
     const t = el('div', 'toast ' + type, keepIcons(esc(text)));
     if (x != null && z != null) t.onclick = () => this.app.focus?.(x, z);
     this.toastsEl.prepend(t);
