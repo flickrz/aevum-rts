@@ -63,6 +63,7 @@ const tc = () => ({ x: 82, z: 58 });
 // 4) units trained to a rally point do not stack
 {
   const g = mk(), p = g.players[0]; p.res.food = p.res.wood = p.res.gold = p.res.stone = 9999;
+    g.deer = g.deer.filter(d => !d.live);   // no wolves / bears near the rally (fast soldiers chase them off)
     const br = g._addBuilding('barracks', 0, 86, 62, true);
   if (!br) ok(false, 'barracks placed'); else {
     br.rally = { x: br.x, z: br.z + 12 };

@@ -55,6 +55,9 @@ export const UNITS = {
   // railway train: spawned by the sim for each connected station pair, not trainable / not commandable
   train: U('train', 'Tren', 'train', 4, {}, 0, 600, 0, 6, 4.5, 0, 1, 6, 0, {}, null, '🚂', 'İki bağlı istasyon arasında gidip gelir; her varışta altın kazandırır.'),
 };
+// (owner 2026-11-25: "askerlerin hızı çok yavaş") soldiers walk faster; villagers, ships, carts and trains unchanged
+const SOLDIER_SPEED = { infantry: 2, ranged: 2, support: 2, cavalry: 2, siege: 2 };
+for (const u of Object.values(UNITS)) { const k = SOLDIER_SPEED[u.cls]; if (k) u.speed = Math.round(u.speed * k * 100) / 100; }
 
 function B(id, name, age, cost, time, hp, size, popCap, trains, researches, dropoff, atk, range, los, icon, desc) {
   return { id, name, age, cost, time, hp, size, popCap, trains, researches, dropoff, atk, range, los, icon, desc };
