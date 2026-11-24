@@ -1,7 +1,7 @@
 // Aevum UI: main menu, HUD, minimap, tooltips, overlays. DOM only, no three.js.
 import { TEST_MODE } from '../testmode.js';
 import { AGES, UNITS, BUILDINGS, TECHS, PLAYER_COLORS } from '../data.js';
-import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS, MINE_CAP, healerStats, healerRate, PROD_B, PASTURE_IDLE_RATE, NO_ROTATE } from '../sim/game.js';
+import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS, MINE_CAP, healerStats, healerRate, healerBolt, PROD_B, PASTURE_IDLE_RATE, NO_ROTATE } from '../sim/game.js';
 import { firstLaunch, menuProfile } from './profile-ui.js';
 import { levelOf } from '../rank.js';
 import { menuHud, saveBadge, saveBadgeTitle, confirmDeleteSave, loginScreen, avatarEl, tpText } from './cloud-ui.js';
@@ -1188,7 +1188,7 @@ export class UI {
     if (e.kind === 'unit') {
       s.push(`<span>${ico('x-atk')} <b>${d.atk ?? 0}</b></span>`, `<span>${ico('x-armor')} <b>${d.armor ?? 0}</b></span>`);
       if (d.range) s.push(`<span>${ico('x-range')} <b>${d.range}</b></span>`);
-      if (e.type === 'healer') { const hp = this.game?.players?.[e.owner], st = healerStats(hp ? hp.age : 0); s.push(`<span>${tr('İyileştirme: <b>{0} can/sn · {1}{2} kare</b>', healerRate(hp), st.one ? tr('tek birlik, ') : '', st.r)}</span>`); }
+      if (e.type === 'healer') { const hp = this.game?.players?.[e.owner], st = healerStats(hp ? hp.age : 0); s.push(`<span>${tr('İyileştirme: <b>{0} can/sn · {1}{2} kare</b>', healerRate(hp), st.one ? tr('tek birlik, ') : '', st.r)}</span>`); const hb = healerBolt(hp ? hp.age : 0); if (hb) s.push(`<span>${hb.spl ? tr('Büyü oku: <b>{0} hasar · {1} kare menzil · {2} kare alan</b>', hb.atk, hb.r, hb.spl) : tr('Büyü oku: <b>{0} hasar · {1} kare menzil</b>', hb.atk, hb.r)}</span>`); }
       s.push(`<span>${ico('x-speed')} <b>${d.speed ?? '-'}</b></span>`);
       if (e.type === 'transport' || Array.isArray(e.cargo)) s.push(`<span>${ico('u-transport')} <b>${(e.cargo || []).length}/10</b></span>`);
       if (e.carry && e.carry.amount > 0) s.push(`<span>${RES_ICON[e.carry.type] || ico('x-cargo')} <b>${Math.floor(e.carry.amount)}</b></span>`);

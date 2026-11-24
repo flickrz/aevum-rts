@@ -248,6 +248,8 @@ export default {
   "Sınırsız {0}": "Unlimited {0}",
   "{0} / {1} can": "{0} / {1} HP",
   "İyileştirme: <b>{0} can/sn · {1}{2} kare</b>": "Healing: <b>{0} HP/s · {1}{2} tiles</b>",
+  "Büyü oku: <b>{0} hasar · {1} kare menzil</b>": "Magic bolt: <b>{0} damage · {1} tiles range</b>",
+  "Büyü oku: <b>{0} hasar · {1} kare menzil · {2} kare alan</b>": "Magic bolt: <b>{0} damage · {1} tiles range · {2} tiles area</b>",
   "tek birlik, ": "single unit, ",
   "<span style=\"color:var(--dim)\">Ne olup bittiğini görmek için oraya git.</span>": "<span style=\"color:var(--dim)\">Go there to see what's happening.</span>",
   "İnşaat: <b>%{0}</b>": "Construction: <b>{0}%</b>",

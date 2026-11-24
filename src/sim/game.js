@@ -25,9 +25,13 @@ const RATE = { tree: 0.42, stone: 0.36, gold: 0.36, berries: 0.4, deer: 0.5, wol
 // any player that come close (aggro tiles), follows them up to leash tiles from home, then lies as a carcass to hunt.
 export const PREY = { deer: 1, wolf: 1, bear: 1 };
 export const PRED = {
-  wolf: { name: 'Kurt', hp: 40, atk: 3, rof: 1.5, spd: 1.9, aggro: 3, leash: 7, food: 160 },
-  bear: { name: tr('Ayı'), hp: 150, atk: 8, rof: 2, spd: 1.5, aggro: 2.5, leash: 6, food: 320 },
+  wolf: { name: 'Kurt', hp: 40, atk: 3, rof: 1.5, spd: 1.9, aggro: 4.5, leash: 8, food: 160 },
+  bear: { name: tr('Ayı'), hp: 150, atk: 8, rof: 2, spd: 1.5, aggro: 4.5, leash: 8, food: 320 },
 };
+// (owner 2026-11-24 "saldırınca karşılık vermiyor") a hit predator turns on its attacker (foe/foeT, set in
+// _applyDamage) for PRED_FOE_T s and chases it up to PRED_FOE_LEASH tiles from home; predators spawn at least
+// PRED_START tiles from every start (less on small maps: N * PRED_START_K)
+export const PRED_FOE_T = 8, PRED_FOE_LEASH = 16, PRED_START = 36, PRED_START_K = 0.22;
 // stand spots per resource tile (deer move: none) and their offsets from the tile centre (sides, then corners)
 const SPOTS = { stone: 4, gold: 4, tree: 3, berries: 3 }, SPOT_R = 6, SPOT_BOX = 8, SPOT_O = [0, 1.3, 1.3, 0, 0, -1.3, -1.3, 0, 1.12, 1.12, 1.12, -1.12, -1.12, -1.12, -1.12, 1.12];
 // hunting (owner 2026-11-23 "önce öldürsün"): a live animal resource (e.alive) is first brought down with spear
@@ -98,6 +102,11 @@ export const HEALER_R = 8, HEALER_HP = 2, HEALER_STOP = 5;   /* (owner 2026-11-2
 export const HEALER_AGE = [{ r: 6, hp: 2, one: true }, { r: 6, hp: 3 }, { r: 7, hp: 4 }, { r: 8, hp: 5 }, { r: 8, hp: 6 }];
 export const healerStats = age => HEALER_AGE[Math.max(0, Math.min(HEALER_AGE.length - 1, age | 0))];
 export const healerRate = p => { const s = healerStats(p ? p.age : 0); return Math.round(s.hp * (1 + ((p && p.mods && p.mods.heal) || 0))); };
+// (owner 2026-11-24) from the Bronze Age the healer also casts a magic bolt (an arrow projectile marked magic) at the
+// nearest foe within r every HEALER_BOLT_ROF s: one target in the Bronze Age, from the Middle Ages it splashes spl
+// tiles (half damage). Modest damage: she stays a support unit. Index = age; null = no attack.
+export const HEALER_BOLT = [null, { atk: 4, r: 6 }, { atk: 5, r: 6, spl: 1.2 }, { atk: 6, r: 6.5, spl: 1.5 }, { atk: 7, r: 7, spl: 1.8 }], HEALER_BOLT_ROF = 2;
+export const healerBolt = age => HEALER_BOLT[Math.max(0, Math.min(HEALER_BOLT.length - 1, age | 0))];
 const healerStop = r => Math.min(HEALER_STOP, r - 1.5);
 // the castle shoots a volley at up to this many targets every 2 s, its attack +4 per age (2026-11-17 playtest)
 export const CASTLE_VOLLEY = 3, CASTLE_AGE_ATK = 4;
@@ -567,9 +576,10 @@ export class Game {
     {
       const nearTree = (x, z) => { for (let j = -4; j <= 4; j++) for (let i = -4; i <= 4; i++) { const X = x + i, Z = z + j; if (X < 0 || Z < 0 || X >= N || Z >= N) continue; const id = this.resAt[Z * N + X]; if (id) { const r = this.entities.get(id); if (r && r.type === 'tree') return true; } } return false; };
       let packs = this.cfg.tutorial ? 0 : Math.max(1, Math.round(N / 64)), bears = this.cfg.tutorial ? 0 : Math.max(1, Math.round(N / 96));
-      for (let k = 0, tries = (packs + bears) * 8; k < tries && packs + bears > 0; k++) {
+      const pMin = Math.min(PRED_START, Math.max(18, N * PRED_START_K));
+      for (let k = 0, tries = (packs + bears) * 12; k < tries && packs + bears > 0; k++) {
         const cx = (4 + this.rand() * (N - 8)) | 0, cz = (4 + this.rand() * (N - 8)) | 0;
-        if (!land(cx, cz) || sDist(cx + 0.5, cz + 0.5) < 24 || !nearTree(cx, cz)) continue;
+        if (!land(cx, cz) || sDist(cx + 0.5, cz + 0.5) < pMin || !nearTree(cx, cz)) continue;
         if (packs > 0 && (bears <= 0 || k % 2 === 0)) { const n = 2 + (this.rand() * 2 | 0); for (let a = 0, put = 0; a < n * 6 && put < n; a++) { const x = cx + (this.rand() * 3 | 0) - 1, z = cz + (this.rand() * 3 | 0) - 1; if (land(x, z)) { this._addRes('wolf', x, z, PRED.wolf.food); put++; } } packs--; }
         else { this._addRes('bear', cx, cz, PRED.bear.food); bears--; }
       }
@@ -1572,6 +1582,7 @@ export class Game {
   _applyDamage(target, dmg, killer, proj) {
     if (!target || target.dead) return;
     target.hp -= dmg; target.hitT = this.time;
+    if (target.live && killer && !killer.dead && killer.id && killer.kind === 'unit' && killer.owner >= 0) { target.foe = killer.id; target.foeT = this.time; }   // (predator retaliation, see PRED_FOE_T)
     // view only: the attacker shows through the victim team's fog for a few seconds (read by isEntityVisible, never by the sim)
     if (killer && !killer.dead && killer.id && killer.owner >= 0 && killer.kind !== 'resource') { killer.revT = this.time; killer.revO = target.owner; }
     // call for help: idle soldiers of the victim's side close by come to fight the attacker (at most once a second per victim)
@@ -1689,8 +1700,10 @@ export class Game {
   // a live predator: true while it hunts a unit (the deer wander is skipped then)
   _predTick(d, dt) {
     const q = PRED[d.type]; if (d.cd > 0) d.cd -= dt;
+    const mad = d.foe && this.time - d.foeT < PRED_FOE_T;
+    if (mad && d.tid !== d.foe) { const f = this.entities.get(d.foe); if (f && !f.dead && !f.aboard && f.kind === 'unit') d.tid = d.foe; }
     let t = d.tid ? this.entities.get(d.tid) : null;
-    if (t && (t.dead || t.aboard || Math.hypot(t.x - d.hx, t.z - d.hz) > q.leash)) { t = null; d.tid = 0; d.wx = d.hx; d.wz = d.hz; d.wt = this.time + 4; }
+    if (t && (t.dead || t.aboard || Math.hypot(t.x - d.hx, t.z - d.hz) > (mad && t.id === d.foe ? PRED_FOE_LEASH : q.leash))) { t = null; d.tid = 0; d.wx = d.hx; d.wz = d.hz; d.wt = this.time + 4; }
     d.st -= dt;
     if (!t && d.st <= 0) {
       d.st = 0.5; const r = this.time - (d.hitT == null ? -9 : d.hitT) < 3 ? 7 : q.aggro; let bd = r * r;
@@ -1843,6 +1856,7 @@ export class Game {
     for (const h of this.units) {
       if (h.type !== 'healer' || h.dead || h.aboard) continue;
       const p = this.players[h.owner], st = healerStats(p ? p.age : 0), n = healerRate(p), R2 = st.r * st.r;
+      this._healerBolt(h, p);
       let got = [];
       this._near(h.x, h.z, st.r, e => { if ((done && done.has(e.id)) || !this._healable(h, e)) return; const dx = e.x - h.x, dz = e.z - h.z; if (dx * dx + dz * dz <= R2) got.push(e); });
       if (!got.length) continue;
@@ -1851,6 +1865,18 @@ export class Game {
       for (const e of got) { done.add(e.id); e.hp = Math.min(e.maxHp, e.hp + n); }
       this.events.emit('heal', { e: h, targets: got });   // (view only)
     }
+  }
+  // the healer's magic bolt (see HEALER_BOLT): nearest enemy unit (or angry predator) within r, ties by id
+  _healerBolt(h, p) {
+    const b = healerBolt(p ? p.age : 0); if (!b || this.time < (h.boltT || 0)) return;
+    let t = null, bd = b.r * b.r;
+    const look = e => { if (e.dead || e.aboard || e.kind !== 'unit' || !this.isEnemy(h.owner, e.owner)) return; const k = (e.x - h.x) ** 2 + (e.z - h.z) ** 2; if (k < bd || (k === bd && t && e.id < t.id)) { bd = k; t = e; } };
+    this._near(h.x, h.z, b.r, look);
+    for (const e of this._angry) { if (!e.live) continue; const k = (e.x - h.x) ** 2 + (e.z - h.z) ** 2; if (k < bd || (k === bd && t && e.id < t.id)) { bd = k; t = e; } }
+    if (!t) return;
+    h.boltT = this.time + HEALER_BOLT_ROF - 0.01; h.attackT = this.time; h.rot = Math.atan2(t.x - h.x, t.z - h.z);
+    const before = this.projectiles.length; this._fire(h, t, this._dmg(b.atk, {}, false, t), 'arrow');
+    const pj = this.projectiles[before]; if (pj) { pj.magic = 1; if (b.spl) pj.spl = b.spl; }
   }
   // an idle healer with nobody to heal within HEALER_R walks toward the nearest wounded friend within her sight. Her
   // walk is marked (order.hs, hsId = its target; any other order clears hsId, see _setOrder): when it ends with that
@@ -2291,6 +2317,7 @@ export class Game {
         pr.splice(i, 1); const src = this.entities.get(p.srcId) || { owner: p.owner, dead: true, kind: 'unit', id: 0 };
         if (t && !t.dead) this._applyDamage(t, p.dmg, src, p.type);
         else this.events.emit('hit', { target: null, x: p.tx, y: p.ty, z: p.tz, dmg: 0, proj: p.type });
+        if (p.spl) { const R = p.spl, hit = []; this._near(p.tx, p.tz, R, e => { if (!e.dead && e !== t && (this.isEnemy(p.owner, e.owner) || (e.live && e.foe === p.srcId)) && Math.hypot(e.x - p.tx, e.z - p.tz) < R) hit.push(e); }); for (const e of hit) this._applyDamage(e, Math.max(1, Math.round(p.dmg * 0.5)), src, p.type); }
         if (p.type === 'stone' || p.type === 'cannonball') { const hit = []; this._near(p.tx, p.tz, 1.6, e => { if (!e.dead && this.isEnemy(p.owner, e.owner) && e !== t && Math.hypot(e.x - p.tx, e.z - p.tz) < 1.6) hit.push(e); }); for (const e of hit) this._applyDamage(e, Math.max(1, Math.round(p.dmg * 0.4)), src, p.type); }
       }
     }
