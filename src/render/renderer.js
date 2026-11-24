@@ -1314,6 +1314,22 @@ export class Renderer {
     this.renderer.render(this.scene, this.camera);
   }
 
+  // a screenshot for a @claude feedback line (2026-11-25): draws the scene again and copies the canvas in the same
+  // task (the WebGL buffer is still intact then, no preserveDrawingBuffer needed), downscaled to maxW, as a JPEG
+  // data URL; null when it fails. The HUD (HTML) is not in it.
+  snapshot(maxW = 960, q = 0.6) {
+    try {
+      const src = this.renderer.domElement;
+      this.renderer.render(this.scene, this.camera);
+      const k = Math.min(1, maxW / Math.max(1, src.width)), c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(src.width * k)); c.height = Math.max(1, Math.round(src.height * k));
+      c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+      let url = c.toDataURL('image/jpeg', q);
+      if (url.length > 200000) url = c.toDataURL('image/jpeg', 0.4);
+      return /^data:image\/jpeg;base64,/.test(url) && url.length <= 300000 ? url : null;
+    } catch { return null; }
+  }
+
   // Dynamic resolution: when frames stay slow (under ~45 fps for 2 s) the render resolution steps down a little,
   // and it steps back up once frames are fast again for a while. Smoothness first; the HUD is not affected.
   _adaptResolution() {

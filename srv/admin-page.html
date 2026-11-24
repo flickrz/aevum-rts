@@ -48,6 +48,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .badge.approved { background: rgba(111,220,140,.15); color: var(--green); }
 .badge.rejected { background: rgba(255,93,93,.15); color: var(--red); }
 .badge.done { background: rgba(127,180,239,.15); color: var(--blue); }
+.shot { grid-column: 1 / -1; max-width: 100%; border-radius: 6px; border: 1px solid rgba(255,255,255,.1); }
 .acts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .acts button { border: 1px solid rgba(255,255,255,.14); background: transparent; border-radius: 6px; padding: 4px 10px; font-size: 12.5px; }
 .acts button.ok { border-color: rgba(111,220,140,.5); color: var(--green); }
@@ -197,7 +198,20 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
       else acts.append(mk('', 'Geri al', 'new'));
       var note = el('input'); note.placeholder = 'Not (isteğe bağlı)'; note.value = r.note || ''; note.maxLength = 500; note.setAttribute('aria-label', 'Not');
       note.addEventListener('change', function () { if ((r.note || '') !== note.value) decide(r, { note: note.value }, []); });
-      acts.append(note); it.append(acts); list.append(it);
+      acts.append(note);
+      if (r.shot) {
+        // the screenshot is read only on this click (one Firestore read), then kept in r.img
+        var sb = el('button', '', 'görüntü'); sb.type = 'button';
+        sb.onclick = function () {
+          if (it.querySelector('img.shot')) { it.querySelector('img.shot').remove(); return; }
+          sb.disabled = true;
+          (r.img ? Promise.resolve({ img: r.img }) : api('/mp/admin/shot?id=' + encodeURIComponent(r.id))).then(function (j) {
+            r.img = j.img; var im = el('img', 'shot'); im.src = j.img; im.alt = 'Ekran görüntüsü'; it.append(im);
+          }, function (e) { $('sync').textContent = 'Görüntü okunamadı: ' + e.message; }).finally(function () { sb.disabled = false; });
+        };
+        acts.append(sb);
+      }
+      it.append(acts); list.append(it);
     });
     $('more').hidden = vis.length <= shown;
   }

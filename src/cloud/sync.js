@@ -20,6 +20,9 @@ import { firestoreApi, CloudError } from './rest.js';
 import { packSave, unpackSave } from './codec.js';
 import { isAvatar, defaultAvatar, avatarOf } from '../avatars.js';
 import { tr, srvTr } from '../i18n.js';
+import { clipChat } from '../chatlog.js';
+// the largest screenshot data URL a @claude line may carry (src/ui/ui.js makes ~960 px JPEGs well under this)
+export const SHOT_MAX = 300000;
 
 export const MAX_CLOUD_SAVES = 30;
 export const MAX_CLOUD_AUTOS = 10;                   // autosaves kept in the cloud (every match makes one; the oldest go first)
@@ -209,10 +212,17 @@ export class CloudSync {
   logChat(e) {
     if (!this.auth.user || !e || !e.text) return Promise.resolve(false);
     const id = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
-    const data = { t: String(e.t || ''), room: String(e.room || ''), name: String(e.name || '').slice(0, 40), text: String(e.text).slice(0, 200), uid: this.auth.user.uid, at: null };
+    const data = { t: String(e.t || ''), room: String(e.room || ''), name: String(e.name || '').slice(0, 40), text: clipChat(e.text), uid: this.auth.user.uid, at: null };
     // a line to @claude also goes to users/{uid}/claude/{id} (the owner's admin page reads only that small collection,
     // srv/admin.mjs); a separate write, so the chat log line never depends on it
-    if (/@claude/i.test(data.text)) this.fs.commit([{ set: this._base() + '/claude/' + id, data, serverTime: ['at'] }]).catch(() => {});
+    // (2026-11-25) a screenshot attached to it goes to users/{uid}/claudeshot/{same id} {img}: a separate document, so
+    // the admin list never downloads images; the line only carries shot: true
+    if (/@claude/i.test(data.text)) {
+      const img = typeof e.shot === 'string' && /^data:image\/jpeg;base64,/.test(e.shot) && e.shot.length <= SHOT_MAX ? e.shot : null;
+      const w = [{ set: this._base() + '/claude/' + id, data: img ? Object.assign({}, data, { shot: true }) : data, serverTime: ['at'] }];
+      if (img) w.push({ set: this._base() + '/claudeshot/' + id, data: { img, uid: data.uid, at: null }, serverTime: ['at'] });
+      this.fs.commit(w).catch(() => {});
+    }
     return this.fs.commit([{ set: this._base() + '/chatlog/' + id, data, serverTime: ['at'] }]).then(() => true, () => false);
   }
 

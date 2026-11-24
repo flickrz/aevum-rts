@@ -4,6 +4,10 @@
 // redeploy or its sleep), capped at MAX lines. Never part of the game state.
 const KEY = 'aevum.chatlog.v1', MAX = 20000;
 let mem = null, sink = null;
+// (player request 2026-11-25) a feedback line to @claude may be up to FB_MAX characters; any other line CHAT_MAX
+export const CHAT_MAX = 200, FB_MAX = 1000;
+export const chatMax = (text) => (/@claude/i.test(String(text || '')) ? FB_MAX : CHAT_MAX);
+export const clipChat = (text) => { const s = String(text || ''); return s.slice(0, chatMax(s)); };
 // the cloud copy: main.js sets a function that writes a line the player SENT to Firestore (CloudSync.logChat)
 export function setChatSink(fn) { sink = typeof fn === 'function' ? fn : null; }
 function load() {
@@ -18,9 +22,10 @@ function stamp(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.
 export function logChat(m) {
   if (!m || typeof m.text !== 'string' || !m.text.trim()) return;
   const L = load();
-  const e = { t: stamp(new Date()), room: String(m.room || ''), name: String(m.name || '?').slice(0, 40), text: m.text.slice(0, 200) };
+  const e = { t: stamp(new Date()), room: String(m.room || ''), name: String(m.name || '?').slice(0, 40), text: clipChat(m.text) };
   L.push(e);
-  if (m.mine && sink) { try { sink(e); } catch { /* the cloud copy is best effort */ } }
+  // (m.shot: a screenshot data URL attached to a @claude line; only the cloud copy gets it, never localStorage)
+  if (m.mine && sink) { try { sink(m.shot ? Object.assign({}, e, { shot: m.shot }) : e); } catch { /* the cloud copy is best effort */ } }
   if (L.length > MAX) L.splice(0, L.length - MAX);
   try { localStorage.setItem(KEY, JSON.stringify(L)); } catch { /* no storage (tests, private mode): the log stays in memory */ }
 }

@@ -1,4 +1,4 @@
-import { logChat } from '../chatlog.js';
+import { logChat, clipChat } from '../chatlog.js';
 import { hashParts } from './hashparts.js';
 import { tr } from '../i18n.js';
 // Aevum - multiplayer session: lobby + deterministic lockstep over an abstract transport.
@@ -231,7 +231,7 @@ export class NetSession {
       const w = !s && st && Array.isArray(st.waiting) ? st.waiting.find(x => x.peer === from) : null;
       const who = !s && !w && this.verified ? this._who(null, from, ident) : null;
       const name = s ? s.name : w ? w.name : who ? who.name : this.verified ? '?' : String(d.name || '?').slice(0, 20);
-      const m = { from, name, text: d.text.slice(0, 200) };
+      const m = { from, name, text: clipChat(d.text) };
       try { logChat({ room: this.room, name: m.name, text: m.text }); } catch { /* never let logging break the chat */ }
       this.emit('chat', m);
     });
@@ -672,10 +672,11 @@ export class NetSession {
     return true;
   }
 
-  chat(text) {
-    text = String(text || '').trim().slice(0, 200); if (!text) return;
+  // opts.shot: a screenshot (JPEG data URL) for a @claude line; it goes only to the sender's cloud log, never the room
+  chat(text, opts) {
+    text = clipChat(String(text || '').trim()); if (!text) return;
     this._send('chat', { name: this.name, text });
-    try { logChat({ room: this.room, name: this.name, text, mine: true }); } catch { /* never let logging break the chat */ }
+    try { logChat({ room: this.room, name: this.name, text, mine: true, shot: opts && opts.shot }); } catch { /* never let logging break the chat */ }
     this.emit('chat', { from: this.t.id, name: this.name, text });
   }
 

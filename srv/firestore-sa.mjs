@@ -102,6 +102,8 @@ export function createSaStore({ sa, projectId, fetch: fetchFn = globalThis.fetch
       const x = (Array.isArray(r) ? r : []).find((o) => o && o.result);
       return x ? Number(x.result.aggregateFields.n.integerValue) || 0 : 0;
     },
+    // one raw document by its path (null when missing)
+    async doc(docPath) { return call(base + '/' + docPath); },
     // merges raw Firestore fields into {collection}/{id} (only the given fields change)
     async patch(docPath, fields) {
       const mask = Object.keys(fields).map((k) => 'updateMask.fieldPaths=' + encodeURIComponent(k)).join('&');
