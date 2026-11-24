@@ -3,6 +3,7 @@
 // Builders follow entities.js conventions: buildings add meshes to c.body / c.roof (baked later),
 // animated parts go to c.live (left unbaked, attached to the root as userData.live).
 import * as THREE from 'three';
+import { loadSea, hasSea, addSeaModel, seaHeight } from './glb-models.js';
 
 const PI = Math.PI;
 const G = {
@@ -331,6 +332,8 @@ function sailor(p, color, x, y, z, s) {
   bx(g, mat(color, .85), .12, .18, .09, 0, 0, 0); bx(g, M.skin, .08, .08, .08, 0, .18, 0);
   return g;
 }
+// generated ship models: [length (= the procedural pd), share of the model's height under the water, selection ring]
+const SHIP_GLB = { fishboat: [1.2, .12, [.8, 1.5]], transport: [2.0, .12, [1.4, 2.4]], galley: [2.3, .1, [1.3, 2.6]], galleon: [2.7, .1, [1.7, 3.0]], ironclad: [2.4, .15, [1.4, 2.7]] };
 export const SEA_UNITS = { fishboat: 1, transport: 1, galley: 1, galleon: 1, ironclad: 1, train: 1 };
 // builds into `inner` (already in root); returns dims pre-USCALE (entities.js multiplies by USCALE)
 export function makeSeaUnit(type, color, A, root, inner, P) {
@@ -341,7 +344,19 @@ export function makeSeaUnit(type, color, A, root, inner, P) {
   P.ship = type;
   let h = 1, pw = .5, pd = 1.2;
   const hw = A >= 4 ? M.iron : A === 0 ? M.log : M.wood;
-  if (type === 'fishboat') {
+  try { loadSea(); } catch (err) { /* procedural ships */ }
+  const GL = SHIP_GLB[type];
+  if (GL && hasSea(type)) {
+    // generated model (glb-models.js): the hull only; wake, cannon flashes and funnel smoke as the procedural ship
+    const m = addSeaModel(hull, type, color, GL[0], 0);
+    const mh = seaHeight(type) * GL[0];
+    m.position.y = -mh * GL[1];   // (the keel under the waterline)
+    P.glb = true;
+    if (type === 'galleon') P.guns = 'side';
+    if (type === 'ironclad') { P.guns = 'turret'; P.funnel = piv(hull, 0, mh * .45, -.3); P.funTop = mh * .3; }
+    if (type === 'transport') { P.figs = []; P.nfig = 0; for (let i = 0; i < 10; i++) { const f = sailor(hull, color, (i & 1 ? .2 : -.2), mh * (1 - GL[1]) * .35, -.6 + (i >> 1) * .3, .9); f.visible = false; P.figs.push(f); } }
+    h = Math.max(.8, mh * (1 - GL[1])); pw = GL[0] * .4; pd = GL[0]; P.ringE = GL[2];
+  } else if (type === 'fishboat') {
     if (A === 0) { const b = cyzC(hull, M.log, .16, 1.1, 0, .05, 0); b.scale.x = 1.3; bx(hull, M.dwood, .22, .04, .9, 0, .14, 0); }
     else { bx(hull, hw, .38, .18, 1.0, 0, -.06, 0); bx(hull, M.dwood, .42, .04, 1.02, 0, .12, 0); const bw = bx(hull, hw, .26, .16, .26, 0, -.05, .56); bw.rotation.y = PI / 4; }
     P.fisher = sailor(hull, color, 0, .2, -.15, 1);

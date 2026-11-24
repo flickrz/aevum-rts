@@ -5,7 +5,7 @@ import { BUILDINGS } from '../data.js';
 import { updateConstruction, disposeConstruction, updateRepair } from './construction.js';
 import { SEA_BUILD, SEA_UNITS, makeSeaUnit, seaAnimUnit, seaAnimBuilding, makeFish, seaAnimFish, seaMask, pastureSheepK, dockY } from './models-sea.js';
 import { StaticBatches } from './static-batch.js';
-import { loadGlbModels, loadEra, glbVersion, hasGlb, glbPlanned, eraSettled, addGlbBuilding, addGlbPiece, loadCrop, cropGeo } from './glb-models.js';
+import { loadGlbModels, loadEra, glbVersion, hasGlb, glbPlanned, eraSettled, addGlbBuilding, addGlbPiece, loadCrop, cropGeo, loadSea, hasSea, dockFile, addSeaModel } from './glb-models.js';
 
 const PI = Math.PI;
 
@@ -1165,6 +1165,16 @@ function makeBuilding(type, size, age, color, mask, seed, noGlb) {
       glbWall(c, type, era, color);
       U.glb = true;
     }
+    // the dock's generated model (glb-models.js, sea set), its pier turned to the water like the procedural one
+    if (type === 'dock' && !noGlb) {
+      try { loadSea(); } catch (err) { /* procedural dock */ }
+      if (hasSea(dockFile(era))) {
+        body.clear(); roof.clear(); slab.clear(); c.chim.length = 0; c.spin = null;
+        let d = 2; for (let i = 0; i < 4; i++) if ((mask & 15) === 1 << i) d = i;
+        addSeaModel(body, dockFile(era), color, size * 1.15, -.35, [Math.PI, Math.PI / 2, 0, -Math.PI / 2][d]);
+        U.glb = true;
+      }
+    }
     // a generated 3D model for this type and era (glb-models.js): it replaces the procedural body, roof and pad
     // (the model stands on its own grass base); chimney smoke and spinning parts belong to the old model
     else if (!noGlb && hasGlb(type, era)) {
@@ -1532,6 +1542,7 @@ function makeUnit(type, color, age) {
   const A = Math.max(0, Math.min(4, age | 0));
   try {
     const u = makeUnitRaw(type, color, A);
+    if (u.P.glb) return u;   // (a generated ship model: its own textured mesh, drawn as it is)
     try { bakeUnit(u, type + '|' + A + '|' + color); return u; }
     catch (err) {
       if (!_ubakeWarned) { _ubakeWarned = true; console.warn('[entities] unit bake failed, drawing unmerged:', type, A, err); }
@@ -2147,7 +2158,7 @@ export class EntityView {
     // the building keeps its old model until that era's files are in (or failed)
     if (age !== v.age) { if (glbPlanned(e.type, age) && !hasGlb(glbKey(e.type), age) && !eraSettled(age)) loadEra(age); else this._buildBuildingMesh(v, e, age); }
     // a generated model finished loading after this building was drawn: swap it in (quietly, no finish bounce)
-    else if (v.glbv !== glbVersion() && !v.root.userData.glb && hasGlb(glbKey(e.type), age)) { v.quiet = true; this._buildBuildingMesh(v, e, age); }
+    else if (v.glbv !== glbVersion() && !v.root.userData.glb && (hasGlb(glbKey(e.type), age) || (e.type === 'dock' && hasSea(dockFile(age))))) { v.quiet = true; this._buildBuildingMesh(v, e, age); }
     const root = v.root, U = root.userData;
     if (v.pop > 0) this._pop(v, dt);
     root.position.set(e.x, y, e.z);
@@ -2288,7 +2299,8 @@ export class EntityView {
   _updUnit(v, e, dt, time, gt) {
     if (e.kind === 'unit' && !e.dead) {
       const age = this._vage(v, e);
-      if (age !== v.age || v.utype !== e.type) { this._buildUnitMesh(v, e, age); v.pop = .5; }   // (type: a final-form upgrade)
+      if (age !== v.age || v.utype !== e.type) { this._buildUnitMesh(v, e, age); v.pop = .5; }
+      else if (v.rig === 'ship' && !v.P.glb && hasSea(e.type)) this._buildUnitMesh(v, e, age);   // (its generated model arrived)   // (type: a final-form upgrade)
     }
     if (v.pop > 0) this._pop(v, dt);
     const map = this.game.map, k = Math.min(1, dt * 14);
