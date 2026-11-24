@@ -1207,10 +1207,16 @@ export class Game {
     this._pay(b.owner, d.cost); b.queue.push({ kind: 'unit', id: unitType, t: 0, total: d.time }); return true;
   }
   research(buildingId, techId) {
-    const b = this.entities.get(buildingId), d = TECHS[techId];
+    let b = this.entities.get(buildingId); const d = TECHS[techId];
     if (!b || b.dead || b.kind !== 'building' || !b.done || !d) return false;
     const p = this.players[b.owner];
     if (!BUILDINGS[b.type].researches.includes(techId) || !this.isUnlocked(b.owner, 'tech', techId) || p.pending.includes(techId) || !this.canAfford(b.owner, d.cost)) return false;
+    // several buildings of this type: a busy one hands the research to the idle / least busy one (lowest id on a tie),
+    // so techs run in parallel (2026-11-24 player report: "3 banks, all upgrades queue on one bank")
+    if (b.queue.length) {
+      const b0 = b;
+      for (const o of this.buildings) if (o.owner === b0.owner && o.type === b0.type && o.done && !o.dead && (o.queue.length < b.queue.length || (o.queue.length === b.queue.length && o.id < b.id))) b = o;
+    }
     this._pay(b.owner, d.cost); p.pending.push(techId); b.queue.push({ kind: 'tech', id: techId, t: 0, total: d.time }); return true;
   }
   // the named buildings the next age still needs (finished ones count)
