@@ -1058,3 +1058,12 @@ html.touch input, html.touch textarea, html.touch select { font-size: 16px !impo
 /* phones: keep the HUD out of the notch / rounded corners (viewport-fit=cover in index.html) */
 html.touch #ui { left: env(safe-area-inset-left); right: env(safe-area-inset-right); }
 html.touch .chathead { flex-direction: row-reverse; }
+/* end-of-game graphs (src/ui/graphs-ui.js) */
+.hgraph { margin: 10px 0 4px; }
+.hgraph .seg { margin-bottom: 6px; }
+.hg-plot svg { width: 100%; height: auto; display: block; background: rgba(0,0,0,.18); border: 1px solid var(--line); border-radius: 7px; }
+.hg-grid { stroke: rgba(255,255,255,.08); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.hg-ax { fill: var(--dim); font-size: 10px; }
+.hg-leg { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.hg-chip { background: transparent; border: 1px solid var(--line); border-radius: 7px; padding: 3px 8px; font-size: 12px; color: var(--ink); cursor: pointer; }
+.hg-chip.off { opacity: .35; }

@@ -15,6 +15,8 @@ import { ico, applyIcons, keepIcons, stripIcons, RES_ICONS, CAT_ICONS, NATURE_IC
 import { ask, askOpen } from './ask.js';
 import { interruptedEntry } from './notice-ui.js';
 import { tr, LANG, setLang } from '../i18n.js';
+import { graphPanel } from './graphs-ui.js';
+import { playerScore } from '../sim/history.js';
 // a tab on the previous build (the server runs a new one): no rooms until it reloads
 const STALE_TEXT = tr('Oyunun yeni sürümü yayında. Sayfayı yenileyip tekrar dene.');
 
@@ -1857,12 +1859,13 @@ export class UI {
   }
   _closeModal(force) { if (this.modalLocked && !force) return; this._tribOpen = false; this.modalLocked = false; this.techTiles = null; this.modalEl.classList.add('hidden'); this.modalEl.innerHTML = ''; }
   _score(p) {
-    const s = p.stats || {}, ga = s.gathered || {};
-    const techs = typeof s.techs === 'number' ? s.techs : (p.techs?.size || 0);
-    return Math.round(RES_LIST.reduce((a, r) => a + (ga[r] || 0), 0) / 10 + (s.kills || 0) * 20 + (s.buildingsBuilt || 0) * 15 + (s.razed || 0) * 40 + techs * 30 + (p.age || 0) * 200 + (s.unitsTrained || 0) * 5);
+    return playerScore(p);
   }
+  _statsPlayers(showAll) { const g = this.game; return g.players.filter((p) => showAll || p.id === this._me() || this._ally(this._me(), p.id) || g.over || this._enemyKnown(p)); }
+  _statsName(p) { return p.id === this._me() ? tr('Sen') : this.game?.mp ? this._pname(p.id) : tr('Rakip ') + p.id; }
+  _graphs(m, showAll) { safe(() => m.append(graphPanel(this.game, this._statsPlayers(showAll).map((p) => ({ id: p.id, name: this._statsName(p) })))), null); }
   _statsTable(showAll) {
-    const g = this.game, ps = g.players.filter((p) => showAll || p.id === this._me() || this._ally(this._me(), p.id) || g.over || this._enemyKnown(p));
+    const g = this.game, ps = this._statsPlayers(showAll);
     const row = (label, fn) => `<tr><td>${label}</td>${ps.map((p) => `<td>${fn(p)}</td>`).join('')}</tr>`;
     const st = (p) => p.stats || {};
     let h = '<table class="st"><tr><th></th>' + ps.map((p) => `<th><span class="dot" style="background:${hex(PLAYER_COLORS[p.id] ?? 0xffffff)}"></span>${p.id === this._me() ? tr('Sen') : this.game?.mp ? esc(this._pname(p.id)) + ` <small>T${this._teamOf(p.id)}</small>` : tr('Rakip ') + p.id}${p.defeated ? ' ☠' : ''}</th>`).join('') + '</tr>';
@@ -1959,6 +1962,7 @@ export class UI {
     this.modalLocked = false; this.techTiles = null;
     this.modalEl.innerHTML = '';
     const m = el('div', 'modal panel', `<h2>${tr('İstatistikler')}</h2><div style="color:var(--dim)">${tr('Süre: {0} · Rakipler yalnızca keşfedildiğinde listelenir', fmtTime(this.game.time || 0))}</div>${this._statsTable(false)}`);
+    this._graphs(m, false);
     const b = el('button', 'mbtn small', tr('Kapat')); b.onclick = () => { this._click(); this._closeModal(); };
     m.append(b); this.modalEl.append(m); this.modalEl.classList.remove('hidden');
   }
@@ -1971,6 +1975,7 @@ export class UI {
     if (this.game.mp) won = this._mpWon(won);
     const wt = this.game.mp ? this._winTeam() : null, wtxt = wt != null ? tr('Takım {0} kazandı! ', wt) : '';
     const m = el('div', 'modal panel', `<h1 class="${won ? 'win' : 'lose'}">${won ? tr('ZAFER') : tr('YENİLGİ')}</h1><div style="color:var(--dim)">${wtxt}${won ? (this.game.mp ? tr('Takımın tüm rakipleri alt etti.') : tr('Tüm rakiplerini alt ettin. Uygarlığın çağlara damga vurdu.')) : tr('Uygarlığın tarihe karıştı.')} · ${tr('Süre: {0}', fmtTime(this.game.time || 0))}</div>${this._statsTable(true)}`);
+    this._graphs(m, true);
     const btn = (t, fn, cls = '') => { const b = el('button', 'mbtn small ' + cls, t); b.onclick = () => { this._click(); fn(); }; m.append(b); };
     const cfg = this.game.cfg;
     if (!this.app.net) btn(tr('Yeniden Oyna'), () => { this._closeModal(true); this.app.newGame({ ...cfg, seed: (Math.random() * 1e9) | 0 }); }, 'primary');
