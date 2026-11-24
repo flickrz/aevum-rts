@@ -21,12 +21,12 @@ export function pickCursor(sel, t, me, isEnemy) {
 }
 
 // 32x32 flat SVG icons, dark outline; hotspot per icon
-const O = 'stroke="#1a1208" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"';
+const O = 'stroke="#1a1208" stroke-linejoin="round" stroke-linecap="round"';   // (no stroke-width here: a repeated attribute makes the SVG invalid)
 const ICONS = {
-  axe: [`<path d="M8 28 L22 10" ${O} stroke-width="5"/><path d="M8 28 L22 10" stroke="#a8743c" stroke-width="2.5" stroke-linecap="round"/><path d="M17 5 Q27 3 29 13 L21 14 Z" fill="#cfd6dc" ${O}/>`, 4, 4],
-  pickaxe: [`<path d="M9 28 L22 11" ${O} stroke-width="5"/><path d="M9 28 L22 11" stroke="#a8743c" stroke-width="2.5" stroke-linecap="round"/><path d="M6 9 Q18 0 30 14 Q19 7 6 9 Z" fill="#b9c2ca" ${O}/>`, 4, 4],
-  food: [`<path d="M6 27 L14 19" ${O} stroke-width="5"/><path d="M6 27 L14 19" stroke="#a8743c" stroke-width="2.5" stroke-linecap="round"/><path d="M13 20 Q8 6 20 4 Q30 4 28 15 Q26 9 20 9 Q14 10 16 18 Z" fill="#dfe5ea" ${O}/><circle cx="25" cy="24" r="3.5" fill="#d8343a" ${O} stroke-width="1.5"/>`, 4, 4],
-  hammer: [`<path d="M9 28 L19 14" ${O} stroke-width="5"/><path d="M9 28 L19 14" stroke="#a8743c" stroke-width="2.5" stroke-linecap="round"/><path d="M13 9 L22 3 L29 12 L20 18 Z" fill="#9aa4ad" ${O}/>`, 4, 4],
+  axe: [`<path d="M8 28 L22 10" ${O} stroke-width="5"/><path d="M8 28 L22 10" stroke="#a8743c" stroke-width="2.5" stroke-linecap="round"/><path d="M17 5 Q27 3 29 13 L21 14 Z" fill="#cfd6dc" ${O} stroke-width="2"/>`, 4, 4],
+  pickaxe: [`<path d="M9 28 L22 11" ${O} stroke-width="5"/><path d="M9 28 L22 11" stroke="#a8743c" stroke-width="2.5" stroke-linecap="round"/><path d="M6 9 Q18 0 30 14 Q19 7 6 9 Z" fill="#b9c2ca" ${O} stroke-width="2"/>`, 4, 4],
+  food: [`<path d="M6 27 L14 19" ${O} stroke-width="5"/><path d="M6 27 L14 19" stroke="#a8743c" stroke-width="2.5" stroke-linecap="round"/><path d="M13 20 Q8 6 20 4 Q30 4 28 15 Q26 9 20 9 Q14 10 16 18 Z" fill="#dfe5ea" ${O} stroke-width="2"/><circle cx="25" cy="24" r="3.5" fill="#d8343a" ${O} stroke-width="1.5"/>`, 4, 4],
+  hammer: [`<path d="M9 28 L19 14" ${O} stroke-width="5"/><path d="M9 28 L19 14" stroke="#a8743c" stroke-width="2.5" stroke-linecap="round"/><path d="M13 9 L22 3 L29 12 L20 18 Z" fill="#9aa4ad" ${O} stroke-width="2"/>`, 4, 4],
   sword: [`<path d="M4 4 L20 20" ${O} stroke-width="6"/><path d="M4 4 L20 20" stroke="#e4e9ee" stroke-width="3" stroke-linecap="round"/><path d="M16 24 L24 16" ${O} stroke-width="5"/><path d="M16 24 L24 16" stroke="#e0b040" stroke-width="2.5" stroke-linecap="round"/><path d="M21 21 L28 28" ${O} stroke-width="5"/><path d="M21 21 L28 28" stroke="#8a5a2b" stroke-width="2.5" stroke-linecap="round"/>`, 3, 3],
 };
 const cache = {};
