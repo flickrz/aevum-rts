@@ -1089,6 +1089,18 @@ function towerH1() {
   }
   return TOWER_H1;
 }
+// the dock model pushed toward the water by the land share of its footprint: a dock mostly on land (a pond's edge)
+// reaches out .4 of its size, one mostly over the sea (a straight coast, at least 3 land tiles) stays where it is
+function dockPush(map, e, U, size) {
+  let land = 0, n = 0;
+  try {
+    const N = map.size, s = e.size || size;
+    for (let j = 0; j < s; j++) for (let i = 0; i < s; i++) { const t = map.tiles[(e.tz + j) * N + e.tx + i]; n++; if (t !== 3 && t !== 4) land++; }
+  } catch (err) { return; }
+  const f = Math.max(0, Math.min(1, (land / (n || 1) - DOCK_PUSH[0]) / (DOCK_PUSH[1] - DOCK_PUSH[0]))), off = size * DOCK_PUSH[2] * f;
+  U.dockM.position.x += Math.sin(U.dockRy) * off; U.dockM.position.z += Math.cos(U.dockRy) * off;
+}
+const DOCK_PUSH = [.34, .78, .4];   // [land share pushed 0, land share pushed fully, full push x size]
 function makeBuilding(type, size, age, color, mask, seed, noGlb) {
   const root = new THREE.Group();
   const era = Math.max(0, Math.min(4, age | 0));
@@ -1173,7 +1185,9 @@ function makeBuilding(type, size, age, color, mask, seed, noGlb) {
         let d = 2; for (let i = 0; i < 4; i++) if ((mask & 15) === 1 << i) d = i;
         const ry = [Math.PI, Math.PI / 2, 0, -Math.PI / 2][d], dm = addSeaModel(body, dockFile(era), color, size * 1.15, -.35, ry);
         // (owner 2026-11-25: "biraz daha suya doğru") the model is pushed out over the water side
-        if (dm) { const off = size * .4; dm.position.x += Math.sin(ry) * off; dm.position.z += Math.cos(ry) * off; }
+        // (owner 2026-11-25, open sea: a dock mostly on water floated out) how far depends on the land in its footprint,
+        // set by EntityView (dockPush) once the map is known; U.dockM / U.dockRy carry the mesh and its turn
+        if (dm) { U.dockM = dm; U.dockRy = ry; }
         U.glb = true;
       }
     }
@@ -1975,6 +1989,7 @@ export class EntityView {
     v.bs = bs; v.k = (e.size || bs) / bs;
     v.root = makeBuilding(e.type, bs, v.age, this._color(e.owner), v.mask | 0, (e.tx | 0) * 92821 + (e.tz | 0) * 68917);   // (seed: wall logs vary per tile)
     if (v.k !== 1) v.root.scale.setScalar(v.k);
+    if (v.root.userData.dockM) dockPush(this.game.map, e, v.root.userData, bs);
     if (v.ry == null) v.ry = bYaw(e.type, e.rot);   // (a remade model keeps the turn it is drawn at; _updBuilding eases it)
     v.root.rotation.y = v.ry;
     const quiet = v.quiet; v.quiet = false;
