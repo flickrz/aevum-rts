@@ -3,6 +3,7 @@ import { BUILDINGS, UNITS } from './data.js';
 import { RES_ICONS } from './icons.js';
 import { MINE_CAP, NO_ROTATE } from './sim/game.js';
 import { tr } from './i18n.js';
+import { pickCursor, cursorCss } from './cursor.js';
 
 const DRAG_PX = 5;
 // (players 2026-11-22: "you have to push the mouse right to the edge to scroll") the edge zone is wider and the pan
@@ -341,6 +342,30 @@ export class Input {
         s.width = Math.abs(e.clientX - d.x0) + 'px'; s.height = Math.abs(e.clientY - d.y0) + 'px';
       }
     }
+    this.hoverCursor(e);
+  }
+
+  // context cursor (axe / pickaxe / food / hammer / sword) for what a right click would do; view only, picks at most every 50 ms
+  hoverCursor(e) {
+    const now = performance.now();
+    if (now - (this._curT || 0) < 50) return;
+    this._curT = now;
+    if (this.targeting || this.flareArmed) { this._cur = null; return; }   // (they own the crosshair; re-set after)
+    let name = '';
+    try {
+      const busy = !this.active || this.placing || this.rot || (this.drag && this.drag.active) || (this.fdrag && this.fdrag.active)
+        || e.target !== this.canvas || document.documentElement.classList.contains('touch');
+      if (!busy) {
+        const sel = { villagers: false, military: false };
+        for (const id of this.ownUnits()) { if (this.ent(id).type === 'villager') sel.villagers = true; else sel.military = true; }
+        if (sel.villagers || sel.military) {
+          let t = this.ent(this.app.renderer.pick(e.clientX, e.clientY));
+          if (t && !this.game.isEntityVisible(t)) t = null;
+          name = pickCursor(sel, t, this.me(), o => this.isEnemyOwner(o));
+        }
+      }
+    } catch (err) { name = ''; }
+    if (name !== this._cur) { this._cur = name; try { this.canvas.style.cursor = cursorCss(name); } catch (err) { /* ignore */ } }
   }
 
   endDrag() { this.drag = null; this.box.style.display = 'none'; }
