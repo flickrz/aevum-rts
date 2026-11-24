@@ -11,7 +11,7 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { assetUrls, cdnFailed } from '../cdn.js';
 
 // the types that have a model, per era (files: assets/models/<era>/<type>.glb). Each age's buildings evolve from the
-// previous age's model. Pasture (live sheep), dock (turns to the water), farm, rails and the station stay procedural.
+// previous age's model. Pasture (live sheep), farm, rails and the station stay procedural; ships and the dock: see loadSea.
 const BASE = ['towncenter', 'house', 'barracks', 'storage', 'lumbercamp', 'minecamp'];
 const B1 = BASE.concat(['archery', 'stable', 'blacksmith', 'market', 'tower', 'temple']);
 const B2 = B1.concat(['university', 'castle', 'siege']);
@@ -483,3 +483,47 @@ export function loadCrop() {
 }
 // the wheat clump geometry, or null while it is not loaded
 export function cropGeo() { return CROP || null; }
+
+// ---------- ships and docks ----------
+// (2026-11-25, owner: the procedural dock and ships were "düz ve sade, 3d değil") generated models in
+// assets/models/sea/: one per ship type (every age draws the same ship) and two docks (wooden: Stone / Bronze Age,
+// stone quay: later ages). Loaded the first time a ship or dock is drawn; until then the procedural model is drawn and
+// the view rebuilds it once the file is in (glbVersion()). Each file's longest side is turned onto z and, per file,
+// flipped so the bow / the pier points to +z (SEA_FLIP), the way the procedural models face.
+const SEA_FILES = ['fishboat', 'transport', 'galley', 'galleon', 'ironclad', 'dock0', 'dock2'];
+const SEA_FLIP = { dock0: Math.PI };          // name -> extra turn (radians) after the long side is on z
+let seaStarted = false;
+export function loadSea() {
+  if (seaStarted || !enabled()) return;
+  seaStarted = true;
+  if (!loader) { loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder); }
+  for (const name of SEA_FILES) {
+    loadGlb('sea/' + name + '.glb', (gltf) => prepLater(() => {
+      try {
+        prepare(gltf.scene, false, 's|' + name, (r) => {
+          if (!r) return;
+          const g = r.geo; g.computeBoundingBox();
+          const b = g.boundingBox;
+          if (b.max.x - b.min.x > b.max.z - b.min.z) g.rotateY(Math.PI / 2);
+          if (SEA_FLIP[name]) g.rotateY(SEA_FLIP[name]);
+          g.computeVertexNormals(); g.computeBoundingBox();
+          GEO.set('s|' + name, r); version++; WARM_Q.push(r);
+        });
+      } catch (err) { console.warn('[glb] sea prepare failed', name, err); }
+    }), (err) => console.warn('[glb] sea load failed', name, err && err.message));
+  }
+}
+export const dockFile = (era) => (era | 0) >= 2 ? 'dock2' : 'dock0';
+export function hasSea(name) { return GEO.has('s|' + name); }
+// the model with its long side (z) `len` long, base at y, turned by rotY; returns the mesh (null: not loaded)
+export function addSeaModel(parent, name, color, len, y = 0, rotY = 0) {
+  const key = 's|' + name;
+  if (!GEO.has(key)) return null;
+  const L = look(key, color), m = new THREE.Mesh(L.geo, L.mat), b = L.geo.boundingBox;
+  const k = len / ((b.max.z - b.min.z) || 1);
+  m.scale.setScalar(k); m.position.y = y; m.rotation.y = rotY;
+  m.castShadow = true; m.receiveShadow = true; m.userData.glb = true;
+  parent.add(m);
+  return m;
+}
+export function seaHeight(name) { const r = GEO.get('s|' + name); if (!r) return 0; const b = r.geo.boundingBox; return (b.max.y) / ((b.max.z - b.min.z) || 1); }
