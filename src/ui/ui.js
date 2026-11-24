@@ -8,6 +8,7 @@ import { menuHud, saveBadge, saveBadgeTitle, confirmDeleteSave, loginScreen, ava
 import { logChat, clipChat, FB_MAX } from '../chatlog.js';
 import { withMention } from './mention.js';
 import { menuUpdates, hasUnseen } from './updates-ui.js';
+import { newsBox } from './news-ui.js';
 import { mapPreview, previewClimate } from './map-preview.js';
 import { TutorialUI } from './tutorial-ui.js';
 import { TUT_CFG } from '../sim/tutorial.js';
@@ -406,6 +407,7 @@ export class UI {
     }).catch(() => {});
     // feedback: anything written to @claude in the game's chat reaches the developer (tools/read-chatlog.mjs --claude)
     this.menuEl.append(el('div', 'menu-fb panel', `<span class="mi">${ico('x-chat')}</span><span>${tr('Hata mı buldun, önerin mi var? Oyunda <kbd>Enter</kbd> ile sohbeti aç, <b class="cmention">@claude</b> yaz; doğrudan geliştiriciye gider.')}</span>`));
+    safe(() => { const nb = newsBox(this); if (nb) this.menuEl.append(nb); });   // "Duyurular" on the right (src/ui/news-ui.js)
     safe(() => menuHud(this));   // the player plate (avatar, name, level, TP) and account chips around the menu
     // (owner 2026-11-20, drawn on a screenshot) the account unit (player plate, and the status pill and Profil / Çıkış
     // right under it) at the top left over the menu's column; the menu, and the feedback note right under it

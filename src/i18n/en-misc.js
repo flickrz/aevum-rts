@@ -554,4 +554,8 @@ export default {
   "Bunu sadece oda kurucusu yapabilir.": "Only the room host can do this.",
   "Bilge Ayaz": "Sage Ayaz",
   "Ad en fazla {0} karakter olabilir.": "The name can be at most {0} characters.",
+
+  // src/ui/news-ui.js (main menu announcements)
+  "Duyurular": "News",
+  "Aç": "Open",
 };
