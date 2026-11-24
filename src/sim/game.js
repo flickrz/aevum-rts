@@ -1470,13 +1470,24 @@ export class Game {
       c = bn; p.push((c % N) + 0.5, ((c / N) | 0) + 0.5);
     }
     this._fpn = (this._fpn || 0) + p.length / 2 + 8;
-    if (part) u.fpp = 1; else { if (u.fpp) delete u.fpp; p.push(o.x, o.z); }
+    // (the unit's own spot is added only when it is in a straight walkable line from the field's last cell: when the
+    // click lies behind a closed wall the field ends at the nearest reachable cell, and the spot past it used to be
+    // appended blindly - units walked straight through intact walls, owner report 2026-11-24)
+    if (part) u.fpp = 1; else { if (u.fpp) delete u.fpp; const lx = p[p.length - 2], lz = p[p.length - 1]; if (this._los(lx, lz, o.x, o.z, u.owner)) p.push(o.x, o.z); }
     return this._smooth(p, u.x, u.z, u.owner);
   }
   _steer(u, x, z, dt) {
     const dx = x - u.x, dz = z - u.z, L = Math.hypot(dx, dz); if (L < 0.05) return;
     const s = Math.min(L, this._speed(u) * dt), nx = u.x + dx / L * s, nz = u.z + dz / L * s;
-    if (this._pass(nx | 0, nz | 0, u.owner)) { u.x = nx; u.z = nz; u.rot = Math.atan2(dx, dz); }
+    if (this._canStep(u.x, u.z, nx, nz, u.owner)) { u.x = nx; u.z = nz; u.rot = Math.atan2(dx, dz); }
+  }
+  // a small free step from (x, z) to (nx, nz): the new tile must be walkable, and a step to a diagonal tile may not
+  // slip between two blocked tiles that only touch at a corner (2026-11-24: a crowd pushed rams through the joint of a
+  // diagonal wall line)
+  _canStep(x, z, nx, nz, owner) {
+    const ax = x | 0, az = z | 0, bx = nx | 0, bz = nz | 0;
+    if (!this._pass(bx, bz, owner)) return false;
+    return ax === bx || az === bz || this._pass(bx, az, owner) || this._pass(ax, bz, owner);
   }
   _speed(u) { const d = UNITS[u.type], m = this.players[u.owner].mods; let s = d.speed * (1 + (m.speed[d.cls] || 0)); if (u.type === 'villager') s *= 1 + m.vspeed; const t = this.map.tiles[(u.z | 0) * this.map.size + (u.x | 0)]; if (t === 3 && !u.naval) s *= 0.6; return s; }
   _step(u, dt) {
@@ -2265,7 +2276,7 @@ export class Game {
       // a walking unit is nudged at most at half its own speed, whatever the crowd (2026-11-17: four cannons at a ford
       // pushed each other back as fast as they walk and never got through)
       if (mv && (px || pz)) { const L = Math.hypot(px, pz), c = Math.min(1.2, this._speed(u) * 0.5) / Math.max(1, L) / 1.2; px *= c; pz *= c; }
-      if (px || pz) { const nx = u.x + px * dt * 1.2, nz = u.z + pz * dt * 1.2; this._navMode = !!u.naval; if (this._pass(nx | 0, nz | 0, u.owner)) { u.x = nx; u.z = nz; } this._navMode = false; }
+      if (px || pz) { const nx = u.x + px * dt * 1.2, nz = u.z + pz * dt * 1.2; this._navMode = !!u.naval; if (this._canStep(u.x, u.z, nx, nz, u.owner)) { u.x = nx; u.z = nz; } this._navMode = false; }
     }
     const bs = this.buildings; for (let i = bs.length - 1; i >= 0; i--) { const b = bs[i]; if (b && !b.dead) this._updateBuilding(b, dt); }
     // healers: one pulse a second for all of them (see _healTick)
