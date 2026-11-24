@@ -91,6 +91,16 @@ export const unitLos = (type) => LOS_U[type] || 0;
 export const buildingLos = (b, p) => { const d = BUILDINGS[b.type]; const r = d.los + (p && p.mods ? p.mods.blos : 0) + towerAgeBonus(b.type, p ? p.age : 0) + b.size / 2; return b.type === 'tower' || b.type === 'castle' ? Math.max(r, COMBAT_LOS + b.size / 2) : r; };
 // towers hit harder every age (+5 attack per age since playtest 2 (was +3); other attacking buildings +1)
 export const TOWER_AGE_ATK = 5;
+// (owner 2026-11-25, naval rework) the sea is worth fighting for:
+// - fish shoals hold more than a berry bush and refill faster (FISH_AMOUNT, FISH_REGEN /s); fishing boats gather
+//   FISH_RATE food/s (a villager on berries 0.4) and carry FISH_CAP
+// - trade ships earn TRADE_SHIP_GOLD gold per tile between their two docks on every round trip (x TRADE_SHIP_ALLY
+//   with an allied dock); docks closer than TRADE_SHIP_MIN tiles do not trade
+// - coastal defence: towers and castles reach ships TOWER_SEA_REACH tiles farther and hit them x TOWER_SHIP_MUL
+export const FISH_AMOUNT = 1500, FISH_REGEN = 0.5, FISH_RATE = 0.8, FISH_CAP = 20;
+export const TRADE_SHIP_GOLD = 0.3, TRADE_SHIP_ALLY = 1.3, TRADE_SHIP_MIN = 20;
+export const TOWER_SEA_REACH = 4, TOWER_SHIP_MUL = 2.5;
+const SHIP_BONUS = { ship: TOWER_SHIP_MUL };
 // the temple heals own units within this many tiles of its centre (the view draws it when a temple is selected)
 export const TEMPLE_HEAL_R = 7;
 // the healer (Büyücü, owner 2026-11-21): once a second each one heals every wounded friendly living unit within
@@ -1085,7 +1095,7 @@ export class Game {
   // Shift-queue (playtest 2026-11-14): an open-ended order (gathering: trees, farms, endless mines...; trade runs;
   // fishing; patrols) never finishes on its own, so nothing queued behind it would ever run. Queuing behind one ends it now
   // (queued open-ended orders are dropped the same way); a villager walking to drop off a load delivers it first.
-  _setOrder(u, o, queue) { u.explore = false; if (u.hsId) u.hsId = 0; if (queue && u.order && !u.order.auto) { const open = q => !!q && (q.type === 'gather' || q.type === 'trade' || q.type === 'fish' || (q.type === 'move' && !!q.pat)); for (let i = u.queue.length - 1; i >= 0; i--) if (open(u.queue[i])) u.queue.splice(i, 1); u.queue.push(o); if (open(u.order)) this._next(u); else if (u.order.type === 'return') u.order.resume = null; return; } if (u.order && u.order.type === 'gather') this._unhunt(u.order); u.queue.length = 0; u.order = o; u.targetId = o.targetId || null; u.path = null; u.pk = null; u.rpT = 0; }
+  _setOrder(u, o, queue) { u.explore = false; if (u.hsId) u.hsId = 0; if (queue && u.order && !u.order.auto) { const open = q => !!q && (q.type === 'gather' || q.type === 'trade' || q.type === 'shiptrade' || q.type === 'fish' || (q.type === 'move' && !!q.pat)); for (let i = u.queue.length - 1; i >= 0; i--) if (open(u.queue[i])) u.queue.splice(i, 1); u.queue.push(o); if (open(u.order)) this._next(u); else if (u.order.type === 'return') u.order.resume = null; return; } if (u.order && u.order.type === 'gather') this._unhunt(u.order); u.queue.length = 0; u.order = o; u.targetId = o.targetId || null; u.path = null; u.pk = null; u.rpT = 0; }
   _unhunt(o) { const t = this.entities.get(o.targetId); if (t && PREY[t.type] && !t.live && t.anim !== 'die') t.hunted = false; }
   // mode 'am' (attack-move) / 'pat' (patrol): only units that can fight get the marks (see the move case); villagers,
   // carts, healers and unarmed ships of the selection walk there as on a plain move, in the same formation
@@ -1748,12 +1758,12 @@ export class Game {
   // Targets of an attacking building (tower / castle): up to n enemy units within R measured from the building's edge
   // (2026-11-17 playtest: "the archer hits the tower, the tower can't hit the archer" - the old centre distance cost a
   // diagonal attacker ~0.6 tiles), nearest first (ties by id, deterministic).
-  _bTargets(b, R, n) {
-    const h = b.size / 2, out = [];
-    this._near(b.x, b.z, R + h + 1, e => {
+  _bTargets(b, R, n, sea = 0) {
+    const h = b.size / 2, out = [], RS = R + sea;
+    this._near(b.x, b.z, RS + h + 1, e => {
       if (e.dead || e.kind !== 'unit' || e.aboard || !this.isEnemy(b.owner, e.owner)) return;
       const dx = Math.max(Math.abs(e.x - b.x) - h, 0), dz = Math.max(Math.abs(e.z - b.z) - h, 0), d = dx * dx + dz * dz;
-      if (d <= R * R) out.push([d, e.id, e]);
+      if (d <= (e.naval ? RS * RS : R * R)) out.push([d, e.id, e]);
     });
     out.sort((a, c) => a[0] - c[0] || a[1] - c[1]);
     return out.slice(0, n).map(x => x[2]);
@@ -2236,12 +2246,12 @@ export class Game {
         // (castle, 2026-11-17 playtest "the castle has no real power, you can't even tell it shoots"): a volley of
         // CASTLE_VOLLEY arrows at as many targets, and its attack grows every age like a tower's
         b.cd = 0.4; const castle = b.type === 'castle';
-        const ts = this._bTargets(b, d.range + p.mods.towerRange + towerAgeBonus(b.type, p.age), castle ? CASTLE_VOLLEY : 1);
+        const ts = this._bTargets(b, d.range + p.mods.towerRange + towerAgeBonus(b.type, p.age), castle ? CASTLE_VOLLEY : 1, TOWER_SEA_REACH);
         if (ts.length) {
           b.cd = 2; const atk = d.atk + p.mods.towerAtk + p.age * (b.type === 'tower' ? TOWER_AGE_ATK : castle ? CASTLE_AGE_ATK : 1);
           const proj = b.type === 'tower' && p.age >= TOWER_CANNON_AGE ? 'cannonball' : 'arrow';
           this.events.emit('attack', { attacker: b, target: ts[0], ranged: true });
-          for (const t of ts) this._fire(b, t, this._dmg(atk, {}, false, t), proj);
+          for (const t of ts) this._fire(b, t, this._dmg(atk, SHIP_BONUS, false, t), proj);
         }
       }
     }
@@ -2273,7 +2283,8 @@ export class Game {
       const up = ud.upgradedBy && p.techs.has(ud.upgradedBy) ? TECHS[ud.upgradedBy].upgrade.to : q.id;   // (queued before the line's upgrade)
       const u = this._addUnit(up, b.owner, f.x, f.z); p.stats.unitsTrained++;
       this.events.emit('trained', { e: u, building: b });
-      if (ud.naval && (!b.rally || !this._navPass(b.rally.x | 0, b.rally.z | 0))) { if (f.rx !== f.x || f.rz !== f.z) this.cmdMove([u.id], f.rx, f.rz); }
+      if (u.type === 'tradeship') this._setOrder(u, { type: 'shiptrade', home: b.id, far: 0, phase: 1 }, false);
+      else if (ud.naval && (!b.rally || !this._navPass(b.rally.x | 0, b.rally.z | 0))) { if (f.rx !== f.x || f.rz !== f.z) this.cmdMove([u.id], f.rx, f.rz); }
       else if (b.rally) {
         const r = this._rallyWork(b);
         if (r && u.type === 'villager') this.cmdGather([u.id], r.id); else if (u.type !== 'tradecart') { const sl = this._slotNear(b.rally.x, b.rally.z, u); this.cmdMove([u.id], sl.x, sl.z); }
@@ -2712,6 +2723,10 @@ export class Game {
   // ships right-clicked on an own dock: loaded fishboats deliver there and resume fishing; others just park next to it
   cmdReturn(ids, dockId) {
     const b = this.entities.get(dockId); if (!b || b.dead || b.kind !== 'building' || b.type !== 'dock') return false;
+    const tsh = this._live(ids).filter(u => u.type === 'tradeship' && this.isAlly(u.owner, b.owner));
+    for (const u of tsh) { const o = u.order && u.order.type === 'shiptrade' ? u.order : null; this._setOrder(u, { type: 'shiptrade', home: o && o.home !== b.id ? o.home : 0, far: b.id, phase: 1 }, false); }
+    if (tsh.length) ids = ids.filter(id => !tsh.some(u => u.id === id));
+    if (!ids.length) return true;
     const us = this._live(ids).filter(u => u.naval && u.owner === b.owner); if (!us.length) return false;
     let park = null;
     for (const u of us) {
@@ -2733,6 +2748,7 @@ export class Game {
     this._navMode = true;
     try {
       if (o && o.type === 'fish') { if (u.cd > 0) u.cd -= dt; this._navFish(u, o, dt); }
+      else if (o && o.type === 'shiptrade') this._uShipTrade(u, o, dt);
       else if (o && o.type === 'unload') { if (u.cd > 0) u.cd -= dt; this._navUnloadStep(u, o, dt); }
       else this._updateUnit(u, dt);
     } finally { this._navMode = false; }
@@ -2741,7 +2757,7 @@ export class Game {
     }
   }
   _navFish(u, o, dt) {
-    const p = this.players[u.owner], cap = 15;
+    const p = this.players[u.owner], cap = FISH_CAP;
     if (o.phase === 'ret') {
       if (!u.carry || u.carry.amount <= 0) { u.carry = null; o.phase = 'go'; return; }
       let b = this.entities.get(o.dropId);
@@ -2768,9 +2784,37 @@ export class Game {
     if (!this._approach(u, t, dt, 0.5)) return; // edge distance: stop within ~1 tile of the shoal centre
     o.fail = 0; o.bad = 0;
     u.state = 'gather'; u.anim = 'fish'; u.rot = datan2(t.x - u.x, t.z - u.z) + 1.57;
-    o.acc += 0.65 * (p.mods.gather.fish || 1) * dt;
+    o.acc += FISH_RATE * (p.mods.gather.fish || 1) * dt;
     while (o.acc >= 1 && t.amount >= 1) { o.acc -= 1; t.amount--; if (!u.carry || u.carry.type !== 'food') u.carry = { type: 'food', amount: 0 }; u.carry.amount++; }
     o.tick += dt; if (o.tick >= 1) { o.tick = 0; this.events.emit('gatherTick', { unit: u, res: 'food' }); }
+  }
+  // trade ship (naval rework 2026-11-25): home dock -> far dock -> home, gold credited at home. The far dock is the
+  // farthest finished own / allied dock at least TRADE_SHIP_MIN tiles from home (or the one the player right-clicked);
+  // one it cannot reach is skipped. A leg takes at least 5 s (same guard as the old trade cart).
+  _uShipTrade(u, o, dt) {
+    const ok = b => b && !b.dead && b.done && b.type === 'dock' && this.isAlly(u.owner, b.owner);
+    let home = this.entities.get(o.home);
+    if (!ok(home) || home.owner !== u.owner) { home = this._nearestB(u, b => b.type === 'dock'); o.home = home ? home.id : 0; }
+    if (!home) { u.state = 'idle'; u.anim = 'idle'; return; }
+    let far = this.entities.get(o.far);
+    if (!ok(far) || far === home || dhypot(far.x - home.x, far.z - home.z) < TRADE_SHIP_MIN || (o.bad && o.bad.includes(far.id))) {
+      far = null; let bd = TRADE_SHIP_MIN * TRADE_SHIP_MIN;
+      for (const b of this.buildings) { if (!ok(b) || b === home || (o.bad && o.bad.includes(b.id))) continue; const d = sq(b.x - home.x) + sq(b.z - home.z); if (d >= bd) { bd = d; far = b; } }
+      o.far = far ? far.id : 0; o.fail = 0;
+      if (!far) { u.state = 'idle'; u.anim = 'idle'; return; }
+    }
+    if ((o.fail || 0) >= 4) { (o.bad || (o.bad = [])).push(o.phase ? far.id : home.id); o.far = 0; o.fail = 0; u.path = null; u.pk = null; return; }
+    const t = o.phase ? far : home;
+    if (!this._approach(u, t, dt, 1.0)) return;
+    if (this.time - (o.lt != null ? o.lt : -99) < 5) { u.state = 'idle'; u.anim = 'idle'; return; }
+    o.lt = this.time; o.fail = 0; u.path = null; u.pk = null;
+    if (!o.phase && o.paid) {
+      const p = this.players[u.owner], ally = far.owner !== u.owner ? TRADE_SHIP_ALLY : 1;
+      const g = Math.round(dhypot(far.x - home.x, far.z - home.z) * TRADE_SHIP_GOLD * ally * (1 + p.mods.cart));
+      this._credit(p, 'gold', g); this.events.emit('deposit', { unit: u, owner: u.owner, res: 'gold', amount: g });
+    }
+    if (o.phase) o.paid = 1;   // reached the far dock: the next arrival home pays
+    o.phase = o.phase ? 0 : 1;
   }
   _navBoardStep(u, o, dt) {
     const t = this.entities.get(o.targetId);
@@ -2811,7 +2855,7 @@ export class Game {
   _navSinkCargo(e, killer) { const ids = e.cargo.slice(); e.cargo = []; for (const id of ids) { const c = this.entities.get(id); if (c && !c.dead) { c.x = e.x; c.z = e.z; this._kill(c, killer); } } }
   _navTick(dt) {
     this._navT = (this._navT || 0) + dt; if (this._navT < 1) return; const k = this._navT; this._navT = 0;
-    for (const s of this._navShoals()) if (!s.dead && s.amount < s.maxAmount) s.amount = Math.min(s.maxAmount, s.amount + 0.35 * k);
+    for (const s of this._navShoals()) if (!s.dead && s.amount < s.maxAmount) s.amount = Math.min(s.maxAmount, s.amount + FISH_REGEN * k);
   }
   // fish shoals: deep water near shores (6-12 per map) + a couple near each start with water within 25 tiles
   _navGenFish() {
@@ -2826,7 +2870,7 @@ export class Game {
     }
     const placed = [];
     const ok = (c, sp) => placed.every(p => dhypot(p[0] - c[0], p[1] - c[1]) >= sp);
-    const put = c => { this._addRes('fish', c[0], c[1], 800); placed.push(c); };
+    const put = c => { this._addRes('fish', c[0], c[1], FISH_AMOUNT); placed.push(c); };
     const pool = deep.length >= 6 ? deep : deep.concat(shallow);
     for (let i = pool.length - 1; i > 0; i--) { const j = (this.rand() * (i + 1)) | 0; const x = pool[i]; pool[i] = pool[j]; pool[j] = x; }
     const want = Math.max(6, Math.min(12, Math.round(pool.length / 30)));

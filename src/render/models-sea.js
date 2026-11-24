@@ -331,12 +331,13 @@ function sailor(p, color, x, y, z, s) {
   bx(g, mat(color, .85), .12, .18, .09, 0, 0, 0); bx(g, M.skin, .08, .08, .08, 0, .18, 0);
   return g;
 }
-export const SEA_UNITS = { fishboat: 1, transport: 1, galley: 1, galleon: 1, ironclad: 1, train: 1 };
+export const SEA_UNITS = { fishboat: 1, tradeship: 1, transport: 1, galley: 1, galleon: 1, ironclad: 1, train: 1 };
 // builds into `inner` (already in root); returns dims pre-USCALE (entities.js multiplies by USCALE)
 export function makeSeaUnit(type, color, A, root, inner, P) {
   const US = 1.25, cloth = mat(color, .85);
   inner.scale.setScalar(1 / US);
   if (type === 'train') return makeTrain(color, A, root, inner, P, cloth, US);
+  if (type === 'tradeship') type = 'transport';   // (trade ship: the transport's hull and sail for now)
   const hull = P.hull = piv(inner, 0, 0, 0);
   P.ship = type;
   let h = 1, pw = .5, pd = 1.2;

@@ -48,15 +48,19 @@ export const UNITS = {
   healer: U('healer', 'Büyücü', 'support', 0, { food: 60, gold: 40 }, 28, 40, 0, 0, 2.2, 0, 1, 11, 1, {}, null, '🧙‍♀️', 'Dost birlikleri savaş sırasında da iyileştirir. Taş Devri’nde en yaralı tek birliği, sonra çevresindeki herkesi; alanı (6-8 kare) ve hızı (2-6 can/sn) her çağda artar. Tunç Çağı’ndan itibaren düşmana büyü oku atar, Orta Çağ’dan itibaren oku küçük bir alana vurur.'),
   // --- naval (ships: naval:true, cls 'ship', live only on water tiles 3/4) ---
   fishboat: Object.assign(U('fishboat', 'Balıkçı Teknesi', 'ship', 0, { wood: 60 }, 22, 60, 0, 0, 2.6, 0, 2, 7, 1, {}, null, '🎣', 'Balık sürülerinden yiyecek toplar ve en yakın iskeleye taşır.'), { naval: true }),
+  // (owner 2026-11-25, naval rework) the trade ship: shuttles between its home dock and the farthest other own / allied
+  // dock (at least TRADE_SHIP_MIN tiles away) and earns gold by the distance on each return (Game._uShipTrade)
+  tradeship: Object.assign(U('tradeship', 'Ticaret Gemisi', 'ship', 1, { wood: 100, gold: 50 }, 30, 140, 0, 1, 2.7, 0, 2, 7, 2, {}, null, '⛴️', 'İskeleler arasında gidip gelerek altın kazandırır. İskeleler ne kadar uzaksa kazanç o kadar büyük; müttefik iskelesiyle %30 fazla.'), { naval: true }),
   transport: Object.assign(U('transport', 'Nakliye Gemisi', 'ship', 1, { wood: 120 }, 30, 160, 0, 2, 2.8, 0, 2, 7, 1, {}, null, '⛵', 'Silahsız. 10 kara birliğini kıyıdan kıyıya taşır.'), { naval: true }),
-  galley: Object.assign(U('galley', 'Kadırga', 'ship', 1, { wood: 110, gold: 40 }, 30, 150, 6, 1, 2.9, 6, 2, 8, 2, { ship: 1.2, building: 0.8 }, 'arrow', '🚣', 'Ok atan savaş gemisi. Gemilere ve kıyıdaki birliklere saldırır.'), { naval: true }),
-  galleon: Object.assign(U('galleon', 'Kalyon', 'ship', 3, { wood: 220, gold: 120 }, 40, 320, 22, 3, 2.5, 7.5, 4, 9, 3, { ship: 1.6, building: 1.8 }, 'cannonball', '🚢', 'Toplu savaş gemisi. Gemilere ve kıyı binalarına karşı çok güçlü.'), { naval: true }),
-  ironclad: Object.assign(U('ironclad', 'Zırhlı', 'ship', 4, { wood: 200, gold: 220, stone: 80 }, 45, 520, 34, 6, 2.6, 8.5, 4, 10, 3, { ship: 1.6, building: 2 }, 'cannonball', '⚓', 'Zırh kaplı buharlı savaş gemisi. Denizlerin hâkimi.'), { naval: true }),
+  galley: Object.assign(U('galley', 'Kadırga', 'ship', 1, { wood: 110, gold: 40 }, 30, 150, 6, 1, 2.9, 8, 2, 9, 2, { ship: 1.2, building: 0.8 }, 'arrow', '🚣', 'Ok atan savaş gemisi. Gemilere ve kıyıdaki birliklere saldırır.'), { naval: true }),
+  galleon: Object.assign(U('galleon', 'Kalyon', 'ship', 3, { wood: 220, gold: 120 }, 40, 320, 22, 3, 2.5, 12, 4, 13, 3, { ship: 1.6, building: 1.8 }, 'cannonball', '🚢', 'Toplu savaş gemisi. Gemilere ve kıyı binalarına karşı çok güçlü.'), { naval: true }),
+  ironclad: Object.assign(U('ironclad', 'Zırhlı', 'ship', 4, { wood: 200, gold: 220, stone: 80 }, 45, 520, 34, 6, 2.6, 13, 4, 14, 3, { ship: 1.6, building: 2 }, 'cannonball', '⚓', 'Zırh kaplı buharlı savaş gemisi. Denizlerin hâkimi.'), { naval: true }),
   // railway train: spawned by the sim for each connected station pair, not trainable / not commandable
   train: U('train', 'Tren', 'train', 4, {}, 0, 600, 0, 6, 4.5, 0, 1, 6, 0, {}, null, '🚂', 'İki bağlı istasyon arasında gidip gelir; her varışta altın kazandırır.'),
 };
-// (owner 2026-11-25: "askerlerin hızı çok yavaş") soldiers walk faster; villagers, ships, carts and trains unchanged
-const SOLDIER_SPEED = { infantry: 2, ranged: 2, support: 2, cavalry: 2, siege: 2 };
+// (owner 2026-11-25: "askerlerin hızı çok yavaş") soldiers walk faster; villagers, carts and trains unchanged.
+// (owner 2026-11-25, naval rework) every ship (warships, fishing boats, transports, trade ships) sails 1.8x faster.
+const SOLDIER_SPEED = { infantry: 2, ranged: 2, support: 2, cavalry: 2, siege: 2, ship: 1.8 };
 for (const u of Object.values(UNITS)) { const k = SOLDIER_SPEED[u.cls]; if (k) u.speed = Math.round(u.speed * k * 100) / 100; }
 
 function B(id, name, age, cost, time, hp, size, popCap, trains, researches, dropoff, atk, range, los, icon, desc) {
@@ -84,7 +88,7 @@ export const BUILDINGS = {
   minecamp: B('minecamp', 'Maden Ocağı', 0, { wood: 70 }, 18, 600, 2, 0, [], ['pickaxe', 'shaft', 'blasting', 'steampump'], ['stone', 'gold'], 0, 0, 5, '⛏️', 'Taş ve altın teslim noktası. Madencilik geliştirmeleri.'),
   temple: B('temple', 'Tapınak', 0, { wood: 150, stone: 75 }, 35, 1100, 3, 0, ['healer'], ['herbs', 'townwatch', 'medicine', 'hospital'], null, 0, 0, 7, '⛩️', '7 kare içindeki birliklerini yavaşça iyileştirir (savaş dışında 1 can/sn).'),
   academy: B('academy', 'Harp Akademisi', 3, { wood: 250, stone: 150, gold: 200 }, 50, 1500, 3, 0, [], ['formation', 'corning', 'conscription', 'siegeeng', 'mobilization', 'smokeless'], null, 0, 0, 6, '🎖️', 'İleri askeri araştırmalar.'),
-  dock: B('dock', 'İskele', 0, { wood: 150 }, 35, 1200, 3, 0, ['fishboat', 'transport', 'galley', 'galleon', 'ironclad'], ['nets', 'trawl', 'shipwright', 'gunnery', 'careening', 'copper', 'turret'], null, 0, 0, 6, '⚓', 'Kıyıya kurulur (en az 2 su, 3 kara karesi). Gemi üretir, balıkçı teknelerinin teslim noktası.'),
+  dock: B('dock', 'İskele', 0, { wood: 150 }, 35, 1200, 3, 0, ['fishboat', 'tradeship', 'transport', 'galley', 'galleon', 'ironclad'], ['nets', 'trawl', 'shipwright', 'gunnery', 'careening', 'copper', 'turret'], null, 0, 0, 6, '⚓', 'Kıyıya kurulur (en az 2 su, 3 kara karesi). Gemi üretir, balıkçı teknelerinin teslim noktası.'),
   bank: B('bank', 'Banka', 3, { wood: 200, stone: 200, gold: 150 }, 50, 1400, 3, 0, [], ['banking', 'guilds', 'centralbank'], null, 0, 0, 6, '🏦', 'Her banka 3 saniyede +1 altın kazandırır (en fazla 3 banka sayılır). Finans araştırmaları.'),
   pasture: B('pasture', 'Ağıl', 0, { wood: 130 }, 25, 500, 3, 0, [], ['breeding', 'clover', 'winterfold', 'fodder', 'dairy'], null, 0, 0, 3, '🐑', 'Koyun ağılı: koyunlar otlayıp yavaşça 8\'e çoğalır ve kimse çalışmasa da az ama düzenli yiyecek verir. En fazla 6 köylü içeride çalışıp çok daha fazlasını toplar.'),
   station: B('station', 'İstasyon', 4, { wood: 250, stone: 150, gold: 100 }, 45, 1600, 3, 0, [], [], null, 0, 0, 6, '🚉', 'İki istasyonu ray hattıyla bağla: aralarında bir tren gidip gelir ve her varışta altın getirir.'),
