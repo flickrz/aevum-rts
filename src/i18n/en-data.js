@@ -55,7 +55,6 @@ export default {
   'Dost birlikleri savaş sırasında da iyileştirir. Taş Devri’nde en yaralı tek birliği, sonra çevresindeki herkesi; alanı (6-8 kare) ve hızı (2-6 can/sn) her çağda artar. Tunç Çağı’ndan itibaren düşmana büyü oku atar, Orta Çağ’dan itibaren oku küçük bir alana vurur.': 'Heals friendly units, in combat too. In the Stone Age the single most wounded unit, then everyone around her; her area (6-8 tiles) and speed (2-6 HP/s) grow with every age. From the Bronze Age she casts a magic bolt at enemies; from the Middle Ages it hits a small area.',
   'Balıkçı Teknesi': 'Fishing Boat',
   'Balık sürülerinden yiyecek toplar ve en yakın iskeleye taşır.': 'Gathers food from fish shoals and carries it to the nearest dock.',
-  'Ticaret Gemisi': 'Trade Ship',
   'İskeleler arasında gidip gelerek altın kazandırır. İskeleler ne kadar uzaksa kazanç o kadar büyük; müttefik iskelesiyle %30 fazla.': 'Sails between docks and earns gold. The farther apart the docks, the bigger the profit; 30% more with an allied dock.',
   'Nakliye Gemisi': 'Transport Ship',
   'Silahsız. 10 kara birliğini kıyıdan kıyıya taşır.': 'Unarmed. Carries 10 land units from shore to shore.',

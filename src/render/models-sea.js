@@ -334,13 +334,12 @@ function sailor(p, color, x, y, z, s) {
 }
 // generated ship models: [length (= the procedural pd), share of the model's height under the water, selection ring]
 const SHIP_GLB = { fishboat: [1.2, .12, [.8, 1.5]], transport: [2.0, .12, [1.4, 2.4]], galley: [2.3, .1, [1.3, 2.6]], galleon: [2.7, .1, [1.7, 3.0]], ironclad: [2.4, .15, [1.4, 2.7]] };
-export const SEA_UNITS = { fishboat: 1, tradeship: 1, transport: 1, galley: 1, galleon: 1, ironclad: 1, train: 1 };
+export const SEA_UNITS = { fishboat: 1, transport: 1, galley: 1, galleon: 1, ironclad: 1, train: 1 };
 // builds into `inner` (already in root); returns dims pre-USCALE (entities.js multiplies by USCALE)
 export function makeSeaUnit(type, color, A, root, inner, P) {
   const US = 1.25, cloth = mat(color, .85);
   inner.scale.setScalar(1 / US);
   if (type === 'train') return makeTrain(color, A, root, inner, P, cloth, US);
-  if (type === 'tradeship') type = 'transport';   // (trade ship: the transport's hull and sail for now)
   const hull = P.hull = piv(inner, 0, 0, 0);
   P.ship = type;
   let h = 1, pw = .5, pd = 1.2;

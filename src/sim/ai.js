@@ -1629,7 +1629,6 @@ export class AIController {
         for (const id of ['ironclad', 'galleon', 'galley']) { const ud = UNITS[id]; if (ud && this.unlocked('unit', id) && c.can(ud.cost)) { g.train(dock.id, id); break; } }
       }
     }
-    this._navTrade(c, docks, units);
     this._navTowers(c, dock);
     if (!war.length) return;
     let tgt = null, td = 20 * 20;
@@ -1643,38 +1642,6 @@ export class AIController {
     const s = this._shoalNear(shoals, dock), gx = s ? s.x : dock.x, gz = s ? s.z : dock.z;
     const idle = war.filter(w => !w.order && d2(w.x, w.z, gx, gz) > 8 * 8);
     if (idle.length) g.cmdMove(idle.map(w => w.id), gx, gz);
-  }
-
-  // trade ships: with two own docks 22+ tiles apart (or an allied dock that far) train up to the cap; on a sea map
-  // with one dock, put a second dock on a distant stretch of our own coast (normal / hard)
-  _navTrade(c, docks, units) {
-    const g = this.game, cap = this.difficulty === 'easy' ? 0 : this.difficulty === 'normal' ? 2 : 4;
-    if (!cap || !UNITS.tradeship || !this.unlocked('unit', 'tradeship') || c.me.age < 1) return;
-    const done = docks.filter(b => b.done), far = 22 * 22;
-    const partner = d => g.buildings.some(b => b !== d && !b.dead && b.done && b.type === 'dock' && g.isAlly(this.pid, b.owner) && d2(b.x, b.z, d.x, d.z) >= far);
-    const home = done.find(partner);
-    if (!home) {
-      if (docks.length >= 2 || !done.length || !this._seaMode(c) || g.time - (this.dock2T || 0) < 45 || !c.can(BUILDINGS.dock.cost) || c.vills.length < 12) return;
-      this.dock2T = g.time;
-      if ((this.dock2N || 0) >= 3) return;
-      const d0 = done[0], hx = Math.floor(c.home.x), hz = Math.floor(c.home.z); let best = null, bd = -1;
-      const foes = []; g.players.forEach((p, i) => { if (i !== this.pid && p && this.foe(i) && p.startX != null) foes.push(p); });
-      for (let tz = hz - 36; tz <= hz + 36; tz += 2) for (let tx = hx - 36; tx <= hx + 36; tx += 2) {
-        const x = tx + 1.5, z = tz + 1.5, dh = d2(x, z, c.home.x, c.home.z), dd = d2(x, z, d0.x, d0.z);
-        if (dh > 36 * 36 || dd < far || dd <= bd || !this.explored(x, z) || this._unsafe(x, z)) continue;
-        if (foes.some(p => d2(x, z, p.startX, p.startZ) < dh)) continue;
-        if (this.safe(() => g.canPlace('dock', tx, tz, this.pid))) { best = { tx, tz }; bd = dd; }
-      }
-      if (!best) return;
-      this.dock2N = (this.dock2N || 0) + 1;
-      const b = c.vills.filter(v => !v.order || v.order.type !== 'build').sort((p, q) => d2(p.x, p.z, best.tx, best.tz) - d2(q.x, q.z, best.tx, best.tz) || p.id - q.id).slice(0, 2).map(v => v.id);
-      g.placeBuilding(this.pid, 'dock', best.tx, best.tz, b);
-      return;
-    }
-    const n = units.filter(u => u.type === 'tradeship').length + done.reduce((a, d) => a + (d.queue || []).filter(q => q.id === 'tradeship').length, 0);
-    if (n >= cap || !c.can(UNITS.tradeship.cost)) return;
-    const d = done.find(d => partner(d) && !(d.queue || []).length);
-    if (d) g.train(d.id, 'tradeship');
   }
 
   // a tower or two next to our dock once enemy warships have been seen near our coast

@@ -57,7 +57,7 @@ const ais = [new AIController(gb, 0, 'normal'), new AIController(gb, 1, 'normal'
 gb.ais.length = 0; gb.ais.push(...ais);
 let landedAt = null, warAt = null, tpAt = null, dockAt = null;
 gb.events.on('unload', p => { if (landedAt == null && p.transport && p.units && p.units.length) landedAt = gb.time; });
-let tradeAt = null, shellAt = null, shellOn = '';
+let shellAt = null, shellOn = '';
 const ad = gb._applyDamage.bind(gb);
 gb._applyDamage = (t, dmg, k, pr) => { if (t && t.kind === 'building' && k && k.naval && process.env.DBG) console.log('   shell', (gb.time/60).toFixed(1), k.type, t.type, dmg); if (shellAt == null && t && !t.dead && t.kind === 'building' && t.type !== 'dock' && k && k.naval && k.owner !== t.owner && t.owner >= 0) { shellAt = gb.time; shellOn = k.type + '->' + t.type; } return ad(t, dmg, k, pr); };
 const dt = 1 / 30;
@@ -69,16 +69,14 @@ for (let i = 0; i < MIN * 60 * 30 && !gb.over; i++) {
     const us = gb.unitsOf(p);
     if (warAt == null && us.some(u => u.type === 'galley' || u.type === 'galleon' || u.type === 'ironclad')) warAt = gb.time;
     if (tpAt == null && us.some(u => u.type === 'transport')) tpAt = gb.time;
-    if (tradeAt == null && us.some(u => u.type === 'tradeship')) tradeAt = gb.time;
   }
-  if (landedAt != null && warAt != null && tradeAt != null && shellAt != null && gb.time > landedAt + 30) break;
+  if (landedAt != null && warAt != null && shellAt != null && gb.time > landedAt + 30) break;
 }
 const m = t => (t == null ? '-' : (t / 60).toFixed(1) + 'm');
-console.log(`  seed ${seedB}: dock ${m(dockAt)} warship ${m(warAt)} transport ${m(tpAt)} first landing ${m(landedAt)} trade ship ${m(tradeAt)} shelled ${m(shellAt)} ${shellOn} | landings ${ais.map(a => a.stats.landings || 0).join('/')} pushes ${ais.map(a => a.stats.pushes).join('/')}`);
+console.log(`  seed ${seedB}: dock ${m(dockAt)} warship ${m(warAt)} transport ${m(tpAt)} first landing ${m(landedAt)} shelled ${m(shellAt)} ${shellOn} | landings ${ais.map(a => a.stats.landings || 0).join('/')} pushes ${ais.map(a => a.stats.pushes).join('/')}`);
 ok(dockAt != null, 'AI built a dock');
 ok(warAt != null, 'AI built warships');
 ok(tpAt != null, 'AI built a transport');
-ok(tradeAt != null && tradeAt < 25 * 60, 'AI trained a trade ship within 25 min');
 ok(shellAt != null && shellAt < 25 * 60, 'a warship shelled an enemy land building within 25 min');
 ok(landedAt != null && ais.some(a => (a.stats.landings || 0) > 0), 'AI landed troops on the enemy island');
 
