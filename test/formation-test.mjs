@@ -20,6 +20,22 @@ const tc = () => ({ x: 82, z: 58 });
   const sp = us.slice(0, 6).reduce((a, u) => a + u.z, 0) / 6, ar = us.slice(6).reduce((a, u) => a + u.z, 0) / 6;
   ok(sp > ar, 'melee in front of archers (moving +z: ' + sp.toFixed(1) + ' vs ' + ar.toFixed(1) + ')');
 }
+// 1b) right-drag facing (BFME-style): moving +z but facing +x through the command path, the line runs along z
+// with the melee ranks on the +x side; a bad facing arg is dropped (plain move)
+{
+  const g = mk(), b = tc(g), ids = [];
+  for (let i = 0; i < 12; i++) { const f = g._freeNear(b.x + 6, b.z + 6, 0); ids.push(g._addUnit(i < 6 ? 'spearman' : 'archer', 0, f.x, f.z).id); }
+  const tx = b.x + 6, tz = b.z + 24;
+  ok(g.execCommand(0, 'cmdMove', [ids, tx, tz, false, 'pat', [5, 0]]), 'facing move accepted');
+  ok(ids.every(id => !g.getEntity(id).order.am), 'mode arg stays internal');
+  step(g, 25);
+  const us = ids.map(id => g.getEntity(id));
+  const xs = us.map(u => u.x), zs = us.map(u => u.z), w = Math.max(...zs) - Math.min(...zs), dep = Math.max(...xs) - Math.min(...xs);
+  ok(w > dep * 1.5, 'faced line runs across the drag (along z ' + w.toFixed(1) + ', depth ' + dep.toFixed(1) + ')');
+  const sp = us.slice(0, 6).reduce((a, u) => a + u.x, 0) / 6, ar = us.slice(6).reduce((a, u) => a + u.x, 0) / 6;
+  ok(sp > ar, 'melee in front along the facing (+x: ' + sp.toFixed(1) + ' vs ' + ar.toFixed(1) + ')');
+  ok(g.execCommand(0, 'cmdMove', [ids, tx, tz, false, null, ['x', 0]]), 'bad facing dropped, plain move');
+}
 // 2) an attack-moving soldier fights an enemy on the way, then resumes the trip (a human's plain move ignores it:
 // test/amove-test.mjs)
 {
