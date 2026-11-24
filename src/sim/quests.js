@@ -1,5 +1,6 @@
 // Dynamic quest chain for player 0. Pure JS, uses only the public Game API.
 import { UNITS } from '../data.js';
+import { tr } from '../i18n.js';
 
 const MAX_ACTIVE = 3;
 
@@ -20,85 +21,85 @@ const age = (g) => g.players[0].age || 0;
 // needsEnemy: skipped when the match has no AI opponents
 const DEFS = [
   // (farms come with the Bronze Age since 2026-11-14: the first food building is a pasture)
-  { id: 'pasture1', title: 'İlk Ağıl', desc: 'Bir koyun ağılı kur.', reward: { food: 100 },
+  { id: 'pasture1', title: tr('İlk Ağıl'), desc: tr('Bir koyun ağılı kur.'), reward: { food: 100 },
     check: (g) => cntB(g, 'pasture') >= 1, prog: (g) => frac(cntB(g, 'pasture'), 1) },
-  { id: 'vill10', title: 'Büyüyen Köy', desc: '10 köylüye ulaş.', reward: { wood: 150 },
+  { id: 'vill10', title: tr('Büyüyen Köy'), desc: tr('10 köylüye ulaş.'), reward: { wood: 150 },
     check: (g) => cntU(g, u => u.type === 'villager') >= 10, prog: (g) => frac(cntU(g, u => u.type === 'villager'), 10) },
-  { id: 'house1', title: 'Ambar', desc: 'Kaynakların yakınına bir depo inşa et.', reward: { wood: 75 },
+  { id: 'house1', title: tr('Ambar'), desc: tr('Kaynakların yakınına bir depo inşa et.'), reward: { wood: 75 },
     check: (g) => cntB(g, 'storage') >= 1, prog: (g) => frac(cntB(g, 'storage'), 1) },
-  { id: 'barracks1', title: 'Silah Başına', desc: 'İlk kışlanı inşa et.', reward: { food: 150 },
+  { id: 'barracks1', title: tr('Silah Başına'), desc: tr('İlk kışlanı inşa et.'), reward: { food: 150 },
     check: (g) => cntB(g, 'barracks') >= 1, prog: (g) => frac(cntB(g, 'barracks'), 1) },
-  { id: 'soldiers5', title: 'İlk Birlik', desc: '5 asker üret.', reward: { gold: 100 },
+  { id: 'soldiers5', title: tr('İlk Birlik'), desc: tr('5 asker üret.'), reward: { gold: 100 },
     check: (g, s) => s.soldiers >= 5, prog: (g, s) => frac(s.soldiers, 5) },
-  { id: 'storage1', title: 'Düzenli Ambar', desc: 'Kaynakların yakınına bir depo kur.', reward: { stone: 75 },
+  { id: 'storage1', title: tr('Düzenli Ambar'), desc: tr('Kaynakların yakınına bir depo kur.'), reward: { stone: 75 },
     check: (g) => cntB(g, 'storage') >= 1, prog: (g) => frac(cntB(g, 'storage'), 1) },
-  { id: 'scout', title: 'Ufkun Ötesi', desc: 'Düşman yerleşimini keşfet.', reward: { gold: 150 }, needsEnemy: true,
-    check: (g, s) => s.foundEnemy, prog: (g, s) => (s.foundEnemy ? 'Bulundu' : 'Aranıyor') },
-  { id: 'age1', title: 'Tunç Devri', desc: "Tunç Devri'ne geç.", reward: { food: 200, gold: 100 },
+  { id: 'scout', title: tr('Ufkun Ötesi'), desc: tr('Düşman yerleşimini keşfet.'), reward: { gold: 150 }, needsEnemy: true,
+    check: (g, s) => s.foundEnemy, prog: (g, s) => (s.foundEnemy ? tr('Bulundu') : tr('Aranıyor')) },
+  { id: 'age1', title: tr('Tunç Devri'), desc: "Tunç Devri'ne geç.", reward: { food: 200, gold: 100 },
     check: (g) => age(g) >= 1, prog: (g) => frac(age(g), 1) },
-  { id: 'farm1', title: 'İlk Çiftlik', desc: 'İlk çiftliğini kur.', reward: { food: 100 },
+  { id: 'farm1', title: tr('İlk Çiftlik'), desc: tr('İlk çiftliğini kur.'), reward: { food: 100 },
     check: (g) => cntB(g, 'farm') >= 1, prog: (g) => frac(cntB(g, 'farm'), 1) },
-  { id: 'tech1', title: 'Bilginin Gücü', desc: 'Bir teknoloji araştır.', reward: { gold: 150 },
+  { id: 'tech1', title: tr('Bilginin Gücü'), desc: tr('Bir teknoloji araştır.'), reward: { gold: 150 },
     check: (g, s) => s.techs >= 1 || (g.players[0].techs && g.players[0].techs.size >= 1), prog: (g, s) => frac(s.techs, 1) },
-  { id: 'farms4', title: 'Bereketli Topraklar', desc: '4 çiftlik işlet.', reward: { wood: 200 },
+  { id: 'farms4', title: tr('Bereketli Topraklar'), desc: tr('4 çiftlik işlet.'), reward: { wood: 200 },
     check: (g) => cntB(g, 'farm') >= 4, prog: (g) => frac(cntB(g, 'farm'), 4) },
   // (the mill is gone, 2026-11-14: its techs are researched at a farm's granary now)
-  { id: 'plow1', title: 'Saban Demiri', desc: 'Bir tarlanın ambarında Saban araştır.', reward: { food: 150, wood: 100 },
+  { id: 'plow1', title: tr('Saban Demiri'), desc: tr('Bir tarlanın ambarında Saban araştır.'), reward: { food: 150, wood: 100 },
     check: (g) => !!(g.players[0].techs && g.players[0].techs.has('plow')), prog: (g) => frac(g.players[0].techs && g.players[0].techs.has('plow') ? 1 : 0, 1) },
-  { id: 'camps1', title: 'İş Kampları', desc: 'Bir oduncu kampı ve bir maden ocağı kur.', reward: { wood: 150, stone: 100 },
+  { id: 'camps1', title: tr('İş Kampları'), desc: tr('Bir oduncu kampı ve bir maden ocağı kur.'), reward: { wood: 150, stone: 100 },
     check: (g) => cntB(g, 'lumbercamp') >= 1 && cntB(g, 'minecamp') >= 1, prog: (g) => frac(Math.min(1, cntB(g, 'lumbercamp')) + Math.min(1, cntB(g, 'minecamp')), 2) },
-  { id: 'market1', title: 'Ticaret Yolu', desc: 'Bir pazar kur.', reward: { gold: 200 },
+  { id: 'market1', title: tr('Ticaret Yolu'), desc: tr('Bir pazar kur.'), reward: { gold: 200 },
     check: (g) => cntB(g, 'market') >= 1, prog: (g) => frac(cntB(g, 'market'), 1) },
-  { id: 'dock1', title: 'Limana Açılış', desc: 'Kıyıya bir iskele kur.', reward: { wood: 150, food: 100 }, needsShore: true,
+  { id: 'dock1', title: tr('Limana Açılış'), desc: tr('Kıyıya bir iskele kur.'), reward: { wood: 150, food: 100 }, needsShore: true,
     check: (g) => cntB(g, 'dock') >= 1, prog: (g) => frac(cntB(g, 'dock'), 1) },
-  { id: 'fish3', title: 'Balık Bereketi', desc: '3 balıkçı teknesiyle balık tut.', reward: { food: 200 }, needsShore: true,
+  { id: 'fish3', title: tr('Balık Bereketi'), desc: tr('3 balıkçı teknesiyle balık tut.'), reward: { food: 200 }, needsShore: true,
     check: (g) => cntU(g, u => u.type === 'fishboat') >= 3, prog: (g) => frac(cntU(g, u => u.type === 'fishboat'), 3) },
-  { id: 'repel', title: 'Surları Koru', desc: 'İlk düşman saldırısını püskürt.', reward: { food: 200, wood: 200, gold: 100 }, needsEnemy: true,
+  { id: 'repel', title: tr('Surları Koru'), desc: tr('İlk düşman saldırısını püskürt.'), reward: { food: 200, wood: 200, gold: 100 }, needsEnemy: true,
     check: (g, s) => s.attacked && g.time - s.lastAttack > 35 && cntB(g, 'towncenter') >= 1,
-    prog: (g, s) => (s.attacked ? 'Saldırı sürüyor' : 'Saldırı bekleniyor') },
-  { id: 'smith1', title: 'Örs ve Çekiç', desc: 'Bir demirci inşa et.', reward: { gold: 100, stone: 50 },
+    prog: (g, s) => (s.attacked ? tr('Saldırı sürüyor') : tr('Saldırı bekleniyor')) },
+  { id: 'smith1', title: tr('Örs ve Çekiç'), desc: tr('Bir demirci inşa et.'), reward: { gold: 100, stone: 50 },
     check: (g) => cntB(g, 'blacksmith') >= 1, prog: (g) => frac(cntB(g, 'blacksmith'), 1) },
-  { id: 'temple1', title: 'Kutsal Ocak', desc: 'Bir tapınak inşa et; yaralı birliklerini iyileştirir.', reward: { gold: 150, food: 150 },
+  { id: 'temple1', title: tr('Kutsal Ocak'), desc: tr('Bir tapınak inşa et; yaralı birliklerini iyileştirir.'), reward: { gold: 150, food: 150 },
     check: (g) => cntB(g, 'temple') >= 1, prog: (g) => frac(cntB(g, 'temple'), 1) },
-  { id: 'tower1', title: 'Gözcü', desc: 'Bir gözetleme kulesi inşa et.', reward: { stone: 150 },
+  { id: 'tower1', title: tr('Gözcü'), desc: tr('Bir gözetleme kulesi inşa et.'), reward: { stone: 150 },
     check: (g) => cntB(g, 'tower') >= 1, prog: (g) => frac(cntB(g, 'tower'), 1) },
-  { id: 'pop30', title: 'Kalabalık Meydan', desc: '30 nüfusa ulaş.', reward: { food: 250 },
+  { id: 'pop30', title: tr('Kalabalık Meydan'), desc: tr('30 nüfusa ulaş.'), reward: { food: 250 },
     check: (g) => (g.players[0].pop || 0) >= 30, prog: (g) => frac(g.players[0].pop || 0, 30) },
-  { id: 'fleet3', title: 'Deniz Hâkimiyeti', desc: 'Aynı anda 3 savaş gemisinden oluşan bir filo kur.', reward: { wood: 200, gold: 200 }, needsShore: true,
+  { id: 'fleet3', title: tr('Deniz Hâkimiyeti'), desc: tr('Aynı anda 3 savaş gemisinden oluşan bir filo kur.'), reward: { wood: 200, gold: 200 }, needsShore: true,
     check: (g) => cntU(g, u => !!UNITS[u.type] && !!UNITS[u.type].naval && UNITS[u.type].atk > 0) >= 3, prog: (g) => frac(cntU(g, u => !!UNITS[u.type] && !!UNITS[u.type].naval && UNITS[u.type].atk > 0), 3) },
-  { id: 'age2', title: 'Orta Çağ', desc: "Orta Çağ'a geç.", reward: { food: 300, gold: 200 },
+  { id: 'age2', title: tr('Orta Çağ'), desc: "Orta Çağ'a geç.", reward: { food: 300, gold: 200 },
     check: (g) => age(g) >= 2, prog: (g) => frac(age(g), 2) },
-  { id: 'army15', title: 'Sancak Altında', desc: 'Aynı anda 15 askerlik bir ordu kur.', reward: { gold: 250 },
+  { id: 'army15', title: tr('Sancak Altında'), desc: tr('Aynı anda 15 askerlik bir ordu kur.'), reward: { gold: 250 },
     check: (g) => cntU(g, isMil) >= 15, prog: (g) => frac(cntU(g, isMil), 15) },
-  { id: 'castle1', title: 'Taştan Yürek', desc: 'Bir kale inşa et.', reward: { stone: 300, gold: 200 },
+  { id: 'castle1', title: tr('Taştan Yürek'), desc: tr('Bir kale inşa et.'), reward: { stone: 300, gold: 200 },
     check: (g) => cntB(g, 'castle') >= 1, prog: (g) => frac(cntB(g, 'castle'), 1) },
-  { id: 'univ1', title: 'İlim Yuvası', desc: 'Bir üniversite kur.', reward: { gold: 250 },
+  { id: 'univ1', title: tr('İlim Yuvası'), desc: tr('Bir üniversite kur.'), reward: { gold: 250 },
     check: (g) => cntB(g, 'university') >= 1, prog: (g) => frac(cntB(g, 'university'), 1) },
-  { id: 'raze3', title: 'Kuşatma', desc: '3 düşman binası yık.', reward: { wood: 300, stone: 200 }, needsEnemy: true,
+  { id: 'raze3', title: tr('Kuşatma'), desc: tr('3 düşman binası yık.'), reward: { wood: 300, stone: 200 }, needsEnemy: true,
     check: (g, s) => s.razed >= 3, prog: (g, s) => frac(s.razed, 3) },
-  { id: 'age3', title: 'Barut Çağı', desc: "Barut Çağı'na geç.", reward: { food: 400, gold: 300 },
+  { id: 'age3', title: tr('Barut Çağı'), desc: "Barut Çağı'na geç.", reward: { food: 400, gold: 300 },
     check: (g) => age(g) >= 3, prog: (g) => frac(age(g), 3) },
-  { id: 'tech5', title: 'Aydınlanma', desc: '5 teknoloji araştır.', reward: { gold: 300 },
+  { id: 'tech5', title: tr('Aydınlanma'), desc: tr('5 teknoloji araştır.'), reward: { gold: 300 },
     check: (g) => (g.players[0].techs ? g.players[0].techs.size : 0) >= 5,
     prog: (g) => frac(g.players[0].techs ? g.players[0].techs.size : 0, 5) },
-  { id: 'bank1', title: 'Kasa Dairesi', desc: 'Bir banka kur ve altın gelirini başlat.', reward: { gold: 300 },
+  { id: 'bank1', title: tr('Kasa Dairesi'), desc: tr('Bir banka kur ve altın gelirini başlat.'), reward: { gold: 300 },
     check: (g) => cntB(g, 'bank') >= 1, prog: (g) => frac(cntB(g, 'bank'), 1) },
-  { id: 'academy1', title: 'Harp Okulu', desc: 'Bir harp akademisi kur.', reward: { gold: 300, stone: 200 },
+  { id: 'academy1', title: tr('Harp Okulu'), desc: tr('Bir harp akademisi kur.'), reward: { gold: 300, stone: 200 },
     check: (g) => cntB(g, 'academy') >= 1, prog: (g) => frac(cntB(g, 'academy'), 1) },
-  { id: 'tech15', title: 'Bilim Çağı', desc: '15 teknoloji araştır.', reward: { gold: 500, stone: 300 },
+  { id: 'tech15', title: tr('Bilim Çağı'), desc: tr('15 teknoloji araştır.'), reward: { gold: 500, stone: 300 },
     check: (g) => (g.players[0].techs ? g.players[0].techs.size : 0) >= 15, prog: (g) => frac((g.players[0].techs ? g.players[0].techs.size : 0), 15) },
-  { id: 'killtc', title: 'Son Darbe', desc: 'Bir düşman köy merkezini yok et.', reward: { food: 500, wood: 500, gold: 500 }, needsEnemy: true,
+  { id: 'killtc', title: tr('Son Darbe'), desc: tr('Bir düşman köy merkezini yok et.'), reward: { food: 500, wood: 500, gold: 500 }, needsEnemy: true,
     check: (g, s) => s.tcKilled >= 1, prog: (g, s) => frac(s.tcKilled, 1) },
-  { id: 'age4', title: 'Sanayi Çağı', desc: "Sanayi Çağı'na geç.", reward: { food: 500, gold: 500 },
+  { id: 'age4', title: tr('Sanayi Çağı'), desc: "Sanayi Çağı'na geç.", reward: { food: 500, gold: 500 },
     check: (g) => age(g) >= 4, prog: (g) => frac(age(g), 4) },
-  { id: 'factory1', title: 'Buhar ve Çelik', desc: 'Bir fabrika kur.', reward: { gold: 500 },
+  { id: 'factory1', title: tr('Buhar ve Çelik'), desc: tr('Bir fabrika kur.'), reward: { gold: 500 },
     check: (g) => cntB(g, 'factory') >= 1, prog: (g) => frac(cntB(g, 'factory'), 1) },
-  { id: 'rail1', title: 'Demir Yolu', desc: 'İki istasyonu ray hattıyla birbirine bağla.', reward: { gold: 400 },
+  { id: 'rail1', title: tr('Demir Yolu'), desc: tr('İki istasyonu ray hattıyla birbirine bağla.'), reward: { gold: 400 },
     check: (g) => typeof g.railPairs === 'function' && g.railPairs().some(p => p.owner === 0),
     prog: (g) => frac(typeof g.railPairs === 'function' && g.railPairs().some(p => p.owner === 0) ? 1 : 0, 1) },
-  { id: 'tech30', title: 'Her Şeyi Bilen', desc: '30 teknoloji araştır.', reward: { food: 500, wood: 500, gold: 800 },
+  { id: 'tech30', title: tr('Her Şeyi Bilen'), desc: tr('30 teknoloji araştır.'), reward: { food: 500, wood: 500, gold: 800 },
     check: (g) => (g.players[0].techs ? g.players[0].techs.size : 0) >= 30, prog: (g) => frac((g.players[0].techs ? g.players[0].techs.size : 0), 30) },
-  { id: 'conquer', title: 'Çağların Hâkimi', desc: 'Tüm düşmanları yenilgiye uğrat.', reward: { gold: 1000 }, needsEnemy: true,
+  { id: 'conquer', title: tr('Çağların Hâkimi'), desc: tr('Tüm düşmanları yenilgiye uğrat.'), reward: { gold: 1000 }, needsEnemy: true,
     check: (g) => g.players.length > 1 && g.players.every(p => p.id === 0 || p.defeated),
     prog: (g) => frac(g.players.filter(p => p.id !== 0 && p.defeated).length, Math.max(1, g.players.length - 1)) },
 ];
@@ -183,13 +184,13 @@ export class QuestSystem {
         let ok = false;
         try { ok = !!d.check(g, s); q.progress = String(d.prog ? d.prog(g, s) : ''); } catch (e) { ok = false; }
         if (!ok) continue;
-        q.done = true; q.active = false; q.progress = 'Tamamlandı';
+        q.done = true; q.active = false; q.progress = tr('Tamamlandı');
         changed = true;
         const res = g.players[0].res;
         for (const k in q.reward) res[k] = (res[k] || 0) + q.reward[k];
         if (g.events && g.events.emit) {
           g.events.emit('questDone', { quest: q });
-          g.events.emit('notify', { text: 'Görev tamamlandı: ' + q.title, type: 'good' });
+          g.events.emit('notify', { text: tr('Görev tamamlandı: {0}', q.title), type: 'good' });
         }
       }
       if (changed) {
@@ -212,7 +213,7 @@ export class QuestSystem {
     if (!o) return;
     try {
       const done = new Set(o.done || []);
-      for (const q of this.list) { q.done = done.has(q.id); if (q.done) q.progress = 'Tamamlandı'; }
+      for (const q of this.list) { q.done = done.has(q.id); if (q.done) q.progress = tr('Tamamlandı'); }
       if (o.s) Object.assign(this.s, o.s);
       this._refreshActive();
     } catch (e) { /* ignore */ }

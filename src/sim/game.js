@@ -1,5 +1,6 @@
 // Aevum — headless simulation core (pure JS, no DOM/three)
 import { AGES, RES, UNITS, BUILDINGS, TECHS, PLAYER_COLORS, FARM_SLOTS } from '../data.js';
+import { tr } from '../i18n.js';
 // big farm: cells (x, z) of its 3x3 grid, ring order around the granary (1, 1); food / s of a farmer while his plot is ripe
 export const FARM_CELLS = [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1]];
 const FARM_RATE = 16 / 9 * 0.85;
@@ -24,7 +25,7 @@ const RATE = { tree: 0.42, stone: 0.36, gold: 0.36, berries: 0.4, deer: 0.5, wol
 export const PREY = { deer: 1, wolf: 1, bear: 1 };
 export const PRED = {
   wolf: { name: 'Kurt', hp: 40, atk: 3, rof: 1.5, spd: 1.9, aggro: 3, leash: 7, food: 160 },
-  bear: { name: 'Ayı', hp: 150, atk: 8, rof: 2, spd: 1.5, aggro: 2.5, leash: 6, food: 320 },
+  bear: { name: tr('Ayı'), hp: 150, atk: 8, rof: 2, spd: 1.5, aggro: 2.5, leash: 6, food: 320 },
 };
 // stand spots per resource tile (deer move: none) and their offsets from the tile centre (sides, then corners)
 const SPOTS = { stone: 4, gold: 4, tree: 3, berries: 3 }, SPOT_R = 6, SPOT_BOX = 8, SPOT_O = [0, 1.3, 1.3, 0, 0, -1.3, -1.3, 0, 1.12, 1.12, 1.12, -1.12, -1.12, -1.12, -1.12, 1.12];
@@ -1228,11 +1229,11 @@ export class Game {
     if (p.age >= 4) return { ok: false, reason: 'Zaten son çağdasın' };
     if (this.buildings.some(b => b.owner === owner && b.queue.some(q => q.kind === 'age'))) return { ok: false, reason: 'Çağ atlama sürüyor' };
     const a = AGES[p.age + 1];
-    if (this._typesOwned(owner) < a.reqBuildings) return { ok: false, reason: `En az ${a.reqBuildings} farklı bina türü gerekli (ev ve sur hariç)` };
+    if (this._typesOwned(owner) < a.reqBuildings) return { ok: false, reason: tr('En az {0} farklı bina türü gerekli (ev ve sur hariç)', a.reqBuildings) };
     const miss = this.ageMissingTypes(owner);
-    if (miss.length) return { ok: false, reason: miss.map(t => BUILDINGS[t].name).join(', ') + ' gerekli' };
+    if (miss.length) return { ok: false, reason: tr('{0} gerekli', miss.map(t => tr(BUILDINGS[t].name)).join(', ')) };
     const wait = this.ageWait(owner);
-    if (wait > 0) return { ok: false, reason: `Bu çağda biraz daha kalmalısın (${Math.ceil(wait / 60)} dk)` };
+    if (wait > 0) return { ok: false, reason: tr('Bu çağda biraz daha kalmalısın ({0} dk)', Math.ceil(wait / 60)) };
     if (!this.canAfford(owner, a.cost)) return { ok: false, reason: 'Yetersiz kaynak' };
     return { ok: true, reason: '' };
   }
@@ -1244,7 +1245,7 @@ export class Game {
     for (const b of this.buildings) if (b.owner === p.id) for (let i = b.queue.length - 1; i >= 0; i--) if (b.queue[i].kind === 'age') b.queue.splice(i, 1);
     p.age = age; p.ageProgress = 0; p.ageAt = this.time; this._rescaleBuildings(p);
     this.events.emit('ageUp', { owner: p.id, age, dev: true });
-    this.events.emit('notify', { text: AGES[age].name + ' (geliştirici modu)', type: 'good' });
+    this.events.emit('notify', { text: tr('{0} (geliştirici modu)', tr(AGES[age].name)), type: 'good' });
     return true;
   }
   ageUp(buildingId) {
@@ -1571,7 +1572,7 @@ export class Game {
     // 30 tiles from the last alert (at most every 15 s)
     if (target.owner === this.me) {
       const far = this._uaX == null || Math.hypot(target.x - this._uaX, target.z - this._uaZ) > 30;
-      if (this.time - this._uaLast > 30 || (far && this.time > this._uaT)) { this._uaT = this.time + 15; this._uaX = target.x; this._uaZ = target.z; this.events.emit('underAttack', { x: target.x, z: target.z }); this.events.emit('notify', { text: 'Saldırı altındasın!', type: 'warn', x: target.x, z: target.z }); }
+      if (this.time - this._uaLast > 30 || (far && this.time > this._uaT)) { this._uaT = this.time + 15; this._uaX = target.x; this._uaZ = target.z; this.events.emit('underAttack', { x: target.x, z: target.z }); this.events.emit('notify', { text: tr('Saldırı altındasın!'), type: 'warn', x: target.x, z: target.z }); }
       this._uaLast = this.time;
     }
     if (target.hp <= 0 && target.live) { target.live = false; target.hp = target.maxHp = 1; target.tid = 0; target.anim = 'die'; target.deathTime = this.time; target.wx = target.x; target.wz = target.z; target.hunted = true; this.events.emit('death', { e: target, killer: killer || null }); return; }
@@ -2054,10 +2055,10 @@ export class Game {
     const mine = u.owner === this.me && this.time - (this._mineMsgT || -99) > 6;
     if (best) {
       o.targetId = best.id; u.targetId = best.id; o.x = best.x; o.z = best.z; o.sp = 0; o.fail = 0; o.dadm = this._depOf(best); u.path = null; u.pk = null;
-      if (mine) { this._mineMsgT = this.time; this.events.emit('notify', { text: 'Bu maden dolu (en fazla ' + MINE_CAP + ' işçi): köylüler yakındaki başka bir madene gidiyor.', type: 'info', x: best.x, z: best.z }); }
+      if (mine) { this._mineMsgT = this.time; this.events.emit('notify', { text: tr('Bu maden dolu (en fazla {0} işçi): köylüler yakındaki başka bir madene gidiyor.', MINE_CAP), type: 'info', x: best.x, z: best.z }); }
       return false;
     }
-    if (mine) { this._mineMsgT = this.time; this.events.emit('notify', { text: 'Bu maden dolu: bir madende en fazla ' + MINE_CAP + ' işçi çalışabilir. Yeni bir maden bul.', type: 'warn', x: t.x, z: t.z }); }
+    if (mine) { this._mineMsgT = this.time; this.events.emit('notify', { text: tr('Bu maden dolu: bir madende en fazla {0} işçi çalışabilir. Yeni bir maden bul.', MINE_CAP), type: 'warn', x: t.x, z: t.z }); }
     if (u.carry && u.carry.amount > 0) { u.order = { type: 'return', res: o.res, resume: null }; u.path = null; u.pk = null; return false; }
     this._next(u);
     return false;
@@ -2144,7 +2145,7 @@ export class Game {
     p.stats.buildingsBuilt++; this._popCap(p);
     if (b.type === 'rail' || b.type === 'station') this._railDirty = true;
     this.events.emit('buildComplete', { e: b });
-    if (b.owner === this.me) this.events.emit('notify', { text: BUILDINGS[b.type].name + ' tamamlandı', type: 'good', x: b.x, z: b.z });
+    if (b.owner === this.me) this.events.emit('notify', { text: tr('{0} tamamlandı', tr(BUILDINGS[b.type].name)), type: 'good', x: b.x, z: b.z });
   }
   _uTrade(u, o, dt) {
     let m = this.entities.get(o.m), tc = this.entities.get(o.tc);
@@ -2212,7 +2213,7 @@ export class Game {
     if (q.t < q.total) return;
     if (q.kind === 'unit') {
       const ud = UNITS[q.id];
-      if (p.pop + ud.pop > p.popCap) { if (b.owner === this.me && this.time > this._popWarnT) { this._popWarnT = this.time + 20; this.events.emit('notify', { text: 'Nüfus sınırı dolu (1000)!', type: 'warn' }); } return; }
+      if (p.pop + ud.pop > p.popCap) { if (b.owner === this.me && this.time > this._popWarnT) { this._popWarnT = this.time + 20; this.events.emit('notify', { text: tr('Nüfus sınırı dolu (1000)!'), type: 'warn' }); } return; }
       b.queue.shift();
       this._navMode = !!ud.naval; const f = ud.naval ? this._navSpawn(b) : this._freeNear(b.x + (this.rand() - 0.5) * b.size, b.z + b.size / 2 + 0.6, b.owner); this._navMode = false;
       const u = this._addUnit(q.id, b.owner, f.x, f.z); p.stats.unitsTrained++;
@@ -2226,14 +2227,14 @@ export class Game {
       b.queue.shift(); p.techs.add(q.id); const i = p.pending.indexOf(q.id); if (i >= 0) p.pending.splice(i, 1);
       p.stats.techs++; this._mods(p); this._rescaleBuildings(p); this._rescaleUnits(p);
       this.events.emit('researched', { owner: b.owner, tech: q.id });
-      if (b.owner === this.me) this.events.emit('notify', { text: TECHS[q.id].name + ' araştırıldı', type: 'good' });
+      if (b.owner === this.me) this.events.emit('notify', { text: tr('{0} araştırıldı', tr(TECHS[q.id].name)), type: 'good' });
     } else if (q.kind === 'age') {
       b.queue.shift(); p.age = Math.min(4, q.id); p.ageProgress = 0; p.ageAt = this.time; this._rescaleBuildings(p);
       this.events.emit('ageUp', { owner: b.owner, age: p.age });
       if (b.owner === this.me) { const cnt = o => Object.values(o).filter(x => x.age === p.age && x.id !== 'house').length, nb = cnt(BUILDINGS), nu = cnt(UNITS), nt = cnt(TECHS);
-        this.events.emit('notify', { text: `Yeni çağ: ${nb} bina, ${nu} birlik ve ${nt} teknoloji açıldı. Tüm binaların güçlendi!`, type: 'good' }); }
+        this.events.emit('notify', { text: tr('Yeni çağ: {0} bina, {1} birlik ve {2} teknoloji açıldı. Tüm binaların güçlendi!', nb, nu, nt), type: 'good' }); }
       const mine = b.owner === this.me, ally = !mine && this.isAlly(b.owner, this.me);
-      this.events.emit('notify', { text: mine ? AGES[p.age].name + ' başladı!' : (ally ? 'Bir müttefik ' : 'Bir rakip ') + AGES[p.age].name + ' seviyesine ulaştı', type: mine || ally ? 'good' : 'warn' });
+      this.events.emit('notify', { text: mine ? tr('{0} başladı!', tr(AGES[p.age].name)) : tr(ally ? 'Bir müttefik {0} seviyesine ulaştı' : 'Bir rakip {0} seviyesine ulaştı', tr(AGES[p.age].name)), type: mine || ally ? 'good' : 'warn' });
     }
   }
 
@@ -2364,11 +2365,11 @@ export class Game {
       // archery ranges, stables, siege workshops, factories, docks; a foundation counts once work on it has started.
       // Units left over do not keep a player in: a villager or a scout hidden somewhere no longer stops the match.
       const prod = this.prodLeft(p.id);
-      if (p.id === this.me && prod === 1 && (p.prodLeft | 0) > 1) this.events.emit('notify', { text: 'Birim üreten son binan kaldı! O da yıkılırsa yenilirsin.', type: 'warn' });
+      if (p.id === this.me && prod === 1 && (p.prodLeft | 0) > 1) this.events.emit('notify', { text: tr('Birim üreten son binan kaldı! O da yıkılırsa yenilirsin.'), type: 'warn' });
       p.prodLeft = prod;
       if (!prod) {
         p.defeated = true;
-        if (p.id !== this.me) this.events.emit('notify', this.isAlly(p.id, this.me) ? { text: 'Bir müttefik uygarlık yıkıldı!', type: 'warn' } : { text: 'Bir rakip uygarlık yıkıldı!', type: 'good' });
+        if (p.id !== this.me) this.events.emit('notify', this.isAlly(p.id, this.me) ? { text: tr('Bir müttefik uygarlık yıkıldı!'), type: 'warn' } : { text: tr('Bir rakip uygarlık yıkıldı!'), type: 'good' });
         if (p.id === this.me) this.reveal = true;
         this.events.emit('playerDefeated', { id: p.id, team: p.team });
       }
