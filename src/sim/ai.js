@@ -46,8 +46,8 @@ const DIFF = {
 const RK = ['food', 'wood', 'gold', 'stone'];
 const RES_OF = { tree: 'wood', stone: 'stone', gold: 'gold', berries: 'food', deer: 'food' };
 const NOMINAL = { food: 0.42, wood: 0.36, gold: 0.32, stone: 0.32 }; // per villager per second, before any history
-const TYPE_ROLE = { spearman: 'pike', swordsman: 'inf', heavyinf: 'inf', musketeer: 'gun', rifleman: 'gun', archer: 'bow', crossbow: 'bow', lightcav: 'cav', knight: 'cav', cuirassier: 'cav', ram: 'siege', catapult: 'siege', cannon: 'siege', artillery: 'siege' };
-const ROLE_UNITS = { pike: ['spearman'], inf: ['heavyinf', 'swordsman'], gun: ['rifleman', 'musketeer'], bow: ['crossbow', 'archer'], cav: ['cuirassier', 'knight', 'lightcav'], siege: ['artillery', 'cannon', 'catapult', 'ram'] };
+const TYPE_ROLE = { spearman: 'pike', swordsman: 'inf', heavyinf: 'inf', bayonet: 'pike', guardsman: 'inf', longbow: 'bow', sharpshooter: 'bow', musketeer: 'gun', rifleman: 'gun', archer: 'bow', crossbow: 'bow', lightcav: 'cav', knight: 'cav', cuirassier: 'cav', ram: 'siege', catapult: 'siege', cannon: 'siege', artillery: 'siege' };
+const ROLE_UNITS = { pike: ['bayonet', 'spearman'], inf: ['guardsman', 'heavyinf', 'swordsman'], gun: ['rifleman', 'musketeer'], bow: ['sharpshooter', 'longbow', 'crossbow', 'archer'], cav: ['cuirassier', 'knight', 'lightcav'], siege: ['artillery', 'cannon', 'catapult', 'ram'] };
 const ROLE_W = [
   { pike: 1 },
   { pike: 0.1, inf: 0.3, bow: 0.32, cav: 0.28 },
@@ -74,6 +74,7 @@ const MIL_TECHS = {
   chainbarding: ['cavalry'], cuirass: ['cavalry'], steelcuirass: ['cavalry'], warhorses: ['cavalry'], steelshoes: ['cavalry'],
   guncarriage: ['siege'], steelcarriage: ['siege'],
   mobilization: ['infantry', 'ranged', 'cavalry', 'siege'],
+  bayonetdrill: ['infantry'], guardregiment: ['infantry'],   // (2026-11-24) final forms of the spear / sword lines
 };
 const DEF_TECHS = ['masonry', 'arrowslits', 'guardtower', 'townwatch', 'herbs', 'garrisonart', 'architecture', 'medicine', 'bastion', 'concrete', 'shrapnel', 'casemate', 'hospital'];
 const NOT_TYPE = { house: 1, wall: 1, gate: 1, towncenter: 1 };

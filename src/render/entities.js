@@ -1337,6 +1337,10 @@ const KIT = {
   archer: { weapon: 'bow', helm: 'hood' },
   heavyinf: { armor: 1, weapon: 'sword', shield: 1, helm: 'steel', plume: 1 },
   crossbow: { weapon: 'xbow', helm: 'steel' },
+  longbow: { weapon: 'bow', helm: 'hood', legs: 0x3d5a2e },
+  sharpshooter: { weapon: 'gun', helm: 'hood', legs: 0x4a5236 },
+  bayonet: { weapon: 'spear', shield: 1, helm: 'kepi', legs: 0x22324f },
+  guardsman: { armor: 1, weapon: 'sword', shield: 1, helm: 'steel', plume: 1, legs: 0x5a1f1f },
   musketeer: { weapon: 'gun', helm: 'hat' },
   rifleman: { weapon: 'gun', helm: 'kepi', legs: 0x2f3540 },
   lightcav: { cav: 1, weapon: 'spear', helm: 'cap', coat: 0x8a5a35 },
@@ -1897,7 +1901,7 @@ export class EntityView {
   }
   _buildUnitMesh(v, e, age) {
     if (v.root) { this.scene.remove(v.root); releaseUnit(v.ukey); v.ukey = null; const i = this.proxies.indexOf(v.proxy); if (i >= 0) this.proxies.splice(i, 1); v.ring = null; }
-    v.age = age;
+    v.age = age; v.utype = e.type;
     const u = makeUnit(e.type, this._color(e.owner), age);
     v.root = u.root; v.inner = u.inner; v.P = u.P; v.rig = u.rig; v.h = u.h; v.ukey = u.ukey || null;
     v.root.userData.id = e.id;
@@ -2284,7 +2288,7 @@ export class EntityView {
   _updUnit(v, e, dt, time, gt) {
     if (e.kind === 'unit' && !e.dead) {
       const age = this._vage(v, e);
-      if (age !== v.age) { this._buildUnitMesh(v, e, age); v.pop = .5; }
+      if (age !== v.age || v.utype !== e.type) { this._buildUnitMesh(v, e, age); v.pop = .5; }   // (type: a final-form upgrade)
     }
     if (v.pop > 0) this._pop(v, dt);
     const map = this.game.map, k = Math.min(1, dt * 14);
