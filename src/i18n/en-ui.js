@@ -453,4 +453,8 @@ export default {
   "Mesaj yaz… (@claude: hata / öneri bildir)": "Type a message… (@claude: report a bug / idea)",
   "💬 Hata ya da önerin mi var? Enter ile sohbeti aç, @claude yazıp gönder; geliştiriciye gider.": "💬 Got a bug or an idea? Open chat with Enter, write @claude and send; it goes to the developer.",
   "Tek oyunculu oyunda sohbet geri bildirim içindir: mesajının başına @claude yaz.": "In single player, chat is for feedback: start your message with @claude.",
+  // ui/graphs-ui.js
+  "Genel Skor": "Overall Score",
+  "Eldeki Kaynak": "Resources on Hand",
+  "Göster / gizle": "Show / hide",
 };

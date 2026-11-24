@@ -13,6 +13,7 @@ const FARM_SPOT_S = 5;   // seconds a farmer hoes on one spot of his plot before
 import { AIController } from './ai.js';
 import { QuestSystem } from './quests.js';
 import { TutorialSystem } from './tutorial.js';
+import { histTick } from './history.js';
 
 // the buildings that train units: as long as a player has one, the player is in the game (see _checkWin). The temple
 // (it trains only the healer) does not count: the owner's rule is about the worker / soldier buildings.
@@ -2318,7 +2319,7 @@ export class Game {
     for (const ai of this.ais) { if (this.players[ai.playerId !== undefined ? ai.playerId : -1] && this.players[ai.playerId].defeated) continue; try { ai.update(dt); } catch (err) { if (!this._aiErr) { this._aiErr = true; console.error('AI update', err); } } }
     try { this._railUpdate(dt); } catch (err) { if (!this._railErr) { this._railErr = true; console.error('Rail update', err); } }
     try { this.quests.update(dt); } catch (err) { if (!this._qErr) { this._qErr = true; console.error('Quest update', err); } }
-    this._winT -= dt; if (this._winT <= 0) { this._winT = 1; this._checkWin(); }
+    this._winT -= dt; if (this._winT <= 0) { this._winT = 1; this._checkWin(); histTick(this); }
   }
   // per-team vision grids (0 unexplored, 1 explored, 2 visible) live in the sim (this._tv, fixed cadence);
   // this.fog is only a COPY of the local player's team grid for the view (shared vision with allies)
@@ -2810,7 +2811,7 @@ export class Game {
       players: this.players.map(p => ({ ...p, techs: [...p.techs], mods: undefined })),
       entities: ents.filter(e => e).map(e => (isPlainTree(e) ? packTree(e) : e)), projectiles: this.projectiles, fogR: rleEncode(this.fog),
       map: { size: this.map.size, h16: packHeights(this.map.heights), tilesR: rleEncode(this.map.tiles), blockedR: rleEncode(this.map.blocked) },
-      quests, ais,
+      quests, ais, hist: this.history || [],
       // sim-side timers / state that is not on an entity (needed for an exact multiplayer continue)
       sim: { blkV: this._blkV || 0, fogT: this._fogT, winT: this._winT, expT: this._expT, bankT: this._bankT, lineId: this._lineId, railT: this._railT, railDirty: this._railDirty, railP: this._railP || null, navT: this._navT, healT: this._healT },
       tv: this._tv ? [...this._tv].map(([team, g]) => [team, rleEncode(g)]) : null,
@@ -2831,6 +2832,7 @@ export class Game {
     const blocked = s.map.blockedR ? rleDecode(s.map.blockedR, N * N) : Uint8Array.from(s.map.blocked);
     this.map = makeMap(N, heights, tiles, blocked);
     this.time = s.time; this.tick = s.tick | 0; this.nextId = s.nextId; this.rs = s.rs; this.over = s.over || null;
+    this.history = Array.isArray(s.hist) ? s.hist : []; this._histEnd = !!this.over;
     this.fog = s.fogR ? rleDecode(s.fogR, N * N) : Uint8Array.from(s.fog); this._fogSeed = this.fog.slice();
     s.entities = s.entities.map(e => (Array.isArray(e) ? unpackTree(e) : e));
     this.players = s.players.map(p => { const q = { ...p, techs: new Set(p.techs), pending: p.pending || [] }; this._mods(q); return q; });
