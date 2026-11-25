@@ -12,7 +12,8 @@ export const TURN_TICKS = 2;          // 66.7 ms per turn
 export const DELAY = 2;               // commands of turn T execute at turn T+DELAY (the minimum; see _wantDelay)
 export const MAX_DELAY = 18;          // adaptive input delay: at most 1.2 s
 const PING_MS = 1000;                 // game: peer round-trip pings (through the relay) and pacing info
-const SLOW = 0.95;                    // pacing: a client ahead of the others runs at this speed until they line up
+const PING_MS_FAST = 500;             // faster ping/pacing cadence on reliable WebSocket transport
+const STALL_NOTE_MS = 60;             // only count stalls >= 60 ms toward adaptive delay (ignore sub-frame micro-waits)
 export const REDUNDANCY = 4;          // each packet repeats the previous 4 turns
 export const HASH_EVERY = 45;         // turns (~3 s)
 export const MAX_CMDS = 40;
@@ -729,7 +730,7 @@ export class NetSession {
     this.lastHeard = new Map(); const now = this.clock.now();
     for (const p of this.humans) this.lastHeard.set(p, now);
     this.goneAt = new Map();          // pid -> time transport reported left
-    this.stallSince = null; this._stallEmitted = false; this._lastNeed = 0;
+    this.stallSince = null; this._stallEmitted = false; this._stallNoted = false; this._lastNeed = 0;
     this._resent = new Map();
     this.desynced = false;
     this.paused = false; this.pausedBy = null;
@@ -748,7 +749,7 @@ export class NetSession {
     this.wantOf = new Map();          // pid -> the delay that player asks us to use (from his side's measurements)
     this.offset = new Map();          // pid -> how many turns we run ahead of that player (estimate)
     this.stalls = new Map();          // pid -> times we stalled waiting for him
-    this._slow = false; this._lastPing = -1e9; this._echo = new Map();
+    this._pace = 1; this.__slow = false; this._lastPing = -1e9; this._echo = new Map();
     if (this._preTurn) { for (const [d, f] of this._preTurn) this._onTurn(d, f); this._preTurn = null; }
     const ev = { cfg: Object.assign({}, this.cfg, { players: this.cfg.players.map(p => Object.assign({}, p)) }) };
     this._startEv = (this._h.start || []).length ? null : ev;   // nobody listening yet: kept for the first listener
@@ -865,15 +866,16 @@ export class NetSession {
     // another player's lists in a packet from someone else (the relay stamps who sent it): only a forward we asked for
     const fwd = pid !== fromPid;
     if (fwd && !(this.clock.now() - (this._relayAsk.get(pid) || -1e9) < 10000)) return;
+    let isNewTop = false;
     if (!fwd) {
       this.turnHeard.add(pid);
       // his own progress: a slow but honest client keeps scheduling new turns, one who withholds his lists does not
-      if (typeof d.t === 'number') { const top = this.ownTop.get(pid), tt = d.t | 0; if (!top || tt > top.t) this.ownTop.set(pid, { t: tt, at: this.clock.now() }); }
+      if (typeof d.t === 'number') { const top = this.ownTop.get(pid), tt = d.t | 0; if (!top || tt > top.t) { this.ownTop.set(pid, { t: tt, at: this.clock.now() }); isNewTop = true; } }
     }
     if (typeof d.t === 'number') {
       this._store(pid, d.t | 0, d.c, fwd);
-      // how early his lists arrive, in turns (pacing, see _onPing)
-      if (pid === fromPid) { const s = (d.t | 0) - this.tick / TURN_TICKS, l = this.lead.get(pid); this.lead.set(pid, l == null ? s : l * 0.8 + s * 0.2); }
+      // how early his lists arrive, in turns (pacing, see _onPing): only count newly advancing turns, never resends
+      if (isNewTop) { const s = (d.t | 0) - this.tick / TURN_TICKS, l = this.lead.get(pid); this.lead.set(pid, l == null ? s : l * 0.8 + s * 0.2); }
     }
     // (honest packets repeat at most 11 bundled + REDUNDANCY turns, see _flushTurn)
     if (Array.isArray(d.r)) for (const e of d.r.slice(0, MAX_AHEAD)) if (Array.isArray(e)) this._store(pid, e[0] | 0, e[1], fwd);
@@ -970,11 +972,13 @@ export class NetSession {
   }
 
   // ---------- latency / pacing (real time only; nothing here reaches the simulation) ----------
-  // the round trip to `pid` we plan for: a high percentile of the recent pings (jitter included)
+  get _slow() { return !!this.__slow; }
+  set _slow(v) { this.__slow = !!v; if (!v && this._pace < 1) this._pace = 1; }
+  // the round trip to `pid` we plan for: 80th percentile of recent pings (tolerates single jitter spikes)
   _rttOf(pid) {
     const a = this.rtt.get(pid); if (!a || !a.length) return null;
     const s = [...a].sort((x, y) => x - y);
-    return s[Math.min(s.length - 1, Math.floor(s.length * 0.9))];
+    return s[Math.floor((s.length - 1) * 0.8)];
   }
   _noteStall(turn) {
     const now = this.clock.now();
@@ -1012,15 +1016,28 @@ export class NetSession {
     this.offset.set(pid, ((d.dl - mine) - (this.delay - his)) / 2);
     let ahead = -1e9;
     for (const p of this.humans) if (p !== this.me && this._isActive(p, this.turn) && this.offset.has(p)) ahead = Math.max(ahead, this.offset.get(p));
-    if (!this._slow && ahead > 0.5) this._slow = true;
-    else if (this._slow && ahead < 0.15) this._slow = false;
+    if (ahead === -1e9) return;
+    // smooth proportional pacing: gently slow when ahead, gently catch up only when behind every peer
+    if (ahead > 0.25) this._pace = Math.max(0.88, 1 - (ahead - 0.25) * 0.08);
+    else if (ahead < -0.5) this._pace = Math.min(1.06, 1 + (-ahead - 0.5) * 0.04);
+    else this._pace = 1;
+    this.__slow = this._pace < 0.995;
   }
-  // for the HUD: {ping ms (worst peer), delay ms}
+  // for the HUD: {ping ms (smoothed worst peer), srvPing ms (client<->relay), delay ms, kind, slow}
   netInfo() {
     if (this.phase !== 'game') return null;
     let ping = null;
-    for (const p of this.humans) { if (p === this.me) continue; const a = this.rtt.get(p); if (a && a.length) ping = Math.max(ping || 0, a[a.length - 1]); }
-    return { ping: ping == null ? null : Math.round(ping), delay: Math.round(this.delay * TURN_TICKS * STEP * 1000), slow: this._slow };
+    for (const p of this.humans) {
+      if (p === this.me || !this._isActive(p, this.turn)) continue;
+      const a = this.rtt.get(p);
+      if (a && a.length) {
+        const s = a.slice(-5).sort((x, y) => x - y);
+        const med = s[s.length >> 1];
+        ping = ping == null ? med : Math.max(ping, med);
+      }
+    }
+    const srvPing = this.t && this.t.srvRtt != null ? Math.round(this.t.srvRtt) : null;
+    return { ping: ping == null ? null : Math.round(ping), srvPing, delay: Math.round(this.delay * TURN_TICKS * STEP * 1000), kind: (this.t && this.t.kind) || null, slow: this._slow };
   }
 
   _onPeers(ch) {
@@ -1108,7 +1125,8 @@ export class NetSession {
       else if (w) this.withheld.set(p, Math.max(0, w - 2 * dt));
     }
     // round-trip pings + pacing info (also the keep-alive: a peer with nothing to send is not taken for silent)
-    if (now - this._lastPing >= PING_MS) {
+    const pingMs = this.t && this.t.reliable ? PING_MS_FAST : PING_MS;
+    if (now - this._lastPing >= pingMs) {
       this._lastPing = now;
       this._updateDelay();
       const w = [], lg = [], e = [];
@@ -1156,6 +1174,10 @@ export class NetSession {
     }
     // stall handling
     if (this.stallSince != null) {
+      if (!this._stallNoted && now - this.stallSince >= STALL_NOTE_MS) {
+        this._stallNoted = true;
+        this._noteStall(this.turn);
+      }
       const miss = this._missing(this.turn);
       // late packets usually still arrive (latency); ask for a re-send only after 200 ms of waiting
       if (miss.length && now - this.stallSince >= 200 && now - this._lastNeed >= 300) {
@@ -1267,8 +1289,8 @@ export class NetSession {
   advance(game, dt) {
     if (this.phase !== 'game') return 0;
     this._game = game;
-    // pacing: a client running ahead of the others slows down a little instead of hitting stalls (see _onPing)
-    this._acc += Math.max(0, Math.min(dt, 1)) * (this._slow ? SLOW : 1);
+    // pacing: smooth proportional rate so a client ahead slows down slightly instead of stalling (see _onPing)
+    this._acc += Math.max(0, Math.min(dt, 1)) * (this._pace || 1);
     let steps = 0;
     while (this._acc >= STEP - 1e-9 && steps < 6) {
       if (this.tick % TURN_TICKS === 0) {
@@ -1287,7 +1309,8 @@ export class NetSession {
         while (this.sentUpTo < turn + this.delay) this._scheduleOwn(this.sentUpTo + 1);
         if (this._unsent) this._flushTurn();
         if (this._missing(turn).length) {
-          if (this.stallSince == null) { this.stallSince = this.clock.now(); this._lastNeed = 0; this._noteStall(turn); }
+          if (this.stallSince == null) { this.stallSince = this.clock.now(); this._lastNeed = 0; this._stallNoted = false; }
+          else if (!this._stallNoted && this.clock.now() - this.stallSince >= STALL_NOTE_MS) { this._stallNoted = true; this._noteStall(turn); }
           this._pump();
           // no catch-up burst after the wait (units would jump): the lost time is simply not replayed
           if (this._acc > STEP) this._acc = STEP;
@@ -1295,7 +1318,7 @@ export class NetSession {
         }
         if (this.stallSince != null) {
           if (this._stallEmitted) this.emit('resume', {});
-          this.stallSince = null; this._stallEmitted = false;
+          this.stallSince = null; this._stallEmitted = false; this._stallNoted = false;
         }
         this.turn = turn;
         this._execTurn(game, turn);
