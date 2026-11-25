@@ -248,7 +248,7 @@ try {
   r = await post('/mp/admin/bans', OWN, { op: 'unban', fb: 'bannedplayer1' });
   ok(r.status === 200 && (await r.json()).unbanned, 'bans: unban');
   ok((await fetch(base + '/mp/auth', { method: 'POST', body: JSON.stringify({ dev: { fb: 'bannedplayer1', uid: 'c'.repeat(32), name: 'Apollon', av: 'crown' } }) })).status === 200, 'bans: after the unban he (and his address) can play again');
-  ok(html.includes('Banlar') && html.includes('Banla'), 'page: has the Banlar block');
+  ok(html.includes('Banlar') && html.includes('banform') && !html.includes('🚫 Banla'), 'page: has the Banlar block, no ban button on feedback lines');
   ok((await get('/mp/admin/other', OWN)).status === 404, 'admin: unknown path -> 404');
   ok((await fetch(base + '/mp/admin/feedback', { method: 'DELETE', headers: { 'X-Aevum-Ticket': OWN } })).status === 405, 'admin: other methods -> 405');
 } finally {

@@ -240,11 +240,6 @@ details.panel[open] > summary { margin-bottom: 12px; }
         else fk.disabled = false;
       };
       acts.append(fk);
-      if (r.uid) {
-        var bb = el('button', 'no', '🚫 Banla'); bb.type = 'button';
-        bb.onclick = async function () { if (!confirm(r.name + ' banlansın mı? Çok oyunculuya, sohbete ve lobilere giremez.')) return; bb.disabled = true; if (await banOp({ op: 'ban', fb: r.uid, reason: 'geri bildirimden: ' + (r.text || '').slice(0, 120) }, r.name)) bb.textContent = 'Banlandı'; else bb.disabled = false; };
-        acts.append(bb);
-      }
       if (r.shot) {
         // the screenshot is read only on this click (one Firestore read), then kept in r.img
         var sb = el('button', '', 'görüntü'); sb.type = 'button';
