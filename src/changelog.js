@@ -2,6 +2,20 @@
 // release (Turkish, player-facing: what changed in the game, not how). Shown by src/ui/updates-ui.js.
 export const CHANGELOG = [
   {
+    v: '0.9.10', date: '2026-11-25', title: 'Daha akıcı oyun, daha düşük ping',
+    items: [
+      'Oyun daha akıcı: ekrana çizilen nesne sayısı yarıdan aza indi, zayıf bilgisayar ve telefonlarda fark belirgin.',
+      'Ekran dışındaki tarlalar, çimler ve kayalar artık çizilmiyor; birimler, oklar ve balık sürüleri toplu çiziliyor.',
+      'Çağ atlarken ve bir bina ilk kurulurken yaşanan anlık takılmalar azaldı.',
+      'Yapay zeka sur hesaplarken oyunu takılmıyor; oyun mantığı yüzde 20 daha hızlı.',
+      'Çok oyunculu oyunda komut gecikmesi kısaldı: emirler eskisinin yarısı kadar sürede uygulanıyor.',
+      'Çok oyunculu oyunda ping sıçramaları ve takılmalar azaldı, sunucuya giden veri 5 kat küçüldü.',
+      'Bağlantı yavaş kurulduğunda oyun artık sessizce yavaş bağlantıya düşmüyor.',
+      'Çok oyunculu otomatik kayıt seyrekleşti, tüm odayı anlık donduran takılma azaldı.',
+      'Birimler emirlere görsel olarak daha hızlı tepki veriyor.',
+    ],
+  },
+  {
     v: '0.9.9', date: '2026-11-25', title: 'Birimler konuşuyor',
     items: [
       'Köylüler seçilince ve işe gönderilince konuşur: odun, yiyecek, taş, altın ve inşaat için ayrı sözler. Kadın ve erkek köylü sesleri var.',
