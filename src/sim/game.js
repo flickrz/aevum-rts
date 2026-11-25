@@ -2865,7 +2865,8 @@ export class Game {
     const free = (tx, tz) => tx >= 2 && tz >= 2 && tx < N - 2 && tz < N - 2 && m.blocked[tz * N + tx] === 0 && !this.resAt[tz * N + tx];
     const deep = [], shallow = [];
     for (let tz = 2; tz < N - 2; tz++) for (let tx = 2; tx < N - 2; tx++) {
-      const t = T[tz * N + tx]; if ((t !== 3 && t !== 4) || !free(tx, tz) || !shoreNear(tx, tz, 3)) continue;
+      // (owner 2026-11-25: "denizde balık yok") open sea counts too, not only water near a shore
+      const t = T[tz * N + tx]; if ((t !== 3 && t !== 4) || !free(tx, tz)) continue;
       // keep at least one water ring around so ships can circle it
       if (t === 4) deep.push([tx, tz]); else if (!shoreNear(tx, tz, 1)) shallow.push([tx, tz]);
     }
@@ -2874,8 +2875,8 @@ export class Game {
     const put = c => { this._addRes('fish', c[0], c[1], FISH_AMOUNT); placed.push(c); };
     const pool = deep.length >= 6 ? deep : deep.concat(shallow);
     for (let i = pool.length - 1; i > 0; i--) { const j = (this.rand() * (i + 1)) | 0; const x = pool[i]; pool[i] = pool[j]; pool[j] = x; }
-    const want = Math.max(6, Math.min(12, Math.round(pool.length / 30)));
-    for (const c of pool) { if (placed.length >= want) break; if (ok(c, 10)) put(c); }
+    const want = Math.max(6, Math.min(40, Math.round(pool.length / 45)));
+    for (const c of pool) { if (placed.length >= want) break; if (ok(c, 8)) put(c); }
     for (const p of this.players) {
       const all = deep.concat(shallow).filter(c => { const d = dhypot(c[0] + 0.5 - p.startX, c[1] + 0.5 - p.startZ); return d >= 7 && d <= 25 && free(c[0], c[1]); });
       if (!all.length) continue;
