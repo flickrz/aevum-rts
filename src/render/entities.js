@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BUILDINGS } from '../data.js';
 import { updateConstruction, disposeConstruction, updateRepair } from './construction.js';
-import { SEA_BUILD, SEA_UNITS, makeSeaUnit, seaAnimUnit, seaAnimBuilding, makeFish, seaAnimFish, seaMask, pastureSheepK, dockY } from './models-sea.js';
+import { SEA_BUILD, SEA_UNITS, makeSeaUnit, seaAnimUnit, seaAnimBuilding, makeFish, seaAnimFish, seaMask, pastureSheepK, dockY, SEA_K } from './models-sea.js';
 import { StaticBatches } from './static-batch.js';
 import { loadGlbModels, loadEra, glbVersion, hasGlb, glbPlanned, eraSettled, addGlbBuilding, addGlbPiece, loadCrop, cropGeo, loadSea, hasSea, dockFile, addSeaModel } from './glb-models.js';
 
@@ -1098,7 +1098,7 @@ function dockPush(map, e, U, size) {
   // (a pond is shallow all over: then the first shallower depth any side reaches)
   let deep = -1;
   const wet = (x, z) => h(x, z) < deep, dry = (x, z) => h(x, z) > 0;
-  const half = size * 1.15 / 2;
+  let half = size * 1.15 * SEA_K / 2;
   // for one side: the push (in tenths of the size, up to 8) that puts the pier tip over water with the hut's back still
   // on land (-1: none does)
   const need = (ry) => {
@@ -1111,17 +1111,24 @@ function dockPush(map, e, U, size) {
     return -1;
   };
   // the mask's side first; another side only when it needs a shorter push (the pier toward the nearest open water)
-  let ry = U.dockRy, best = -1;
-  for (const d of [-1, -.5, -.3, -.15]) {
-    deep = d; ry = U.dockRy; best = need(ry);
-    for (const r of [Math.PI, Math.PI / 2, 0, -Math.PI / 2]) {
-      if (r === U.dockRy) continue;
-      const k = need(r);
-      if (k >= 0 && (best < 0 || k < best)) { best = k; ry = r; }
+  // (SEA_K, owner 2026-11-25: 3x bigger) on a small pond the big model's pier reached over to the far bank and
+  // covered the whole pond: there it is drawn smaller, the first size (SEA_K, halfway, 1x) whose pier finds water
+  let ry = U.dockRy, best = -1, sk = SEA_K;
+  for (const k0 of [SEA_K, (SEA_K + 1) / 2, 1]) {
+    sk = k0; half = size * 1.15 * k0 / 2;
+    for (const d of [-1, -.5, -.3, -.15]) {
+      deep = d; ry = U.dockRy; best = need(ry);
+      for (const r of [Math.PI, Math.PI / 2, 0, -Math.PI / 2]) {
+        if (r === U.dockRy) continue;
+        const k = need(r);
+        if (k >= 0 && (best < 0 || k < best)) { best = k; ry = r; }
+      }
+      if (best >= 0) break;
     }
     if (best >= 0) break;
   }
-  if (best < 0) ry = U.dockRy;
+  if (best < 0) { ry = U.dockRy; sk = SEA_K; }
+  if (sk !== SEA_K) U.dockM.scale.multiplyScalar(sk / SEA_K);
   const off = size * .1 * Math.max(0, best);
   U.dockM.rotation.y = ry;
   U.dockM.position.x += Math.sin(ry) * off; U.dockM.position.z += Math.cos(ry) * off;
@@ -1208,7 +1215,7 @@ function makeBuilding(type, size, age, color, mask, seed, noGlb) {
       if (hasSea(dockFile(era))) {
         body.clear(); roof.clear(); slab.clear(); c.chim.length = 0; c.spin = null;
         let d = 2; for (let i = 0; i < 4; i++) if ((mask & 15) === 1 << i) d = i;
-        const ry = [Math.PI, Math.PI / 2, 0, -Math.PI / 2][d], dm = addSeaModel(body, dockFile(era), color, size * 1.15, -.35, ry);
+        const ry = [Math.PI, Math.PI / 2, 0, -Math.PI / 2][d], dm = addSeaModel(body, dockFile(era), color, size * 1.15 * SEA_K, -.35, ry);
         // (owner 2026-11-25: "biraz daha suya doğru") the model is pushed out over the water side
         // (owner 2026-11-25, open sea: a dock mostly on water floated out) how far depends on the land in its footprint,
         // set by EntityView (dockPush) once the map is known; U.dockM / U.dockRy carry the mesh and its turn

@@ -333,6 +333,8 @@ function sailor(p, color, x, y, z, s) {
   return g;
 }
 // generated ship models: [length (= the procedural pd), share of the model's height under the water, selection ring]
+// (owner 2026-11-25: ships and docks 3x bigger) view-only size factor of the generated ship and dock models
+export const SEA_K = 3;
 const SHIP_GLB = { fishboat: [1.2, .12, [.8, 1.5]], transport: [2.0, .12, [1.4, 2.4]], galley: [2.3, .1, [1.3, 2.6]], galleon: [2.7, .1, [1.7, 3.0]], ironclad: [2.4, .15, [1.4, 2.7]] };
 export const SEA_UNITS = { fishboat: 1, transport: 1, galley: 1, galleon: 1, ironclad: 1, train: 1 };
 // builds into `inner` (already in root); returns dims pre-USCALE (entities.js multiplies by USCALE)
@@ -345,7 +347,7 @@ export function makeSeaUnit(type, color, A, root, inner, P) {
   let h = 1, pw = .5, pd = 1.2;
   const hw = A >= 4 ? M.iron : A === 0 ? M.log : M.wood;
   try { loadSea(); } catch (err) { /* procedural ships */ }
-  const GL = SHIP_GLB[type];
+  const G0 = SHIP_GLB[type], GL = G0 && [G0[0] * SEA_K, G0[1], [G0[2][0] * SEA_K, G0[2][1] * SEA_K]];
   if (GL && hasSea(type)) {
     // generated model (glb-models.js): the hull only; wake, cannon flashes and funnel smoke as the procedural ship
     const m = addSeaModel(hull, type, color, GL[0], 0);
