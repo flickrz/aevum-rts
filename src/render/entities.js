@@ -1177,7 +1177,8 @@ function makeBuilding(type, size, age, color, mask, seed, noGlb) {
     else BUILD.mill(c);
     bx(c.body, MT.hay, .5, .28, .5, 1.35, 0, -1.35); bx(c.body, MT.canvas, .26, .2, .2, -1.4, 0, 1.3); bx(c.body, MT.canvas, .22, .18, .2, -1.15, 0, 1.45);
     const crops = new THREE.InstancedMesh(TUFT, CROP_MAT, FARM_CELLS_R.length * FROWS * FPER);
-    crops.castShadow = true; crops.receiveShadow = true; crops.frustumCulled = false; crops.count = 0;
+    crops.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, .4, 0), size * .75 + 1);
+    crops.castShadow = true; crops.receiveShadow = true; crops.frustumCulled = true; crops.count = 0;
     root.add(crops);
     U.fur = fur; U.furs = furs; U.crops = crops; U.plotted = true; U.plotSize = P;
   } else if (type === 'farm') {
@@ -1189,7 +1190,8 @@ function makeBuilding(type, size, age, color, mask, seed, noGlb) {
     for (let i = 0; i < 6; i++) bx(fur, MT.soil2, .2, .06, size * .86, -size * .43 + .22 + i * (size * .86 - .44) / 5, .08, 0);
     bake(fur);
     const crops = new THREE.InstancedMesh(G.box, MT.sprout, 72);
-    crops.castShadow = true; crops.receiveShadow = true; crops.frustumCulled = false; crops.count = 0;
+    crops.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, .4, 0), size * .75 + 1);
+    crops.castShadow = true; crops.receiveShadow = true; crops.frustumCulled = true; crops.count = 0;
     root.add(crops);
     U.fur = fur; U.crops = crops;
   } else {
