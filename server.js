@@ -558,6 +558,7 @@
         if (d.fb && OWNERS.has(d.fb)) { reply(res, 400, J, '{"error":"Kendini banlayamazsın."}'); return; }
         ADMIN.ban(d).then((r) => {
           if (r.unbanned) { const b = BANNED.get(r.fb); BANNED.delete(r.fb); for (const ip of (b && b.ips) || []) BANNED_IPS.delete(ip); }
+          else if (r.edited) { const b = BANNED.get(r.fb); if (b) b.reason = r.reason; }
           else if (OWNERS.has(r.fb)) { ADMIN.ban({ op: 'unban', fb: r.fb }).catch(() => {}); reply(res, 400, J, '{"error":"Kendini banlayamazsın."}'); return; }
           else { BANNED.set(r.fb, Object.assign({ ips: [] }, r)); kickBanned(r.fb); }
           reply(res, 200, J, JSON.stringify(Object.assign({ ok: true }, r)));

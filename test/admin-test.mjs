@@ -245,6 +245,9 @@ try {
   ok((await fetch(base + '/mp/auth', { method: 'POST', body: JSON.stringify({ dev: { fb: 'freshaccount9', uid: 'd'.repeat(32), name: 'Yeni', av: 'crown' } }) })).status === 403, 'bans: a new account from his address is refused too (IP ban)');
   ok((await get('/mp/admin/bans', OWN)).status === 200, 'bans: the owner is never IP banned');
   ok((await (await get('/mp/admin/bans', OWN)).json()).items.find((x) => x.fb === 'bannedplayer1').ips.length >= 1, 'bans: the address is kept on the ban');
+  r = await post('/mp/admin/bans', OWN, { op: 'reason', fb: 'bannedplayer1', reason: 'küfür etti' });
+  ok(r.status === 200 && (await (await get('/mp/admin/bans', OWN)).json()).items.find((x) => x.fb === 'bannedplayer1').reason === 'küfür etti', 'bans: the reason can be changed later');
+  ok((await post('/mp/admin/bans', OWN, { op: 'reason', fb: 'bannedplayer1', reason: 'x'.repeat(301) })).status === 400, 'bans: a reason over 300 characters -> 400');
   r = await post('/mp/admin/bans', OWN, { op: 'unban', fb: 'bannedplayer1' });
   ok(r.status === 200 && (await r.json()).unbanned, 'bans: unban');
   ok((await fetch(base + '/mp/auth', { method: 'POST', body: JSON.stringify({ dev: { fb: 'bannedplayer1', uid: 'c'.repeat(32), name: 'Apollon', av: 'crown' } }) })).status === 200, 'bans: after the unban he (and his address) can play again');

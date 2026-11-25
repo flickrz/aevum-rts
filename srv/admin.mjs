@@ -147,6 +147,7 @@ export function banRows(docs) {
 export function cleanBan(b) {
   if (!b || typeof b !== 'object') return { error: 'bad json' };
   if (b.op === 'unban') return BAN_FB_RE.test(String(b.fb || '')) ? { op: 'unban', fb: String(b.fb) } : { error: 'bad fb' };
+  if (b.op === 'reason') { if (!BAN_FB_RE.test(String(b.fb || ''))) return { error: 'bad fb' }; if (typeof b.reason !== 'string' || b.reason.length > REASON_MAX) return { error: 'bad reason' }; return { op: 'reason', fb: String(b.fb), reason: clean1(b.reason) }; }
   if (b.op !== 'ban') return { error: 'bad op' };
   const reason = typeof b.reason === 'string' ? clean1(b.reason).slice(0, REASON_MAX) : '';
   if (b.fb !== undefined && b.fb !== '') { if (!BAN_FB_RE.test(String(b.fb))) return { error: 'bad fb' }; return { op: 'ban', fb: String(b.fb), reason }; }
@@ -245,6 +246,7 @@ export function createAdmin({ store, now = () => Date.now(), ttlMs = 10 * 60000,
     // d: a cleanBan result -> {fb, name, reason, at} | {fb, unbanned: true}. A ban by name looks the account up in names/.
     async ban(d) {
       if (d.op === 'unban') { await store.remove(BANS + '/' + d.fb); return { fb: d.fb, unbanned: true }; }
+      if (d.op === 'reason') { await store.patch(BANS + '/' + d.fb, { reason: { stringValue: d.reason } }); return { fb: d.fb, reason: d.reason, edited: true }; }
       let fb = d.fb, name = d.name || '';
       if (!fb) {
         const doc = await store.doc('names/' + banNameKey(name));

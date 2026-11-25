@@ -310,16 +310,18 @@ details.panel[open] > summary { margin-bottom: 12px; }
       var meta = el('div', 'meta'); meta.append(el('b', '', x.name || '(isimsiz)'), el('span', '', fmtTime(x.at)), el('span', '', 'hesap ' + x.fb.slice(0, 10) + '…'));
       if (x.ips && x.ips.length) meta.append(el('span', '', x.ips.length + ' IP de banlı'));
       it.append(meta, el('span', 'badge rejected', 'Banlı'));
-      if (x.reason) it.append(el('div', 'text', x.reason));
+      // the reason can be written or changed later (saved when the field is left)
+      var rs = el('input'); rs.placeholder = 'Ban sebebi (sonradan da yazılabilir)'; rs.value = x.reason || ''; rs.maxLength = 300; rs.setAttribute('aria-label', 'Ban sebebi');
+      rs.addEventListener('change', async function () { if ((x.reason || '') === rs.value) return; var r = await banOp({ op: 'reason', fb: x.fb, reason: rs.value }); if (r) x.reason = rs.value; else rs.value = x.reason || ''; });
       var acts = el('div', 'acts'), b = el('button', '', 'Banı kaldır'); b.type = 'button';
       b.onclick = async function () { if (!confirm((x.name || x.fb) + ' için ban kaldırılsın mı?')) return; b.disabled = true; var r = await banOp({ op: 'unban', fb: x.fb }); if (r) { bans = bans.filter(function (y) { return y !== x; }); renderBans(); } else b.disabled = false; };
-      acts.append(b); it.append(acts); list.append(it);
+      acts.append(rs, b); it.append(acts); list.append(it);
     });
   }
   async function banOp(body, name) {
     try {
       var r = await api('/mp/admin/bans', body);
-      if (r && !r.unbanned) { delete r.ok; if (!r.name && name) r.name = name; bans = bans.filter(function (y) { return y.fb !== r.fb; }); bans.unshift(Object.assign({ ips: [] }, r)); $('bans').open = true; renderBans(); }
+      if (r && !r.unbanned && !r.edited) { delete r.ok; if (!r.name && name) r.name = name; bans = bans.filter(function (y) { return y.fb !== r.fb; }); bans.unshift(Object.assign({ ips: [] }, r)); $('bans').open = true; renderBans(); }
       return r;
     } catch (e) { $('sync').textContent = 'Ban kaydedilemedi: ' + e.message; alert('Ban kaydedilemedi: ' + e.message); return null; }
   }
