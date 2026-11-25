@@ -421,7 +421,8 @@ export class UI {
       fb.classList.add('menu-fb-click'); fb.setAttribute('role', 'button'); fb.tabIndex = 0;
       fb.addEventListener('click', () => { safe(() => this._click()); this._fbBox(); });
       this.menuEl.append(fb); }
-    safe(() => { const nb = newsBox(this); if (nb) { if (this._signedIn()) { nb.classList.add('has-chat'); nb.append(gchatPanel(this)); } this.menuEl.append(nb); } });   // "Duyurular" and under it "Genel Sohbet" on the right (news-ui.js, gchat-ui.js)
+    safe(() => { if (this._signedIn()) { const gc = gchatPanel(this); gc.classList.add('menu-chat'); this.menuEl.append(gc); } });   // "Genel Sohbet" on the right (gchat-ui.js)
+    safe(() => { const nb = newsBox(this); if (nb) this.menuEl.append(nb); });   // "Duyurular" under the player plate (news-ui.js; it also lines up the chat)
     safe(() => menuHud(this));   // the player plate (avatar, name, level, TP) and account chips around the menu
     // (owner 2026-11-20, drawn on a screenshot) the account unit (player plate, and the status pill and Profil / Çıkış
     // right under it) at the top left over the menu's column; the menu, and the feedback note right under it

@@ -1117,11 +1117,13 @@ html.touch .news-wrap .news-btn { display: block; }
 .fbta { width: 100%; box-sizing: border-box; resize: vertical; min-height: 96px; margin: 10px 0 6px; font: inherit; font-size: 13px; line-height: 1.45; }
 .fbnote { min-height: 18px; font-size: 12px; color: var(--gold); }
 /* ---- "Genel Sohbet" (src/ui/gchat-ui.js): under "Duyurular" on the main menu, a third column on the multiplayer screen ---- */
-.news-wrap.has-chat { display: flex; flex-direction: column; gap: 12px; width: min(400px, 30vw); }
-.news-wrap.has-chat > .news-box { width: 100%; flex: none; }
-.news-wrap.has-chat > .news-btn { flex: none; }
+.news-wrap.left { right: auto; }
+.news-wrap.left .news-box { width: 100%; padding: 10px 12px; }
+.news-wrap.left .news-body { -webkit-line-clamp: 2; font-size: 13px; }
+.news-wrap.left .news-head { margin-bottom: 6px; }
+.news-wrap.left .news-older { margin-top: 5px; }
+.gchat.menu-chat { position: absolute; right: clamp(28px, 6vw, 120px); top: 30vh; height: 60vh; width: min(400px, 30vw); z-index: 3; animation: fadeIn .3s ease; }
 .gchat { display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 12px 12px 10px; box-sizing: border-box; text-align: left; }
-.news-wrap > .gchat { flex: none; }
 .gc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; }
 .gc-title { color: var(--gold); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; font-weight: 600; }
 .gc-rbtn { background: none; border: 0; padding: 2px 4px; font-size: 12px; color: var(--dim); text-decoration: underline; text-underline-offset: 3px; }
@@ -1153,7 +1155,7 @@ html.touch .news-wrap .news-btn { display: block; }
 .gc-pacts { display: flex; gap: 8px; margin-top: 10px; }
 .gc-pacts .mbtn { flex: 1; margin: 0; }
 .mp-wrap > .gchat { flex: none; width: 300px; contain: size; min-height: 340px; }
-html.touch .news-wrap > .gchat { display: none; }
-@media (max-width: 1100px) { .news-wrap.has-chat { width: 270px; } }
-@media (max-height: 560px), (max-width: 760px) { .news-wrap > .gchat { display: none; } .news-wrap.has-chat { width: auto; height: auto !important; } }
+html.touch .gchat.menu-chat { display: none; }
+@media (max-width: 1100px) { .gchat.menu-chat { width: 270px; } }
+@media (max-height: 560px), (max-width: 760px) { .gchat.menu-chat { display: none; } }
 @media (max-width: 1100px) { .mp-wrap > .gchat { width: auto; contain: none; min-height: 0; height: 360px; } }

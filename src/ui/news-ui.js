@@ -82,20 +82,25 @@ export function newsBox(ui) {
   if (unread) btn.append(dot());
   btn.onclick = () => open(top);
   wrap.append(card, btn);
-  // (owner 2026-11-26) the general chat (ui.js adds it, .has-chat) exactly as tall as the AEVUM box on the left, top and
-  // bottom in line; the announcements card right above it, one block
+  // (owner 2026-11-26, drawn on a screenshot) the card on the left, under the player plate, as wide as the menu column;
+  // where that gap is too small, top right as before. The general chat (ui.js, .menu-chat) on the right, from the top
+  // of the AEVUM box down to the bottom of the feedback note: as tall as the left column
   const align = () => {
     if (!wrap.isConnected) { removeEventListener('resize', align); return; }
-    const par = wrap.parentElement, chat = wrap.querySelector('.gchat');
-    if (!par || getComputedStyle(card).display === 'none') { wrap.style.top = ''; wrap.style.height = ''; if (chat) { chat.style.height = ''; chat.style.marginTop = ''; } return; }
+    const par = wrap.parentElement; if (!par) return;
     const pr = par.getBoundingClientRect(); if (!pr.height) return;   // (a hidden page lays nothing out: try again when shown)
-    const box = par.querySelector('.menu-box.main');
-    if (!chat || !box) { wrap.style.top = '16px'; wrap.style.height = ''; return; }
-    const bTop = box.offsetTop, bot = bTop + box.offsetHeight;   // (offsetTop: not moved by the rise-in transform)
-    const top = Math.max(16, bTop - card.offsetHeight - 12), cTop = Math.max(bTop, top + card.offsetHeight + 12);
-    wrap.style.top = top + 'px';
-    wrap.style.height = Math.max(0, bot - top) + 'px';
-    chat.style.marginTop = 'auto'; chat.style.height = Math.max(260, bot - cTop) + 'px';
+    const box = par.querySelector('.menu-box.main'), plate = par.querySelector('.mh-plate'), low = par.querySelector('.menu-fb') || box;
+    const chat = par.querySelector('.gchat.menu-chat');
+    const bTop = box ? box.offsetTop : 0;   // (offsetTop: not moved by the rise-in transform)
+    if (chat && box && low && getComputedStyle(chat).display !== 'none') { chat.style.top = bTop + 'px'; chat.style.height = Math.max(260, low.getBoundingClientRect().bottom - pr.top - bTop) + 'px'; }
+    wrap.classList.remove('left'); wrap.style.left = wrap.style.width = wrap.style.top = '';
+    if (getComputedStyle(card).display === 'none' || !box) return;
+    const p = plate && plate.getBoundingClientRect(), bx = box.getBoundingClientRect();
+    const pBot = p ? p.bottom - pr.top : 4, w = Math.max(bx.width, p ? p.width : 0);
+    wrap.classList.add('left'); wrap.style.left = (bx.left - pr.left) + 'px'; wrap.style.width = w + 'px';
+    const room = bTop - pBot;
+    if (room < card.offsetHeight + 12) { wrap.classList.remove('left'); wrap.style.left = wrap.style.width = ''; return; }
+    wrap.style.top = Math.round(pBot + (room - card.offsetHeight) / 2) + 'px';
   };
   addEventListener('resize', align); document.addEventListener('visibilitychange', align); requestAnimationFrame(() => { if (typeof ResizeObserver !== 'undefined' && wrap.parentElement) new ResizeObserver(align).observe(wrap.parentElement); requestAnimationFrame(align); }); setTimeout(align, 700); setTimeout(align, 1600); addEventListener('animationend', align, { capture: true });   // (again once the menu's fonts / rise-in settled)
   return wrap;
