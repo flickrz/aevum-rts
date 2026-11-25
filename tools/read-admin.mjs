@@ -2,6 +2,7 @@
 // the /admin page, srv/admin.mjs), read straight from Firestore; can mark a line done.
 //   node tools/read-admin.mjs [--status approved|new|rejected|done|all] [--json]   (default: approved)
 //   node tools/read-admin.mjs --done <id> ["note"]
+//   node tools/read-admin.mjs --approve <id> ["note"]   /   --reject <id> ["note"]
 //   node tools/read-admin.mjs --shot <id> [out.jpg]   (the screenshot attached to that line)
 //   node tools/read-admin.mjs --ideas [--json]          (the owner's Fikirler list, pinned first)
 //   node tools/read-admin.mjs --idea "title" ["body"]   (adds a pinned idea)
@@ -41,6 +42,13 @@ if (argv.includes('--idea')) {
   if (!img) { console.error('no screenshot for ' + id); process.exit(1); }
   fs.writeFileSync(out, Buffer.from(img.slice(img.indexOf(',') + 1), 'base64'));
   console.log(out);
+} else if (argv.includes('--approve') || argv.includes('--reject')) {
+  // (2026-11-25, the nightly task) approve / reject a line from the command line, with an optional note
+  const f = argv.includes('--approve') ? '--approve' : '--reject', id = arg(f), note = argv[argv.indexOf(f) + 2], status = f === '--approve' ? 'approved' : 'rejected';
+  const d = cleanDecision(note != null ? { id, status, note } : { id, status });
+  if (d.error) { console.error(d.error); process.exit(1); }
+  const r = await admin.decide(d);
+  console.log(`${r.id} -> ${r.status}${r.note ? '  (' + r.note + ')' : ''}`);
 } else if (argv.includes('--done')) {
   const id = arg('--done'), note = argv[argv.indexOf('--done') + 2];
   const d = cleanDecision(note != null ? { id, status: 'done', note } : { id, status: 'done' });
