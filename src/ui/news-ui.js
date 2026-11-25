@@ -82,19 +82,18 @@ export function newsBox(ui) {
   if (unread) btn.append(dot());
   btn.onclick = () => open(top);
   wrap.append(card, btn);
-  // (owner 2026-11-26) the card in the top right corner; the general chat under it (ui.js adds it, .has-chat) as long as
-  // the menu on the left: its top in line with the AEVUM box, its bottom with the feedback note
+  // (owner 2026-11-26) the general chat (ui.js adds it, .has-chat) exactly as tall as the AEVUM box on the left, top and
+  // bottom in line; the announcements card right above it, one block
   const align = () => {
     if (!wrap.isConnected) { removeEventListener('resize', align); return; }
     const par = wrap.parentElement, chat = wrap.querySelector('.gchat');
     if (!par || getComputedStyle(card).display === 'none') { wrap.style.top = ''; wrap.style.height = ''; if (chat) { chat.style.height = ''; chat.style.marginTop = ''; } return; }
     const pr = par.getBoundingClientRect(); if (!pr.height) return;   // (a hidden page lays nothing out: try again when shown)
-    const box = par.querySelector('.menu-box.main'), low = par.querySelector('.menu-fb') || box;
-    const top = 16;
+    const box = par.querySelector('.menu-box.main');
+    if (!chat || !box) { wrap.style.top = '16px'; wrap.style.height = ''; return; }
+    const bTop = box.offsetTop, bot = bTop + box.offsetHeight;   // (offsetTop: not moved by the rise-in transform)
+    const top = Math.max(16, bTop - card.offsetHeight - 12), cTop = Math.max(bTop, top + card.offsetHeight + 12);
     wrap.style.top = top + 'px';
-    if (!chat || !box || !low) { wrap.style.height = ''; return; }
-    const bTop = box.offsetTop, bot = low.getBoundingClientRect().bottom - pr.top;   // (offsetTop: not moved by the rise-in transform)
-    const cTop = Math.max(bTop, top + card.offsetHeight + 12);
     wrap.style.height = Math.max(0, bot - top) + 'px';
     chat.style.marginTop = 'auto'; chat.style.height = Math.max(260, bot - cTop) + 'px';
   };
