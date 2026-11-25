@@ -82,25 +82,27 @@ export function newsBox(ui) {
   if (unread) btn.append(dot());
   btn.onclick = () => open(top);
   wrap.append(card, btn);
-  // (owner 2026-11-26, drawn on a screenshot) the card on the left, under the player plate, as wide as the menu column;
-  // where that gap is too small, top right as before. The general chat (ui.js, .menu-chat) on the right, from the top
-  // of the AEVUM box down to the bottom of the feedback note: as tall as the left column
+  // (owner 2026-11-26, drawn on screenshots) the card on the left, under the player plate, as wide as the menu column;
+  // where that gap is too small, top right as before. The general chat (ui.js, .menu-chat) on the right: its top in line
+  // with the card (or the AEVUM box when the card is not on the left), its bottom with the AEVUM box
   const align = () => {
     if (!wrap.isConnected) { removeEventListener('resize', align); return; }
     const par = wrap.parentElement; if (!par) return;
     const pr = par.getBoundingClientRect(); if (!pr.height) return;   // (a hidden page lays nothing out: try again when shown)
-    const box = par.querySelector('.menu-box.main'), plate = par.querySelector('.mh-plate'), low = par.querySelector('.menu-fb') || box;
+    const box = par.querySelector('.menu-box.main'), plate = par.querySelector('.mh-plate');
     const chat = par.querySelector('.gchat.menu-chat');
     const bTop = box ? box.offsetTop : 0;   // (offsetTop: not moved by the rise-in transform)
-    if (chat && box && low && getComputedStyle(chat).display !== 'none') { chat.style.top = bTop + 'px'; chat.style.height = Math.max(260, low.getBoundingClientRect().bottom - pr.top - bTop) + 'px'; }
+    let cTop = bTop;
     wrap.classList.remove('left'); wrap.style.left = wrap.style.width = wrap.style.top = '';
-    if (getComputedStyle(card).display === 'none' || !box) return;
-    const p = plate && plate.getBoundingClientRect(), bx = box.getBoundingClientRect();
-    const pBot = p ? p.bottom - pr.top : 4, w = Math.max(bx.width, p ? p.width : 0);
-    wrap.classList.add('left'); wrap.style.left = (bx.left - pr.left) + 'px'; wrap.style.width = w + 'px';
-    const room = bTop - pBot;
-    if (room < card.offsetHeight + 12) { wrap.classList.remove('left'); wrap.style.left = wrap.style.width = ''; return; }
-    wrap.style.top = Math.round(pBot + (room - card.offsetHeight) / 2) + 'px';
+    if (getComputedStyle(card).display !== 'none' && box) {
+      const p = plate && plate.getBoundingClientRect(), bx = box.getBoundingClientRect();
+      const pBot = p ? p.bottom - pr.top : 4, w = Math.max(bx.width, p ? p.width : 0);
+      wrap.classList.add('left'); wrap.style.left = (bx.left - pr.left) + 'px'; wrap.style.width = w + 'px';
+      const room = bTop - pBot;
+      if (room < card.offsetHeight + 12) { wrap.classList.remove('left'); wrap.style.left = wrap.style.width = ''; }
+      else { cTop = Math.round(pBot + (room - card.offsetHeight) / 2); wrap.style.top = cTop + 'px'; }
+    }
+    if (chat && box && getComputedStyle(chat).display !== 'none') { chat.style.top = cTop + 'px'; chat.style.height = Math.max(260, bTop + box.offsetHeight - cTop) + 'px'; }
   };
   addEventListener('resize', align); document.addEventListener('visibilitychange', align); requestAnimationFrame(() => { if (typeof ResizeObserver !== 'undefined' && wrap.parentElement) new ResizeObserver(align).observe(wrap.parentElement); requestAnimationFrame(align); }); setTimeout(align, 700); setTimeout(align, 1600); addEventListener('animationend', align, { capture: true });   // (again once the menu's fonts / rise-in settled)
   return wrap;
