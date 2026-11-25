@@ -26,6 +26,7 @@ function row(card, { online, actions = [], sub }) {
 
 // ---------- the Arkadaşlar screen ----------
 export function menuFriends(ui, note) {
+  askNotify();
   const cloud = ui.app.cloud;
   if (!cloud || !cloud.loggedIn) { ui._menuMain(); return; }
   const box = ui._menuBox('');
@@ -199,7 +200,7 @@ export function showInvite(ui, m) {
   t.append(h('small', '', tr('Seviye {0}', L.level) + ' · ' + tpText(m.from.tp | 0)));
   top.append(t);
   const acts = h('div', 'invite-acts');
-  const close = () => { card.remove(); clearTimeout(timer); };
+  const close = () => { card.remove(); if (timer) clearTimeout(timer); };
   const yes = btn('mbtn small primary', tr('Katıl'), async () => {
     safe(() => ui._click());
     const app = ui.app;
@@ -219,7 +220,29 @@ export function showInvite(ui, m) {
   card.append(top, acts);
   stack.append(card);
   safe(() => ui.app.audio?.ui('select'));
-  const timer = setTimeout(close, 90000);
+  // (owner 2026-11-25: an invite that came while the game was in another tab was lost) a sound that plays in the
+  // background, a blinking tab title and a system notification; the card waits until the player is back
+  let timer = null;
+  const arm = () => { if (!timer) timer = setTimeout(close, 90000); };
+  if (typeof document !== 'undefined' && document.hidden) {
+    safe(() => ui.app.audio?.play('invite'));
+    const who = m.from.name || tr('Bir oyuncu');
+    safe(() => blinkTitle('🔔 ' + tr('{0} seni davet ediyor', who)));
+    safe(() => { if (typeof Notification !== 'undefined' && Notification.permission === 'granted') { const n = new Notification('Aevum', { body: tr('{0} seni oyununa davet ediyor', who), tag: 'aevum-invite' }); n.onclick = () => { try { window.focus(); n.close(); } catch (e) { /* */ } }; } });
+    const back = () => { if (document.hidden) return; document.removeEventListener('visibilitychange', back); arm(); };
+    document.addEventListener('visibilitychange', back);
+  } else arm();
+}
+
+// the tab title blinks until the tab is shown again
+let _blink = null;
+function blinkTitle(msg) {
+  if (_blink) return;
+  const base = document.title; let on = false;
+  _blink = setInterval(() => { if (!document.hidden) { clearInterval(_blink); _blink = null; document.title = base; return; } on = !on; document.title = on ? msg : base; }, 1000);
+}
+function askNotify() {
+  try { if (typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission().catch(() => {}); } catch (e) { /* */ }
 }
 
 export default { menuFriends, lobbyInvites, showInvite };

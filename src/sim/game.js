@@ -2318,10 +2318,10 @@ export class Game {
       const up = ud.upgradedBy && p.techs.has(ud.upgradedBy) ? TECHS[ud.upgradedBy].upgrade.to : q.id;   // (queued before the line's upgrade)
       const u = this._addUnit(up, b.owner, f.x, f.z); p.stats.unitsTrained++;
       this.events.emit('trained', { e: u, building: b });
-      if (ud.naval && (!b.rally || !this._navPass(b.rally.x | 0, b.rally.z | 0))) { if (f.rx !== f.x || f.rz !== f.z) this.cmdMove([u.id], f.rx, f.rz); }
+      if (ud.naval && (!b.rally || !this._navPass(b.rally.x | 0, b.rally.z | 0))) { const w = b.rally && this._navNearPass(b.rally.x, b.rally.z, 8); if (w) this.cmdMove([u.id], w.x, w.z); else if (f.rx !== f.x || f.rz !== f.z) this.cmdMove([u.id], f.rx, f.rz); }
       else if (b.rally) {
         const r = this._rallyWork(b);
-        if (r && u.type === 'villager') this.cmdGather([u.id], r.id); else if (u.type !== 'tradecart') { const sl = this._slotNear(b.rally.x, b.rally.z, u); this.cmdMove([u.id], sl.x, sl.z); }
+        if (r && u.type === 'villager') this.cmdGather([u.id], r.id); else if (ud.naval) { const w = this._navRallySlot(b.rally.x, b.rally.z, u); this.cmdMove([u.id], w.x, w.z); }   /* (2026-11-25: the land slot search sent ships off to a far corner) */ else if (u.type !== 'tradecart') { const sl = this._slotNear(b.rally.x, b.rally.z, u); this.cmdMove([u.id], sl.x, sl.z); }
       } else if (!ud.naval && u.type !== 'villager' && u.type !== 'tradecart') { const sl = this._slotNear(b.x, b.z + b.size / 2 + 2.2, u); this._setOrder(u, { type: 'move', x: sl.x, z: sl.z }, false); }
     } else if (q.kind === 'tech') {
       b.queue.shift(); p.techs.add(q.id); const i = p.pending.indexOf(q.id); if (i >= 0) p.pending.splice(i, 1);
@@ -2467,7 +2467,10 @@ export class Game {
       // Units left over do not keep a player in: a villager or a scout hidden somewhere no longer stops the match.
       const prod = this.prodLeft(p.id);
       if (p.id === this.me && prod === 1 && (p.prodLeft | 0) > 1) this.events.emit('notify', { text: tr('Birim üreten son binan kaldı! O da yıkılırsa yenilirsin.'), type: 'warn' });
+      if (p.id === this.me && !prod && (p.prodLeft | 0) > 0 && this.units.some(u => u.owner === p.id && !u.dead && u.type === 'villager')) this.events.emit('notify', { text: tr('Tüm binaların yıkıldı! Bir köylüyle yeni Şehir Merkezi kurarak geri dönebilirsin.'), type: 'warn' });
       p.prodLeft = prod;
+      // (owner 2026-11-25) a living villager keeps a player in: they can build a new town center and come back (rivals too)
+      if (!prod && this.units.some(u => u.owner === p.id && !u.dead && u.type === 'villager')) { p.prodLeft = 0; continue; }
       if (!prod) {
         p.defeated = true;
         if (p.id !== this.me) this.events.emit('notify', this.isAlly(p.id, this.me) ? { text: tr('Bir müttefik uygarlık yıkıldı!'), type: 'warn' } : { text: tr('Bir rakip uygarlık yıkıldı!'), type: 'good' });
@@ -2681,12 +2684,16 @@ export class Game {
   _navSpawn(b) {
     const N = this.map.size, T = this.map.tiles, x0 = b.tx, z0 = b.tz, x1 = b.tx + b.size - 1, z1 = b.tz + b.size - 1;
     const open = (tx, tz) => { let n = 0; for (let j = -2; j <= 2; j++) for (let i = -2; i <= 2; i++) if (this._navPass(tx + i, tz + j)) n++; return n; };
+    // (player report 2026-11-25: ships appeared under the dock model, which is drawn ~3x its footprint) spawn clear of the
+    // drawn dock, on the side of the rally flag when there is one
+    const CLEAR = 5.5, ra = b.rally;
     let best = null, bs = 1e9;
-    for (let pass = 0; pass < 2 && !best; pass++) for (let tz = z0 - 4; tz <= z1 + 4; tz++) for (let tx = x0 - 4; tx <= x1 + 4; tx++) {
+    for (let pass = 0; pass < 2 && !best; pass++) for (let tz = z0 - 8; tz <= z1 + 8; tz++) for (let tx = x0 - 8; tx <= x1 + 8; tx++) {
       if (tx >= x0 && tx <= x1 && tz >= z0 && tz <= z1) continue;
       if (pass === 0 ? !this._navPass(tx, tz) : !(this._navWater(tx, tz) && this.map.blocked[tz * N + tx] === 0)) continue;
       const d = Math.max(x0 - tx, tx - x1, 0) + Math.max(z0 - tz, tz - z1, 0);
-      const sc = d * 1.5 + (T[tz * N + tx] === 4 ? 0 : 1.5) - open(tx, tz) * 0.15 + (this.units.some(u => u.naval && !u.dead && (u.x | 0) === tx && (u.z | 0) === tz) ? 1 : 0);
+      const dc = dhypot(tx + 0.5 - b.x, tz + 0.5 - b.z);
+      const sc = d * 0.6 + (dc < CLEAR ? (CLEAR - dc) * 4 : 0) + (T[tz * N + tx] === 4 ? 0 : 1.5) - open(tx, tz) * 0.15 + (ra ? dhypot(tx + 0.5 - ra.x, tz + 0.5 - ra.z) * 0.25 : 0) + (this.units.some(u => u.naval && !u.dead && (u.x | 0) === tx && (u.z | 0) === tz) ? 1 : 0);
       if (sc < bs) { bs = sc; best = { tx, tz }; }
     }
     if (!best) { const f = this._freeNear(b.x, b.z, b.owner); return { x: f.x, z: f.z, rx: f.x, rz: f.z }; }
@@ -2703,6 +2710,17 @@ export class Game {
     if (alt) { rx = alt.x; rz = alt.z; }
     return { x, z, rx, rz };
   }
+  // a free sailable spot round a dock's rally flag, so ships from one dock do not pile up on one point
+  _navRallySlot(x, z, self) {
+    const taken = (px, pz) => this.units.some(o => o !== self && o.naval && !o.dead && (o.order && o.order.type === 'move' ? dhypot(o.order.x - px, o.order.z - pz) : dhypot(o.x - px, o.z - pz)) < 3.6);
+    for (let ring = 0; ring < 5; ring++) {
+      const n = ring ? ring * 6 : 1;
+      for (let k = 0; k < n; k++) { const a = (k / n) * 6.2832, px = x + dcos(a) * ring * 4, pz = z + dsin(a) * ring * 4; if (this._navPass(px | 0, pz | 0) && !taken(px, pz)) return { x: px, z: pz }; }
+    }
+    return { x, z };
+  }
+  // the sailable tile nearest to (x, z) within r tiles (a rally flag put on the shore)
+  _navNearPass(x, z, r) { let best = null, bd = 1e9; const cx = x | 0, cz = z | 0; for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) { if (!this._navPass(cx + i, cz + j)) continue; const d = i * i + j * j; if (d < bd) { bd = d; best = { x: cx + i + 0.5, z: cz + j + 0.5 }; } } return best; }
   _navWater(tx, tz) { const m = this.map, N = m.size; if (tx < 0 || tz < 0 || tx >= N || tz >= N) return false; const t = m.tiles[tz * N + tx]; return t === 3 || t === 4; }
   _navLandPass(tx, tz, owner) { const nm = this._navMode; this._navMode = false; const r = this._pass(tx, tz, owner); this._navMode = nm; return r; }
   // dock: only the land tiles of the 3x3 footprint get blocked, water stays sailable
@@ -2875,14 +2893,15 @@ export class Game {
     const put = c => { this._addRes('fish', c[0], c[1], FISH_AMOUNT); placed.push(c); };
     const pool = deep.length >= 6 ? deep : deep.concat(shallow);
     for (let i = pool.length - 1; i > 0; i--) { const j = (this.rand() * (i + 1)) | 0; const x = pool[i]; pool[i] = pool[j]; pool[j] = x; }
-    const want = Math.max(6, Math.min(40, Math.round(pool.length / 45)));
-    for (const c of pool) { if (placed.length >= want) break; if (ok(c, 8)) put(c); }
+    // (owner 2026-11-25: more fish) about 1.7x the earlier count, closer together
+    const want = Math.max(10, Math.min(70, Math.round(pool.length / 26)));
+    for (const c of pool) { if (placed.length >= want) break; if (ok(c, 6)) put(c); }
     for (const p of this.players) {
       const all = deep.concat(shallow).filter(c => { const d = dhypot(c[0] + 0.5 - p.startX, c[1] + 0.5 - p.startZ); return d >= 7 && d <= 25 && free(c[0], c[1]); });
       if (!all.length) continue;
       all.sort((a, b) => (dhypot(a[0] - p.startX, a[1] - p.startZ) + (T[a[1] * N + a[0]] === 4 ? 0 : 4)) - (dhypot(b[0] - p.startX, b[1] - p.startZ) + (T[b[1] * N + b[0]] === 4 ? 0 : 4)));
       let n = placed.filter(c => dhypot(c[0] - p.startX, c[1] - p.startZ) <= 25).length;
-      for (const c of all) { if (n >= 2) break; if (ok(c, 4)) { put(c); n++; } }
+      for (const c of all) { if (n >= 3) break; if (ok(c, 4)) { put(c); n++; } }
     }
     this._navFishC = null;
     return placed.length;

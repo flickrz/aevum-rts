@@ -65,6 +65,7 @@ const SOUNDS = {
   gameWon:   { files: ['horn_end'], vol: 0.9, minGap: 5, range: 0, pitch: 0 },
   gameLost:  { files: ['horn_end'], vol: 0.9, minGap: 5, range: 0, pitch: 0, rate: 0.8 },
   notify:    { files: ['k_hud'], vol: 0.3, minGap: 0.6, range: 0 },
+  invite:    { files: ['bells'], vol: 0.8, minGap: 3, range: 0, pitch: 0 },   // a friend's invite while the tab is hidden
   trade:     { files: ['k_coin', 'coins1'], vol: 0.5, minGap: 0.15, range: 0 },
   birds:     { files: ['birds_takeoff'], vol: 0.25, minGap: 8, range: 0 },
   step:      { files: ['step1', 'step2', 'step3'], vol: 0.2, minGap: 0.12, range: 22 },
@@ -106,7 +107,7 @@ const SIEGE_UNITS = { ram: 1, catapult: 1, cannon: 1, artillery: 1, train: 1 };
 // unarmoured / lightly armoured targets: melee on them sounds like a body hit, not steel on steel
 const SOFT_UNITS = { villager: 1, archer: 1, crossbow: 1, tradecart: 1, musketeer: 1 };
 // the only sounds played while the tab is hidden (the game keeps running there): alerts, not the battle itself
-const BACKGROUND_SOUNDS = { alarm: 1, alarm2: 1, alarmDrum: 1, notify: 1, gameWon: 1, gameLost: 1 };
+const BACKGROUND_SOUNDS = { invite: 1, alarm: 1, alarm2: 1, alarmDrum: 1, notify: 1, gameWon: 1, gameLost: 1 };
 
 export class AudioManager {
   constructor() {

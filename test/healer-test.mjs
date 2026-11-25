@@ -139,6 +139,7 @@ const script = (saveAt) => {
   let t = null; for (let r = 8; r < 30 && !t; r++) for (let dz = -r; dz <= r && !t; dz++) for (let dx = -r; dx <= r && !t; dx++) { const tx = (tc.x | 0) + dx, tz = (tc.z | 0) + dz; if (g.canPlace('temple', tx, tz, 1)) { const id = g.placeBuilding(1, 'temple', tx, tz, []); if (id) t = g.getEntity(id); } }
   if (t) g._complete(t);
   for (const b of g.buildings) if (b.owner === 1 && b !== t && !b.dead) g._kill(b);
+  for (const u of g.units) if (u.owner === 1 && u.type === 'villager' && !u.dead) g._kill(u);   // (since 2026-11-25 a living villager keeps a player in)
   step(g, 4);
   ok(!!t && !t.dead && p1.defeated, 'a player with only a temple left is defeated (temple ' + (t ? (t.dead ? 'dead' : 'standing') : 'not placed') + ', defeated ' + p1.defeated + ')');
 }

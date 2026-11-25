@@ -2,6 +2,15 @@
 // release (Turkish, player-facing: what changed in the game, not how). Shown by src/ui/updates-ui.js.
 export const CHANGELOG = [
   {
+    v: '0.9.9', date: '2026-11-25', title: 'Birimler konuşuyor',
+    items: [
+      'Köylüler seçilince ve işe gönderilince konuşur: odun, yiyecek, taş, altın ve inşaat için ayrı sözler. Kadın ve erkek köylü sesleri var.',
+      'Askerler gür sesleriyle emirleri karşılar: seçilince, yürütülünce ve saldırıya gönderilince ayrı sözler.',
+      'Gemi kaptanları da konuşur: seçilince, yola çıkınca ve ateş emrinde.',
+      'Aynı söz art arda tekrarlanmaz. Sesler oyunun diline göre Türkçe ya da İngilizce.',
+    ],
+  },
+  {
     v: '0.9.8', date: '2026-11-25', title: 'Deniz savaşları ve İngilizce',
     items: [
       'Oyun artık İngilizce de var: tarayıcının diline göre açılır, Ayarlardan değiştirilebilir.',

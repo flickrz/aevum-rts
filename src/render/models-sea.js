@@ -42,7 +42,9 @@ const M = {
   gold: mat(0xffc62e, .25, 1), glass: mat(0x2a3440, .3, .2, 0x332200), rust: mat(0x6a4a3a, .8, .4),
 };
 const FOAM = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .45, depthWrite: false });
-const RIPPLE = new THREE.MeshBasicMaterial({ color: 0xdff2ff, transparent: true, opacity: .35, depthWrite: false });
+const RIPPLE = new THREE.MeshBasicMaterial({ color: 0xeaf8ff, transparent: true, opacity: .6, depthWrite: false });
+// (owner 2026-11-25: fish easier to see) dark backs of the shoal just under the surface, always shown
+const SHOAL = new THREE.MeshBasicMaterial({ color: 0xb8dde6, transparent: true, opacity: .55, depthWrite: false });
 
 function mk(geo, p, m, sx, sy, sz, x, y, z) {
   const o = new THREE.Mesh(geo, m);
@@ -298,23 +300,27 @@ export function seaAnimBuilding(view, v, e, dt, t, U) {
 export function makeFish(e) {
   const root = new THREE.Group(), g = new THREE.Group(); root.add(g);
   const rings = [];
-  for (let i = 0; i < 3; i++) { const r = mk(G.ring, g, RIPPLE, 1, 1, 1, (i - 1) * .25, .02, (i & 1) * .2 - .1); r.castShadow = false; r.receiveShadow = false; rings.push(r); }
-  const fish = [], n = 3 + (e.id % 3);
+  for (let i = 0; i < 3; i++) { const r = mk(G.ring, g, RIPPLE, 1.4, 1, 1.4, (i - 1) * .3, .02, (i & 1) * .25 - .12); r.castShadow = false; r.receiveShadow = false; rings.push(r); }
+  const backs = [];
+  for (let i = 0; i < 7; i++) { const b = mk(G.sph, g, SHOAL, .16, .012, .46, 0, .035, 0); b.castShadow = false; b.receiveShadow = false; b.userData.ph = i * .9 + e.id * .37; b.userData.r = .25 + (i % 3) * .2; backs.push(b); }
+  const fish = [], n = 5 + (e.id % 3);
   for (let i = 0; i < n; i++) {
     const f = new THREE.Group(); g.add(f);
-    mk(G.sph, f, M.fish, .06, .07, .2, 0, 0, 0);
-    const tl = bx(f, M.fish, .01, .08, .06, 0, -.04, -.11); tl.castShadow = false;
+    mk(G.sph, f, M.fish, .1, .11, .32, 0, 0, 0);
+    const tl = bx(f, M.fish, .015, .13, .1, 0, -.06, -.18); tl.castShadow = false;
     f.visible = false; f.userData.ph = i * 1.37 + e.id * .31; f.userData.a = i * 2.1;
     fish.push(f);
   }
-  root.userData.g = g; root.userData.rings = rings; root.userData.fish = fish; root.userData.fishShoal = true;
+  root.userData.g = g; root.userData.rings = rings; root.userData.fish = fish; root.userData.backs = backs; root.userData.fishShoal = true;
   return root;
 }
 export function seaAnimFish(v, t) {
   const U = v.root.userData; if (!U.fishShoal) return;
   v.root.position.y = .02;
   const rings = U.rings;
-  for (let i = 0; i < rings.length; i++) { const k = ((t * .35 + i / rings.length) % 1); const s = .5 + k * 1.1; rings[i].scale.set(s, 1, s); }
+  for (let i = 0; i < rings.length; i++) { const k = ((t * .35 + i / rings.length) % 1); const s = .6 + k * 1.5; rings[i].scale.set(s, 1, s); }
+  const backs = U.backs || [];
+  for (let i = 0; i < backs.length; i++) { const b = backs[i], a = t * (.5 + (i % 3) * .12) * (i & 1 ? 1 : -1) + b.userData.ph; b.position.set(Math.cos(a) * b.userData.r, .035, Math.sin(a) * b.userData.r); b.rotation.y = -a + (i & 1 ? 0 : PI); }
   const fish = U.fish;
   for (let i = 0; i < fish.length; i++) {
     const f = fish[i], per = 3.5 + (i % 3), q = ((t + f.userData.ph) % per) / .7;
@@ -335,7 +341,7 @@ function sailor(p, color, x, y, z, s) {
 // generated ship models: [length (= the procedural pd), share of the model's height under the water, selection ring]
 // (owner 2026-11-25: ships and docks 3x bigger) view-only size factor of the generated ship and dock models
 export const SEA_K = 3;
-const SHIP_GLB = { fishboat: [1.2, .12, [.8, 1.5]], transport: [2.0, .12, [1.4, 2.4]], galley: [2.3, .1, [1.3, 2.6]], galleon: [2.7, .1, [1.7, 3.0]], ironclad: [2.4, .15, [1.4, 2.7]] };
+const SHIP_GLB = { fishboat: [1.2, .03, [.8, 1.5]], transport: [2.0, .12, [1.4, 2.4]], galley: [2.3, .1, [1.3, 2.6]], galleon: [2.7, .1, [1.7, 3.0]], ironclad: [2.4, .15, [1.4, 2.7]] };
 export const SEA_UNITS = { fishboat: 1, transport: 1, galley: 1, galleon: 1, ironclad: 1, train: 1 };
 // builds into `inner` (already in root); returns dims pre-USCALE (entities.js multiplies by USCALE)
 export function makeSeaUnit(type, color, A, root, inner, P) {

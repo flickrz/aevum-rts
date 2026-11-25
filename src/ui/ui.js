@@ -406,7 +406,11 @@ export class UI {
       box.insertBefore(st, row);   // (a list row: four small buttons did not fit their names)
     }).catch(() => {});
     // feedback: anything written to @claude in the game's chat reaches the developer (tools/read-chatlog.mjs --claude)
-    this.menuEl.append(el('div', 'menu-fb panel', `<span class="mi">${ico('x-chat')}</span><span>${tr('Hata mı buldun, önerin mi var? Oyunda <kbd>Enter</kbd> ile sohbeti aç, <b class="cmention">@claude</b> yaz; doğrudan geliştiriciye gider.')}</span>`));
+    // (player request 2026-11-25) the note opens a box to write a bug report or idea straight from the main menu
+    { const fb = el('div', 'menu-fb panel', `<span class="mi">${ico('x-chat')}</span><span>${tr('Hata mı buldun, önerin mi var? <b>Buraya tıkla ve yaz</b>, ya da oyunda <kbd>Enter</kbd> ile sohbeti açıp <b class="cmention">@claude</b> yaz; doğrudan geliştiriciye gider.')}</span>`);
+      fb.classList.add('menu-fb-click'); fb.setAttribute('role', 'button'); fb.tabIndex = 0;
+      fb.addEventListener('click', () => { safe(() => this._click()); this._fbBox(); });
+      this.menuEl.append(fb); }
     safe(() => { const nb = newsBox(this); if (nb) this.menuEl.append(nb); });   // "Duyurular" on the right (src/ui/news-ui.js)
     safe(() => menuHud(this));   // the player plate (avatar, name, level, TP) and account chips around the menu
     // (owner 2026-11-20, drawn on a screenshot) the account unit (player plate, and the status pill and Profil / Çıkış
@@ -2379,6 +2383,10 @@ export class UI {
     if (!this.app.net && !(this.game && !this.app.demo)) return null;
     if (!this.chatDock) {
       const d = el('div', 'chatdock hidden');
+      // (owner 2026-11-25: on a small window the dock sat over the bottom-left block) place it at once and on every resize,
+      // not only on the next half-second HUD tick
+      if (!this._clearRz) { this._clearRz = () => { this._clearSig = null; safe(() => this._clearTop()); }; window.addEventListener('resize', this._clearRz); }
+      requestAnimationFrame(() => this._clearRz());
       const head = el('div', 'chathead');
       const tg = el('button', 'chattoggle', '💬<span class="chatbadge hidden"></span>');
       tg.title = tr('Sohbet (Enter)');
@@ -2439,6 +2447,30 @@ export class UI {
     } else { this._chatPush({ sys: true, text: tr('Tek oyunculu oyunda sohbet geri bildirim içindir: mesajının başına @claude yaz.') }); return false; }
     if (fb) setTimeout(() => this._chatPush({ sys: true, text: shot ? tr('✔ Ekran görüntüsüyle birlikte geliştiriciye iletildi, teşekkürler!') : tr('✔ Geri bildirimin geliştiriciye iletildi, teşekkürler!') }), 300);
     return true;
+  }
+  // the main menu's feedback box: a bug report / idea sent like a @claude line (cloud chat log, room MENU)
+  _fbBox() {
+    if (document.querySelector('.fbbox')) return;
+    const root = document.getElementById('ui') || document.body;
+    const ov = el('div', 'overlay askov'), m = el('div', 'modal panel askbox fbbox');
+    m.append(el('h2', '', tr('Hata bildir / öneri yaz')), el('div', 'asktext', tr('Ne oldu, nerede oldu? Kısaca yaz; doğrudan geliştiriciye gider.')));
+    const ta = document.createElement('textarea'); ta.className = 'mpinput fbta'; ta.maxLength = FB_MAX; ta.rows = 5; ta.placeholder = tr('Örnek: Tersanede bayrak koysam da gemiler iskelenin dibinde doğuyor.');
+    const note = el('div', 'fbnote', '');
+    const row = el('div', 'askbtns');
+    const no = el('button', 'mbtn small', tr('Vazgeç')), yes = el('button', 'mbtn small primary', tr('Gönder'));
+    no.type = yes.type = 'button';
+    const close = () => ov.remove();
+    no.onclick = close;
+    yes.onclick = () => {
+      const t = ta.value.trim(); if (!t) { ta.focus(); return; }
+      safe(() => logChat({ room: 'MENU', name: this._mpName() || '?', text: '@claude ' + t, mine: true }));
+      yes.disabled = true; note.textContent = tr('✔ Geri bildirimin geliştiriciye iletildi, teşekkürler!');
+      setTimeout(close, 1400);
+    };
+    ta.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') close(); });
+    ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });
+    row.append(no, yes); m.append(ta, note, row); ov.append(m); root.append(ov);
+    setTimeout(() => ta.focus(), 30);
   }
   _chatBadge() {
     const b = this.chatBadge; if (!b) return;

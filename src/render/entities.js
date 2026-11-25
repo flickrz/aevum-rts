@@ -2040,7 +2040,7 @@ export class EntityView {
     }
     if (e.type === 'farm') v.h = .5;
     else { v.root.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(U.body); const b2 = new THREE.Box3().setFromObject(U.roof); v.h = Math.max(.6, b.max.y, isFinite(b2.max.y) ? b2.max.y : 0); }
-    { const k = v.k || 1; this._proxy(v, (e.size || 1) * .95 / k, Math.max(.4, v.h * .85) / k, (e.size || 1) * .95 / k); }   // (child of the k-scaled root)
+    { const k = v.k || 1; this._proxy(v, (e.size || 1) * .85 / k, Math.max(.4, v.h * .6) / k, (e.size || 1) * .85 / k); }   // (child of the k-scaled root; owner 2026-11-25: lower and narrower than the model, so a building standing behind another one can be clicked)
     v.damaged = false; v.farmKey = -1; v.prog = -1;
     v.root.visible = v.vis !== false;
     this.scene.add(v.root);

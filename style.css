@@ -360,7 +360,7 @@ table.st th { color: var(--gold); font-weight: 600; }
 .chatbox { position: absolute; left: 50%; bottom: 264px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px 10px; width: min(460px, 90vw); z-index: 30; }
 .chatbox span { color: var(--gold); font-size: 13px; }
 /* in-game chat dock: left edge, between the MP scoreboard (top-left) and the minimap (bottom-left, ~244px tall) */
-.chatdock { --chat-bottom: max(var(--bl-top, 262px), calc(50vh - 220px)); position: absolute; left: 10px; bottom: var(--chat-bottom); width: 340px; height: min(440px, calc(100vh - var(--chat-bottom) - var(--chat-top, 120px))); min-height: 150px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; z-index: 25; border-radius: 10px; border: 1px solid transparent; transition: background .18s, border-color .18s; }
+.chatdock { --chat-bottom: max(var(--bl-top, 330px), calc(50vh - 220px)); position: absolute; left: 10px; bottom: var(--chat-bottom); width: 340px; height: min(440px, calc(100vh - var(--chat-bottom) - var(--chat-top, 120px))); min-height: 150px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; z-index: 25; border-radius: 10px; border: 1px solid transparent; transition: background .18s, border-color .18s; }
 .chatdock.hidden { display: none; }
 .chathead { display: flex; align-items: center; gap: 8px; padding: 4px 4px 0; }
 .chattoggle { position: relative; pointer-events: auto; width: 34px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--glass); font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
@@ -1109,3 +1109,10 @@ html.touch .news-wrap .news-btn { display: block; }
   .news-wrap .news-box { display: none; }
   .news-wrap .news-btn { display: block; }
 }
+
+/* main menu feedback box (2026-11-25) */
+.menu-fb-click { cursor: pointer; transition: border-color .15s, color .15s; }
+.menu-fb-click:hover { color: var(--ink); border-color: var(--gold); }
+.fbbox { width: min(460px, 92vw); }
+.fbta { width: 100%; box-sizing: border-box; resize: vertical; min-height: 96px; margin: 10px 0 6px; font: inherit; font-size: 13px; line-height: 1.45; }
+.fbnote { min-height: 18px; font-size: 12px; color: var(--gold); }
