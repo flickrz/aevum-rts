@@ -822,7 +822,7 @@
   }
 
   // Never let one bad request or a dropped connection take the whole server (and every running match) down.
-  const logErr = (tag, e) => { try { const line = new Date().toISOString() + ' ' + tag + ' ' + (e && e.stack || e) + String.fromCharCode(10); console.error(line); fs.appendFileSync(path.join(ROOT, 'server-error.log'), line); } catch { /* ignore */ } };
+  const logErr = (tag, e) => { try { const line = new Date().toISOString() + ' ' + tag + ' ' + (e && e.stack || e) + String.fromCharCode(10); console.error(line); fs.appendFile(path.join(ROOT, 'server-error.log'), line, () => {}); } catch { /* ignore */ } };
   process.on('uncaughtException', e => logErr('uncaughtException', e));
   process.on('unhandledRejection', e => logErr('unhandledRejection', e));
 

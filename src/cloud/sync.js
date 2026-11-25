@@ -800,20 +800,24 @@ export class CloudSync {
   }
   // my inbox on the game server (long-poll while signed in): it also marks me online. onMsg({type:'invite', code, from})
   startInbox(onMsg) {
-    this._inboxFn = onMsg;
+    if (onMsg !== undefined) this._inboxFn = onMsg;
     if (this._inboxRun) return;
     this._inboxRun = true;
+    const gen = (this._inboxGen = (this._inboxGen || 0) + 1);
     const loop = async () => {
       let fails = 0;
-      while (this._inboxRun) {
+      while (this._inboxRun && this._inboxGen === gen) {
         if (!this.loggedIn || this.auth.dead || this._setup) { await new Promise((r) => this.setTimer(r, 5000)); continue; }
         const fb = this.auth.user.uid;
         try {
           const t = await this.relayTicket();
+          if (!this._inboxRun || this._inboxGen !== gen) break;
           const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+          this._inboxCtl = ctl;
           const to = ctl ? this.setTimer(() => { try { ctl.abort(); } catch (e) { /* ignore */ } }, 35000) : null;
           let r;
-          try { r = await this.relayFetch(this.relayBase + '/mp/inbox?tk=' + encodeURIComponent(t.ticket) + '&t=' + this.now(), Object.assign({ cache: 'no-store' }, ctl ? { signal: ctl.signal } : {})); } finally { if (to != null) this.clearTimer(to); }
+          try { r = await this.relayFetch(this.relayBase + '/mp/inbox?tk=' + encodeURIComponent(t.ticket) + '&t=' + this.now(), Object.assign({ cache: 'no-store' }, ctl ? { signal: ctl.signal } : {})); } finally { if (to != null) this.clearTimer(to); if (this._inboxCtl === ctl) this._inboxCtl = null; }
+          if (!this._inboxRun || this._inboxGen !== gen) break;
           if (r.status === 401) { this._dropTicket(); throw new Error('ticket'); }
           if (!r.ok) throw new Error('inbox ' + r.status);
           const arr = await r.json();
@@ -821,6 +825,7 @@ export class CloudSync {
           if (!this.loggedIn || this.auth.user.uid !== fb) continue;   // signed out / switched meanwhile
           for (const m of Array.isArray(arr) ? arr : []) { try { if (this._inboxFn) this._inboxFn(m); } catch (e) { console.warn('[inbox]', e); } }
         } catch (e) {
+          if (!this._inboxRun || this._inboxGen !== gen) break;
           fails++;
           // the server refused the ticket itself (no profile, name taken, Firestore down): each try costs it reads
           const slow = !!(e && TKT_SLOW.includes(e.status));
@@ -830,7 +835,11 @@ export class CloudSync {
     };
     loop();
   }
-  stopInbox() { this._inboxRun = false; }
+  stopInbox() {
+    this._inboxRun = false;
+    this._inboxGen = (this._inboxGen || 0) + 1;
+    if (this._inboxCtl) { try { this._inboxCtl.abort(); } catch (e) { /* ignore */ } this._inboxCtl = null; }
+  }
 
   // ---------- delete the account ----------
   // Google asks for a fresh sign in first (Firebase refuses to delete an account signed in long ago); then every

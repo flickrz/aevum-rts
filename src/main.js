@@ -116,6 +116,7 @@ const app = {
     Object.defineProperty(game, 'reveal', { configurable: false, get: () => !!(game.over || (game.players[game.me] && game.players[game.me].defeated)), set: () => {} });
     wrapNetCommands(game);
     app.net = session;
+    cloudSafe(c => c.stopInbox());   // pause /mp/inbox long-poll while in a match (resumed on close / leave / menu)
     attachGame(game, false);
     histCtx.set(game, {
       mode: 'mp', match: session.match || session.code || 'MP',
@@ -169,6 +170,7 @@ const app = {
       offs.forEach(f => { try { f(); } catch (err) { /* ignore */ } });
       if (app.net === session) {
         app.net = null;
+        cloudSafe(c => c.startInbox());
         if (app.game === game) app.paused = true;   // the match cannot continue without the lockstep
         status('closed', ev && ev.reason === 'dropped' ? tr('Bağlantı koptu, oyundan düşürüldün.') : tr('Çok oyunculu oturum kapandı.'), ev);
       }
@@ -189,6 +191,7 @@ const app = {
   leaveMultiplayer() {
     const s = app.net; app.net = null;
     if (s) { try { s.close(); } catch (err) { console.warn(err); } }
+    cloudSafe(c => c.startInbox());
     app.toMenu();
   },
 
@@ -281,6 +284,7 @@ const app = {
 
   toMenu() {
     if (app.net) { const s = app.net; app.net = null; try { s.close(); } catch (err) { console.warn(err); } }
+    cloudSafe(c => c.startInbox());
     app.cancelPlacement();
     startDemo();
     app.ui.showMenu();
