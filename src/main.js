@@ -20,7 +20,7 @@ import { tr, loc } from './i18n.js';
 
 const STEP = 1 / 30;
 const AUTOSAVE_EVERY = 90;
-const MP_AUTOSAVE_TICKS = 2 * 60 * 30;
+const MP_AUTOSAVE_TICKS = 5 * 60 * 30;
 const ABANDON_MIN_S = 30;                 // a game left before the end is recorded as 'abandoned' only after 30 game seconds
 // update notices from the server (GET /mp/notice every 20 s, src/net/notice.js): started at once, so the first build id
 // it sees (this tab's baseline) is the one these files came from
@@ -37,7 +37,7 @@ const cloudSafe = (fn) => { try { if (cloud) fn(cloud); } catch (err) { console.
 function gameIdOf(game) { const c = game && histCtx.get(game); return c ? (c.mode === 'mp' ? 'mp-' + c.match : c.matchId) : null; }
 // match history context per Game (UI/session metadata, never part of the simulation):
 // {mode 'sp'|'mp', matchId (sp) | match (mp code), uids [uid|null per player], done}
-const histCtx = new WeakMap();   // multiplayer: the host requests a lockstep autosave every 2 game minutes
+const histCtx = new WeakMap();   // multiplayer: the host requests a lockstep autosave every 5 game minutes
 // commands that travel over the network in a multiplayer match (same list as Game.execCommand's whitelist)
 const NET_METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload',
   'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol', 'cmdRotateBuilding'];

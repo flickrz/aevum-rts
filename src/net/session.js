@@ -15,7 +15,7 @@ const PING_MS = 1000;                 // game: peer round-trip pings (through th
 const PING_MS_FAST = 500;             // faster ping/pacing cadence on reliable WebSocket transport
 const STALL_NOTE_MS = 60;             // only count stalls >= 60 ms toward adaptive delay (ignore sub-frame micro-waits)
 export const REDUNDANCY = 4;          // each packet repeats the previous 4 turns
-export const HASH_EVERY = 45;         // turns (~3 s)
+export const HASH_EVERY = 75;         // turns (~5 s)
 export const MAX_CMDS = 40;
 export const MAX_MSG = 3500;
 export const MAX_PLAYERS = 8;
@@ -1252,7 +1252,7 @@ export class NetSession {
         for (const [method, args] of cmds) {
           if (SESSION_SET.has(method)) continue;
           this._mix(turn, pid, method, args);
-          try { game.execCommand(pid, method, JSON.parse(JSON.stringify(args))); } catch (err) { console.warn('[net] cmd', method, err); }
+          try { game.execCommand(pid, method, args); } catch (err) { console.warn('[net] cmd', method, err); }
         }
       }
     } finally { game.__inSim = false; }
