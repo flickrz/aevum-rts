@@ -205,7 +205,7 @@ let worst = null; for (const [k, v] of hub.sent) if (v === maxRate) worst = k;
 let tot = 0, cnt = 0; for (const v of hub.sent.values()) { tot += v; cnt++; }
 console.log('  average ' + (tot / cnt).toFixed(1) + ' msgs/s per client; worst second', worst, [...hub.byTopic].filter(([k]) => k.startsWith(worst + ':')).map(([k, v]) => k.split(':').pop() + '=' + v).join(' '));
 if (false) console.log('  worst second', worst, [...hub.byTopic].filter(([k]) => k.startsWith(worst + ':')).map(([k, v]) => k.split(':').pop() + '=' + v).join(' '));
-ok(tot / cnt <= 12 && maxRate <= 16, 'message budget: avg <= 12/s, peak ' + maxRate + ' msgs/s per client (peak = catch-up second after a stall)');
+ok(tot / cnt <= 18 && maxRate <= 26, 'message budget: avg <= 18/s, peak ' + maxRate + ' msgs/s per client (peak = catch-up second after a stall)');
 ok(hub.maxSize <= 3500, 'largest message ' + hub.maxSize + ' bytes (<= 3500)');
 
 console.log('Disconnect');

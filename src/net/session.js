@@ -8,13 +8,13 @@ import { tr } from '../i18n.js';
 // from the message body, so nobody can sit in another player's slot or play under a name that is not his account's.
 
 export const STEP = 1 / 30;
-export const TURN_TICKS = 3;          // 100 ms per turn
-export const DELAY = 3;               // commands of turn T execute at turn T+DELAY (the minimum; see _wantDelay)
-export const MAX_DELAY = 12;          // adaptive input delay: at most 1.2 s
+export const TURN_TICKS = 2;          // 66.7 ms per turn
+export const DELAY = 2;               // commands of turn T execute at turn T+DELAY (the minimum; see _wantDelay)
+export const MAX_DELAY = 18;          // adaptive input delay: at most 1.2 s
 const PING_MS = 1000;                 // game: peer round-trip pings (through the relay) and pacing info
 const SLOW = 0.95;                    // pacing: a client ahead of the others runs at this speed until they line up
 export const REDUNDANCY = 4;          // each packet repeats the previous 4 turns
-export const HASH_EVERY = 30;         // turns
+export const HASH_EVERY = 45;         // turns (~3 s)
 export const MAX_CMDS = 40;
 export const MAX_MSG = 3500;
 export const MAX_PLAYERS = 8;
@@ -26,7 +26,7 @@ export const CLIMATES = ['random', 'temperate', 'spring', 'autumn', 'winter', 'a
 // (a relay outage stalls everybody and drops nobody)
 export const DROP_SILENT_MS = 60000;
 export const DROP_LEFT_MS = 3000;     // after an explicit 'bye'
-export const KEEP_TURNS = 600;        // command lists kept for re-sends (~60 s)
+export const KEEP_TURNS = 900;        // command lists kept for re-sends (~60 s)
 // a peer that keeps talking (pings, keep-alives) but holds back his command lists is dropped after this much
 // waiting for him alone (net: a short wait now and then is paid back twice as fast while his lists flow)
 export const DROP_STALL_MS = 90000;
@@ -830,8 +830,8 @@ export class NetSession {
     this.recv.get(this.me).set(turn, list);
     this.sentUpTo = turn;
     this._unsent = (this._unsent || 0) + 1;
-    // normally one packet per turn; while catching up several turns are bundled into one packet
-    if (this._unsent >= 12 ||this.clock.now() - (this._lastTurnSend || -1e9) >= 90) this._flushTurn();
+    // cap bundle size on large catch-up / delay jumps; normal turns flush right after the scheduling loop in advance()
+    if (this._unsent >= 12) this._flushTurn();
   }
   _flushTurn() {
     if (!this._unsent) return;
@@ -984,7 +984,7 @@ export class NetSession {
   // one more turn per pair of recent waits for him
   _wantFor(pid) {
     const r = this._rttOf(pid);
-    let w = r == null ? DELAY : Math.ceil((r / 2 + 70) / (STEP * TURN_TICKS * 1000));
+    let w = r == null ? DELAY : Math.ceil((r / 2 + 35) / (STEP * TURN_TICKS * 1000));
     const now = this.clock.now();
     const st = (this.stalls.get(pid) || []).filter(t => now - t < 20000).length;
     w += Math.min(3, st >> 1);
@@ -1020,7 +1020,7 @@ export class NetSession {
     if (this.phase !== 'game') return null;
     let ping = null;
     for (const p of this.humans) { if (p === this.me) continue; const a = this.rtt.get(p); if (a && a.length) ping = Math.max(ping || 0, a[a.length - 1]); }
-    return { ping: ping == null ? null : Math.round(ping), delay: this.delay * TURN_TICKS * STEP * 1000, slow: this._slow };
+    return { ping: ping == null ? null : Math.round(ping), delay: Math.round(this.delay * TURN_TICKS * STEP * 1000), slow: this._slow };
   }
 
   _onPeers(ch) {
@@ -1284,9 +1284,8 @@ export class NetSession {
         }
         // our command lists run `delay` turns ahead; a raised delay fills the gap with empty lists
         // (each turn's list is explicit, so the delay may differ between players and change at any time)
-        const n0 = this._unsent || 0;
         while (this.sentUpTo < turn + this.delay) this._scheduleOwn(this.sentUpTo + 1);
-        if ((this._unsent || 0) - n0 > 1) this._flushTurn();
+        if (this._unsent) this._flushTurn();
         if (this._missing(turn).length) {
           if (this.stallSince == null) { this.stallSince = this.clock.now(); this._lastNeed = 0; this._noteStall(turn); }
           this._pump();
@@ -1309,7 +1308,7 @@ export class NetSession {
       this.tick++; this._acc -= STEP; steps++;
       if (this.tick % TURN_TICKS === 0) this.turn = this.tick / TURN_TICKS;
     }
-    if (this._unsent && this.clock.now() - (this._lastTurnSend || -1e9) >= 90) this._flushTurn();
+    if (this._unsent) this._flushTurn();
     return steps;
   }
 
