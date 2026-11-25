@@ -1061,7 +1061,7 @@ function glbWall(c, type, era, color) {
 // towers came out huge; a squat model is still stretched up to it), with a wall piece from its foot to the edge of
 // its plot toward every linked wall (owner: a tower next to a wall stood apart from it). False if a piece is missing.
 const TOWER_FIT = { 1: 1, 4: 1 };   // (owner 2026-11-20: a model fills its plot, no more)
-const TOWER_GROW = 1.4;   // (owner 2026-11-25: see glbTower)
+const TOWER_GROW = 1.85;   // (owner 2026-11-25: see glbTower)
 function glbTower(c, era, size, color, H) {
   // (.62: about the Bronze Age tower's girth. The Bronze and Industrial models have a wide foot and a shaft under half
   // their width, so they came out toothpick-thin (owner 2026-11-17): they fill the plot instead, squashed to the height)
@@ -1069,7 +1069,7 @@ function glbTower(c, era, size, color, H) {
   // barracks 5 -> 7) but the tower kept its 3x3 plot, which walls meet in the middle. The plot stays; the model is drawn
   // 1.4x wider and taller over it
   const T = TOWER_FIT[era], K = TOWER_GROW;
-  if (T) addGlbBuilding(c.body, 'tower', era, size * K, color, T, H * K, 'exact');
+  if (T) addGlbBuilding(c.body, 'tower', era, size * Math.min(K, 1.2), color, T, H * K, 'exact');   // (these fill their plot: wider would cover the walls)
   else addGlbBuilding(c.body, 'tower', era, size * K, color, .62, H * K, true);
   const m = c.mask & 15, u = c.mask & 16 ? 1 / 3 : 1;   // u = one tile in tower units (a 3x3 tower is drawn at 3x)
   let ok = true;
