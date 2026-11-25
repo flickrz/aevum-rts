@@ -1087,7 +1087,14 @@ export class UI {
         if (rr) more = ' · CPU ' + (this.app.cpuMs || 0).toFixed(1) + ' ms · ' + rr.getPixelRatio().toFixed(2) + 'x ' +
           Math.round(R._w * rr.getPixelRatio()) + '×' + Math.round(R._h * rr.getPixelRatio()) + ' · ' + Math.round(rr.info.render.triangles / 1000) + tr('k üçgen · {0} çizim', rr.info.render.calls);
       }
-      this.fpsEl.textContent = Math.round(this.frames / this.fpsT) + ' FPS' + (ni && ni.ping != null ? ' · Ping ' + ni.ping + ' ms' : '') + more;
+      let netTxt = '';
+      if (ni) {
+        if (ni.ping != null) netTxt += ' · Ping ' + ni.ping + ' ms';
+        if (ni.delay != null && this.fpsMore) netTxt += ' · ' + tr('Gecikme {0} ms', ni.delay) + (ni.srvPing != null ? ' (' + tr('Sunucu {0} ms', ni.srvPing) + ')' : '');
+        if (ni.kind === 'poll') netTxt += ' · ⚠ HTTP';
+        else if (ni.kind && this.fpsMore) netTxt += ' · ' + String(ni.kind).toUpperCase();
+      }
+      this.fpsEl.textContent = Math.round(this.frames / this.fpsT) + ' FPS' + netTxt + more;
       this.frames = 0; this.fpsT = 0;
     }
     if (this.mode !== 'hud' || !this.game) return;

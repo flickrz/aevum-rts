@@ -724,6 +724,12 @@
       });
       return;
     }
+    if (url.pathname === '/mp/events' && req.method === 'GET' && url.searchParams.has('probe')) {
+      if (res.socket) res.socket.setNoDelay(true);
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+      try { res.end('data: {"type":"probe"}\n\n'); } catch { /* ignore */ }
+      return;
+    }
     if (!okName(room) || !okName(peer)) { reply(res, 400, {}, 'bad room/peer'); return; }
     const ident = identOf(req, url);
     if (!ident && !NO_AUTH) { reply(res, 401, J, '{"error":"ticket"}'); return; }
@@ -733,6 +739,7 @@
     if (known && known.ident && (!ident || ident.fb !== known.ident.fb)) { reply(res, 403, J, '{"error":"peer"}'); return; }
     if (url.pathname === '/mp/events' && req.method === 'GET') {
       if (roomRefused(room, peer, ident)) { reply(res, 429, {}, 'full'); return; }
+      if (res.socket) res.socket.setNoDelay(true);
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
       try { res.write('retry: 1500\n\n'); } catch { /* ignore */ }
       const pe = makeSsePeer(room, peer, res);

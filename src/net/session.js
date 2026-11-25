@@ -176,8 +176,9 @@ export class NetSession {
     else if (kind === 'poll') transport = await poll();
     else if (kind === 'ws') transport = await ws();
     else if (kind === 'room') transport = await tryRoom();
-    // WebSocket first (one hop each way, the smoothest lockstep); if it does not pass, the HTTP transports below
-    else if (typeof location !== 'undefined' && /^https?:/.test(location.protocol) && await import('./transport-ws.js').then(m => m.wsProbe('', 2500)).catch(() => false)) transport = await ws();
+    // WebSocket first (one hop each way, the smoothest lockstep; 5 s timeout + 1 retry for distant relays);
+    // if WebSocket does not pass, probe SSE before falling back to HTTP long-polling
+    else if (typeof location !== 'undefined' && /^https?:/.test(location.protocol) && await import('./transport-ws.js').then(m => m.wsProbe('', 5000)).catch(() => false)) transport = await ws();
     else {
       const loc = typeof location !== 'undefined' ? location : null;
       const h = loc ? loc.hostname : '';
@@ -186,14 +187,17 @@ export class NetSession {
       if (!ok && loc && /^https?:/.test(loc.protocol)) {
         try {
           const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-          const to = setTimeout(() => ctl && ctl.abort(), 1500);
+          const to = setTimeout(() => ctl && ctl.abort(), 3000);
           const r = await fetch('/mp/ping', { cache: 'no-store', signal: ctl && ctl.signal });
           clearTimeout(to);
           ok = r.ok && (await r.text()).includes('aevum');
         } catch { ok = false; }
       }
-      // local/LAN: SSE. Through a tunnel/proxy (non-LAN host that answers /mp/ping): long-polling, because some tunnels do not pass SSE.
-      transport = lan ? await sse() : ok ? await poll() : await tryRoom();
+      if (lan) transport = await sse();
+      else if (ok) {
+        const sseOk = await import('./transport-sse.js').then(m => m.sseProbe('', 3500)).catch(() => false);
+        transport = sseOk ? await sse() : await poll();
+      } else transport = await tryRoom();
     }
     if (!transport) throw new Error(tr('Çok oyunculu bağlantı kurulamadı: yerel sunucu (node server.js) ya da oda servisi bulunamadı.'));
     return new NetSession(transport, opts);

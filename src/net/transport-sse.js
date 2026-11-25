@@ -6,6 +6,19 @@ import { PollTransport, backoff, identMixin } from './transport-poll.js';
 import { tr } from '../i18n.js';
 function rid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
 
+// do Server-Sent Events pass through the proxy/CDN to the relay? -> true / false within `ms`
+export function sseProbe(base = '', ms = 3500) {
+  return new Promise((resolve) => {
+    if (typeof EventSource === 'undefined') { resolve(false); return; }
+    let es, done = false;
+    const fin = (ok) => { if (done) return; done = true; clearTimeout(to); try { es && es.close(); } catch { /* ignore */ } resolve(ok); };
+    const to = setTimeout(() => fin(false), ms);
+    try { es = new EventSource(`${base}/mp/events?probe=1`); } catch { fin(false); return; }
+    es.onmessage = (ev) => { let m = null; try { m = JSON.parse(ev.data); } catch { /* ignore */ } fin(!!m && m.type === 'probe'); };
+    es.onerror = () => fin(false);
+  });
+}
+
 export class SSETransport {
   constructor(base = '', opts = {}) {
     this.base = base;
@@ -14,6 +27,7 @@ export class SSETransport {
     this.id = rid();
     this.room = null;
     this.up = false;
+    this.kind = 'sse';
     this._h = new Map();
     this._peerFns = [];
     this._statusFns = [];

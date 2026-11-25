@@ -14,8 +14,7 @@ function wsUrl(base, path) {
   return (loc && loc.protocol === 'https:' ? 'wss://' : 'ws://') + (loc ? loc.host : 'localhost') + base + path;
 }
 
-// do WebSockets reach the relay from here (some proxies / tunnels do not pass them)? -> true / false within `ms`
-export function wsProbe(base = '', ms = 2500) {
+function wsProbeOnce(base, ms) {
   return new Promise((resolve) => {
     if (typeof WebSocket === 'undefined') { resolve(false); return; }
     let ws, done = false;
@@ -26,6 +25,15 @@ export function wsProbe(base = '', ms = 2500) {
     ws.onerror = () => fin(false);
     ws.onclose = () => fin(false);
   });
+}
+
+// do WebSockets reach the relay from here (some proxies / tunnels do not pass them)? -> true / false within `ms`
+export async function wsProbe(base = '', ms = 5000, retries = 1) {
+  for (let i = 0; i <= retries; i++) {
+    if (await wsProbeOnce(base, ms)) return true;
+    if (i < retries) await new Promise(r => setTimeout(r, 300));
+  }
+  return false;
 }
 
 export class WSTransport {
