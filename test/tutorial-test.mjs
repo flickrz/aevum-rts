@@ -17,7 +17,7 @@ const DT = 1 / 30;
   ok(g.ais.length === 1 && !(g.quests instanceof TutorialSystem) && g.quests.list.length === 0, 'normal game: AI, no quests');
   ok(g.hash() === 423630152, 'normal game: initial hash unchanged ' + g.hash());   // (re-pinned 2026-11-23: hunting (deer alive + hp) and predators; again 2026-11-24: predators spawn >= 36 tiles from the starts, more tries; again 2026-11-25: naval rework, fish shoals 1500 food)
   for (let i = 0; i < 3600; i++) g.update(DT);
-  ok(g.hash() === 1709053222, 'normal game: hash after 2 min unchanged ' + g.hash());
+  ok(g.hash() === 2493039770, 'normal game: hash after 2 min unchanged ' + g.hash());
   const m = new Game({ mapSize: 96, seed: 3, mp: true, me: 0, tutorial: true, players: [{ kind: 'human', team: 1 }, { kind: 'ai', team: 2 }] });
   ok(!('tutorial' in m.cfg) && m.ais.length === 1 && m.quests.list.length === 0, 'multiplayer forces the tutorial off');
 }

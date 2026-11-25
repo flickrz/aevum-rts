@@ -57,7 +57,7 @@ export const UNITS = {
 };
 // (owner 2026-11-25: "askerlerin hızı çok yavaş") soldiers walk faster; villagers, carts and trains unchanged.
 // (owner 2026-11-25, naval rework) every ship (warships, fishing boats, transports, trade ships) sails 1.8x faster.
-const SOLDIER_SPEED = { infantry: 2, ranged: 2, support: 2, cavalry: 2, siege: 2, ship: 1.8 };
+const SOLDIER_SPEED = { infantry: 1.4, ranged: 1.4, support: 1.4, cavalry: 1.4, siege: 1.4, ship: 1.8 };
 for (const u of Object.values(UNITS)) { const k = SOLDIER_SPEED[u.cls]; if (k) u.speed = Math.round(u.speed * k * 100) / 100; }
 
 function B(id, name, age, cost, time, hp, size, popCap, trains, researches, dropoff, atk, range, los, icon, desc) {

@@ -20,7 +20,7 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 {
   const h = UNITS.healer;
   ok(BUILDINGS.temple.age === 0 && BUILDINGS.temple.trains.includes('healer'), 'temple: age 0, trains the healer');
-  ok(h && h.name === 'Büyücü' && h.age === 0 && h.atk === 0 && h.hp === 40 && h.speed === 4.4 && h.los === 11 && h.pop === 1 && h.time === 28 && h.cost.food === 60 && h.cost.gold === 40, 'healer data (Büyücü, 60 food 40 gold, 28 s, 40 hp, atk 0)');
+  ok(h && h.name === 'Büyücü' && h.age === 0 && h.atk === 0 && h.hp === 40 && h.speed === 3.08 && h.los === 11 && h.pop === 1 && h.time === 28 && h.cost.food === 60 && h.cost.gold === 40, 'healer data (Büyücü, 60 food 40 gold, 28 s, 40 hp, atk 0)');
   const g = mk(); const p = g.players[0]; p.res.wood = p.res.stone = p.res.food = p.res.gold = 1000;
   ok(g.isUnlocked(0, 'building', 'temple') && g.isUnlocked(0, 'unit', 'healer'), 'temple and healer unlocked in the Stone Age');
   let t = null; for (let r = 0; r < 10 && !t; r++) for (let dz = -r; dz <= r && !t; dz++) for (let dx = -r; dx <= r && !t; dx++) if (g.canPlace('temple', CX - 4 + dx, CZ - 4 + dz, 0)) { const id = g.placeBuilding(0, 'temple', CX - 4 + dx, CZ - 4 + dz, []); if (id != null) t = g.getEntity(id); }
