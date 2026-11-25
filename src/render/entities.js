@@ -2044,7 +2044,10 @@ export class EntityView {
     }
     if (e.type === 'farm') v.h = .5;
     else { v.root.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(U.body); const b2 = new THREE.Box3().setFromObject(U.roof); v.h = Math.max(.6, b.max.y, isFinite(b2.max.y) ? b2.max.y : 0); }
-    { const k = v.k || 1; this._proxy(v, (e.size || 1) * .85 / k, Math.max(.4, v.h * .6) / k, (e.size || 1) * .85 / k); }   // (child of the k-scaled root; owner 2026-11-25: lower and narrower than the model, so a building standing behind another one can be clicked)
+    { const k = v.k || 1; this._proxy(v, (e.size || 1) * .85 / k, Math.max(.4, v.h * .6) / k, (e.size || 1) * .85 / k); }
+    // (owner 2026-11-25: the dock was hard to select) the dock model is drawn ~3x its plot and pushed out over the water:
+    // its click box is the model's own box, riding on the model
+    if (U.dockM && U.dockM.geometry) { try { const gm = U.dockM.geometry; if (!gm.boundingBox) gm.computeBoundingBox(); const bb = gm.boundingBox, p = v.proxy; v.root.remove(p); U.dockM.add(p); p.scale.set(bb.max.x - bb.min.x, Math.max(.3, bb.max.y - bb.min.y), bb.max.z - bb.min.z); p.position.set((bb.max.x + bb.min.x) / 2, bb.min.y, (bb.max.z + bb.min.z) / 2); } catch (err) { /* keep the plot box */ } }   // (G.box stands on y = 0)   // (child of the k-scaled root; owner 2026-11-25: lower and narrower than the model, so a building standing behind another one can be clicked)
     v.damaged = false; v.farmKey = -1; v.prog = -1;
     v.root.visible = v.vis !== false;
     this.scene.add(v.root);

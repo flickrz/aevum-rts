@@ -3,6 +3,8 @@
 // Entry: { id: 'unique-id', date: 'YYYY-MM-DD', title, body, changelog?: '0.9.8' (lists that release's items),
 // link?, linkText?, img? }  (body: paragraphs split by a blank line)
 export const NEWS = [
+  { id: 'n-099', date: '2026-11-25', changelog: '0.9.9', title: 'Birimler artık konuşuyor',
+    body: 'Sizden gelen @claude önerileriyle yeni bir güncelleme daha: köylüler ve askerler artık konuşuyor, üstelik Türkçe! Seçtiğinizde ve emir verdiğinizde size cevap veriyorlar. Kuleler ve surlar da büyüdü, gemiler ve balıklar düzeldi. Tüm değişiklikler için tıklayın. İyi oyunlar!' },
   { id: 'n-098', date: '2026-11-25', changelog: '0.9.8', title: 'Oyun sizinle hızla gelişiyor',
     body: 'Sizden gelen @claude önerileriyle oyun çok hızlı gelişiyor. Bu güncellemede birçok yenilik var: deniz savaşları, İngilizce dil desteği ve çok daha fazlası. Tüm değişiklikler için tıklayın. İyi oyunlar!' },
 ];

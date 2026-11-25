@@ -559,5 +559,7 @@ export default {
   "Duyurular": "News",
   "Aç": "Open",
   'Oyun sizinle hızla gelişiyor': 'The game grows fast with you',
+  'Birimler artık konuşuyor': 'Units now speak',
+  'Sizden gelen @claude önerileriyle yeni bir güncelleme daha: köylüler ve askerler artık konuşuyor, üstelik Türkçe! Seçtiğinizde ve emir verdiğinizde size cevap veriyorlar. Kuleler ve surlar da büyüdü, gemiler ve balıklar düzeldi. Tüm değişiklikler için tıklayın. İyi oyunlar!': 'One more update built on your @claude suggestions: villagers and soldiers now talk! They answer when you select them and when you give orders. Towers and walls grew, and ships and fish got fixes. Click for all the changes. Have fun!',
   'Sizden gelen @claude önerileriyle oyun çok hızlı gelişiyor. Bu güncellemede birçok yenilik var: deniz savaşları, İngilizce dil desteği ve çok daha fazlası. Tüm değişiklikler için tıklayın. İyi oyunlar!': 'Thanks to your @claude suggestions the game is moving fast. This update brings a lot: naval warfare, English language support and much more. Click to see every change. Have fun!',
 };

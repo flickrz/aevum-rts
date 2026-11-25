@@ -42,9 +42,9 @@ const M = {
   gold: mat(0xffc62e, .25, 1), glass: mat(0x2a3440, .3, .2, 0x332200), rust: mat(0x6a4a3a, .8, .4),
 };
 const FOAM = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .45, depthWrite: false });
-const RIPPLE = new THREE.MeshBasicMaterial({ color: 0xeaf8ff, transparent: true, opacity: .6, depthWrite: false });
+const RIPPLE = new THREE.MeshBasicMaterial({ color: 0xf4fbff, transparent: true, opacity: .85, depthWrite: false });
 // (owner 2026-11-25: fish easier to see) dark backs of the shoal just under the surface, always shown
-const SHOAL = new THREE.MeshBasicMaterial({ color: 0xb8dde6, transparent: true, opacity: .55, depthWrite: false });
+const SHOAL = new THREE.MeshBasicMaterial({ color: 0xd8eef4, transparent: true, opacity: .8, depthWrite: false });
 
 function mk(geo, p, m, sx, sy, sz, x, y, z) {
   const o = new THREE.Mesh(geo, m);
@@ -300,9 +300,9 @@ export function seaAnimBuilding(view, v, e, dt, t, U) {
 export function makeFish(e) {
   const root = new THREE.Group(), g = new THREE.Group(); root.add(g);
   const rings = [];
-  for (let i = 0; i < 3; i++) { const r = mk(G.ring, g, RIPPLE, 1.4, 1, 1.4, (i - 1) * .3, .02, (i & 1) * .25 - .12); r.castShadow = false; r.receiveShadow = false; rings.push(r); }
+  for (let i = 0; i < 3; i++) { const r = mk(G.ring, g, RIPPLE, 2, 1, 2, (i - 1) * .35, .02, (i & 1) * .3 - .15); r.castShadow = false; r.receiveShadow = false; rings.push(r); }
   const backs = [];
-  for (let i = 0; i < 7; i++) { const b = mk(G.sph, g, SHOAL, .16, .012, .46, 0, .035, 0); b.castShadow = false; b.receiveShadow = false; b.userData.ph = i * .9 + e.id * .37; b.userData.r = .25 + (i % 3) * .2; backs.push(b); }
+  for (let i = 0; i < 9; i++) { const b = mk(G.sph, g, SHOAL, .22, .015, .6, Math.cos(i * 2.4) * (.3 + (i % 3) * .25), .035, Math.sin(i * 2.4) * (.3 + (i % 3) * .25)); b.castShadow = false; b.receiveShadow = false; b.userData.ph = i * .9 + e.id * .37; b.userData.r = .3 + (i % 3) * .25; backs.push(b); }
   const fish = [], n = 5 + (e.id % 3);
   for (let i = 0; i < n; i++) {
     const f = new THREE.Group(); g.add(f);
@@ -318,12 +318,12 @@ export function seaAnimFish(v, t) {
   const U = v.root.userData; if (!U.fishShoal) return;
   v.root.position.y = .02;
   const rings = U.rings;
-  for (let i = 0; i < rings.length; i++) { const k = ((t * .35 + i / rings.length) % 1); const s = .6 + k * 1.5; rings[i].scale.set(s, 1, s); }
+  for (let i = 0; i < rings.length; i++) { const k = ((t * .35 + i / rings.length) % 1); const s = .8 + k * 2; rings[i].scale.set(s, 1, s); }
   const backs = U.backs || [];
   for (let i = 0; i < backs.length; i++) { const b = backs[i], a = t * (.5 + (i % 3) * .12) * (i & 1 ? 1 : -1) + b.userData.ph; b.position.set(Math.cos(a) * b.userData.r, .035, Math.sin(a) * b.userData.r); b.rotation.y = -a + (i & 1 ? 0 : PI); }
   const fish = U.fish;
   for (let i = 0; i < fish.length; i++) {
-    const f = fish[i], per = 3.5 + (i % 3), q = ((t + f.userData.ph) % per) / .7;
+    const f = fish[i], per = 2.2 + (i % 3) * .6, q = ((t + f.userData.ph) % per) / .7;
     if (q >= 1) { f.visible = false; continue; }
     f.visible = true;
     const a = f.userData.a + Math.floor((t + f.userData.ph) / per) * 1.9, r = .25 + (i % 2) * .15;

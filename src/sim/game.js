@@ -19,6 +19,7 @@ import { histTick } from './history.js';
 // the buildings that train units: as long as a player has one, the player is in the game (see _checkWin). The temple
 // (it trains only the healer) does not count: the owner's rule is about the worker / soldier buildings.
 export const PROD_B = new Set(Object.keys(BUILDINGS).filter((k) => (BUILDINGS[k].trains || []).length && !BUILDINGS[k].legacy && k !== 'temple'));
+const DOCK_REPAIR_R = 9;   // tiles from a dock's centre where own ships get repaired
 const RES_OF = { tree: 'wood', stone: 'stone', gold: 'gold', berries: 'food', deer: 'food', fish: 'food', wolf: 'food', bear: 'food' };
 const RATE = { tree: 0.42, stone: 0.36, gold: 0.36, berries: 0.4, deer: 0.5, wolf: 0.5, bear: 0.5 };
 // animals that walk about (kept in this.deer, no tile of their own): deer, and the wild predators (2026-11-23 player
@@ -2299,6 +2300,13 @@ export class Game {
       ps.acc = (ps.acc || 0) + dt * PASTURE_IDLE_RATE * ps.sheep * (1 + (p.mods.pasture || 0) * 0.5);
       if (ps.acc >= 1) { const n = ps.acc | 0; ps.acc -= n; this._credit(p, 'food', n); }
     }
+    if (b.type === 'dock' && b.done) {
+      // (player request 2026-11-25, owner: automatic) own ships near a dock that have not been hit for 5 s are repaired,
+      // 2% of their hp a second (at least 1)
+      b.repT = (b.repT || 0) + dt;
+      if (b.repT >= 1) { b.repT -= 1;
+        this._near(b.x, b.z, DOCK_REPAIR_R, e => { if (e.dead || !e.naval || e.owner !== b.owner || e.hp >= e.maxHp || this.time - (e.hitT || -99) < 5 || dhypot(e.x - b.x, e.z - b.z) > DOCK_REPAIR_R) return; e.repAcc = (e.repAcc || 0) + Math.max(1, e.maxHp * 0.02); const n = e.repAcc | 0; e.repAcc -= n; e.hp = Math.min(e.maxHp, e.hp + n); }); }
+    }
     if (b.type === 'temple') {
       // heal own units within 7 tiles that have not been hit for 5 s: 1 hp/s, faster with techs
       b.healT = (b.healT || 0) + dt;
@@ -2894,14 +2902,14 @@ export class Game {
     const pool = deep.length >= 6 ? deep : deep.concat(shallow);
     for (let i = pool.length - 1; i > 0; i--) { const j = (this.rand() * (i + 1)) | 0; const x = pool[i]; pool[i] = pool[j]; pool[j] = x; }
     // (owner 2026-11-25: more fish) about 1.7x the earlier count, closer together
-    const want = Math.max(10, Math.min(70, Math.round(pool.length / 26)));
-    for (const c of pool) { if (placed.length >= want) break; if (ok(c, 6)) put(c); }
+    const want = Math.max(16, Math.min(110, Math.round(pool.length / 18)));
+    for (const c of pool) { if (placed.length >= want) break; if (ok(c, 5)) put(c); }
     for (const p of this.players) {
       const all = deep.concat(shallow).filter(c => { const d = dhypot(c[0] + 0.5 - p.startX, c[1] + 0.5 - p.startZ); return d >= 7 && d <= 25 && free(c[0], c[1]); });
       if (!all.length) continue;
       all.sort((a, b) => (dhypot(a[0] - p.startX, a[1] - p.startZ) + (T[a[1] * N + a[0]] === 4 ? 0 : 4)) - (dhypot(b[0] - p.startX, b[1] - p.startZ) + (T[b[1] * N + b[0]] === 4 ? 0 : 4)));
       let n = placed.filter(c => dhypot(c[0] - p.startX, c[1] - p.startZ) <= 25).length;
-      for (const c of all) { if (n >= 3) break; if (ok(c, 4)) { put(c); n++; } }
+      for (const c of all) { if (n >= 4) break; if (ok(c, 4)) { put(c); n++; } }
     }
     this._navFishC = null;
     return placed.length;
