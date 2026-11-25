@@ -74,7 +74,58 @@ export function decisionFields(d, now = Date.now()) {
   return f;
 }
 
-// store: {query(collectionId, opts), count(collectionId), patch(docPath, fields)}
+// ---- Fikirler (owner 2026-11-25: "pratik olsun, aynı sayfada"): the owner's own idea list, adminIdeas/{id}
+// {title, body, pinned, status: 'open'|'done', at, from?, fromName?}. Written only by this server and
+// tools/read-admin.mjs; read with one list query when the page loads (they are few), never polled.
+export const IDEAS = 'adminIdeas';
+export const IDEA_RE = /^i[0-9a-f]{16}$/;
+export const IDEA_STATUSES = ['open', 'done'];
+export const TITLE_MAX = 200, BODY_MAX = 4000;
+const clean1 = (s) => String(s).replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
+const cleanBody = (s) => String(s).replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, ' ').trim();
+export function ideaRows(docs) {
+  return (docs || []).map((d) => {
+    const id = String(d.name || '').split('/').pop(), f = d.fields || {};
+    if (!IDEA_RE.test(id)) return null;
+    const r = { id, title: String(val(f.title) || ''), body: String(val(f.body) || ''), pinned: val(f.pinned) === true, status: val(f.status) === 'done' ? 'done' : 'open', at: String(val(f.at) || '') };
+    if (val(f.from)) r.from = String(val(f.from));
+    if (val(f.fromName)) r.fromName = String(val(f.fromName));
+    return r;
+  }).filter(Boolean).sort((a, b) => (a.pinned !== b.pinned ? (a.pinned ? -1 : 1) : a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+}
+// an idea request -> {op:'add', title, body, pinned, from?, fromName?} | {op:'update', id, title?, body?, pinned?, status?} | {op:'delete', id} | {error}
+export function cleanIdea(b) {
+  if (!b || typeof b !== 'object') return { error: 'bad json' };
+  const op = b.op;
+  const str = (k, max, fn) => { if (b[k] === undefined) return undefined; if (typeof b[k] !== 'string' || b[k].length > max) return null; return fn(b[k]); };
+  if (op === 'add') {
+    const title = str('title', TITLE_MAX, clean1), body = str('body', BODY_MAX, cleanBody);
+    if (!title) return { error: 'bad title' };
+    if (body === null) return { error: 'bad body' };
+    const out = { op, title, body: body || '', pinned: b.pinned === true };
+    if (b.from !== undefined) { if (!ID_RE.test(String(b.from))) return { error: 'bad from' }; out.from = b.from; }
+    if (b.fromName !== undefined) { const n = str('fromName', 60, clean1); if (n === null) return { error: 'bad from' }; if (n) out.fromName = n; }
+    return out;
+  }
+  if (op !== 'update' && op !== 'delete') return { error: 'bad op' };
+  if (!IDEA_RE.test(String(b.id))) return { error: 'bad id' };
+  if (op === 'delete') return { op, id: b.id };
+  const out = { op, id: b.id };
+  if (b.title !== undefined) { const t = str('title', TITLE_MAX, clean1); if (!t) return { error: 'bad title' }; out.title = t; }
+  if (b.body !== undefined) { const t = str('body', BODY_MAX, cleanBody); if (t === null) return { error: 'bad body' }; out.body = t; }
+  if (b.pinned !== undefined) { if (typeof b.pinned !== 'boolean') return { error: 'bad pinned' }; out.pinned = b.pinned; }
+  if (b.status !== undefined) { if (!IDEA_STATUSES.includes(b.status)) return { error: 'bad status' }; out.status = b.status; }
+  if (Object.keys(out).length === 2) return { error: 'nothing to change' };
+  return out;
+}
+const ideaFields = (o) => {
+  const f = {};
+  for (const k of ['title', 'body', 'status', 'at', 'from', 'fromName']) if (o[k] !== undefined) f[k] = { stringValue: o[k] };
+  if (o.pinned !== undefined) f.pinned = { booleanValue: o.pinned };
+  return f;
+};
+
+// store: {query(collectionId, opts), count(collectionId), patch(docPath, fields), remove(docPath)}
 // ttlMs: how long one Firestore read of the lines is reused (keeps reads cheap: the page may be reloaded often; a
 // decision made here updates the cache at once). The decisions are read once (they are written here) and again only
 // with fresh (the page's Yenile button), which reads the lines again too.
@@ -128,6 +179,24 @@ export function createAdmin({ store, now = () => Date.now(), ttlMs = 10 * 60000,
       const img = d && d.fields ? val(d.fields.img) : null;
       return typeof img === 'string' && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(img) ? img : null;
     },
+    // Fikirler: one list query per call (the page calls it once per load), pinned first, then newest
+    async ideas() { return { items: ideaRows(await store.query(IDEAS)) }; },
+    // d: a cleanIdea result -> the idea after it ({id, deleted: true} for a delete)
+    async idea(d) {
+      if (d.op === 'delete') { await store.remove(IDEAS + '/' + d.id); return { id: d.id, deleted: true }; }
+      if (d.op === 'add') {
+        const id = 'i' + crypto.randomBytes(8).toString('hex');
+        const o = { title: d.title, body: d.body, pinned: d.pinned, status: 'open', at: new Date(now()).toISOString() };
+        if (d.from) o.from = d.from;
+        if (d.fromName) o.fromName = d.fromName;
+        await store.patch(IDEAS + '/' + id, ideaFields(o));
+        return Object.assign({ id }, o);
+      }
+      const ch = {}; for (const k of ['title', 'body', 'pinned', 'status']) if (d[k] !== undefined) ch[k] = d[k];
+      await store.patch(IDEAS + '/' + d.id, ideaFields(ch));
+      const doc = await store.doc(IDEAS + '/' + d.id);
+      return doc ? ideaRows([doc])[0] : Object.assign({ id: d.id }, ch);
+    },
     // the number of accounts (profiles), counted at most every countTtlMs
     async accounts() {
       if (accounts != null && now() - accountsT < countTtlMs) return accounts;
@@ -145,20 +214,27 @@ export function createMemoryAdminStore(seed = {}) {
   for (const d of Array.isArray(seed.decisions) ? seed.decisions : []) dec.set(String(d.name).split('/').pop(), d.fields || {});
   const calls = { query: 0, patch: 0, count: 0, doc: 0 };
   const shots = new Map(Object.entries(seed.shots || {}));   // docPath -> img
+  const ideas = new Map();   // id -> fields
+  for (const d of Array.isArray(seed.ideas) ? seed.ideas : []) ideas.set(String(d.name).split('/').pop(), d.fields || {});
+  calls.remove = 0;
+  const ideaDoc = (id) => ({ name: 'projects/x/databases/(default)/documents/' + IDEAS + '/' + id, fields: ideas.get(id) });
   return {
     calls,
     async query(collectionId) {
       calls.query++;
       if (collectionId === FEEDBACK_COLLECTION || collectionId === 'chatlog') return chat;
+      if (collectionId === IDEAS) return [...ideas.keys()].map(ideaDoc);
       if (collectionId === COLLECTION) return [...dec].map(([id, fields]) => ({ name: 'projects/x/databases/(default)/documents/' + COLLECTION + '/' + id, fields }));
       return [];
     },
-    async doc(docPath) { calls.doc++; return shots.has(docPath) ? { name: docPath, fields: { img: { stringValue: shots.get(docPath) } } } : null; },
+    async doc(docPath) { calls.doc++; if (docPath.startsWith(IDEAS + '/')) { const id = docPath.split('/').pop(); return ideas.has(id) ? ideaDoc(id) : null; } return shots.has(docPath) ? { name: docPath, fields: { img: { stringValue: shots.get(docPath) } } } : null; },
     async count() { calls.count++; return Number(seed.accounts) || 0; },
     async patch(docPath, fields) {
       calls.patch++;
       const id = docPath.split('/').pop();
+      if (docPath.startsWith(IDEAS + '/')) { ideas.set(id, Object.assign({}, ideas.get(id) || {}, fields)); return; }
       dec.set(id, Object.assign({}, dec.get(id) || {}, fields));
     },
+    async remove(docPath) { calls.remove++; ideas.delete(docPath.split('/').pop()); },
   };
 }

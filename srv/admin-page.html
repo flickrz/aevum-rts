@@ -63,6 +63,20 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 .gate a { color: var(--gold); }
 .more { align-self: center; }
 [hidden] { display: none !important; }
+details.panel > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 10px; }
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary h2 { margin: 0; }
+details.panel > summary::before { content: '▸'; color: var(--gold); }
+details.panel[open] > summary::before { content: '▾'; }
+details.panel[open] > summary { margin-bottom: 12px; }
+.idform { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-bottom: 12px; }
+.idform input, .idform textarea { background: var(--glass2); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); padding: 7px 10px; font: inherit; min-width: 0; }
+.idform textarea { grid-column: 1 / -1; min-height: 54px; resize: vertical; }
+.idform button { border: 1px solid var(--gold); background: rgba(232,194,106,.16); color: var(--gold); border-radius: 8px; padding: 6px 16px; }
+.item.pinned { border-left-color: var(--gold); }
+.item.idone { opacity: .6; }
+.item.idone .ititle { text-decoration: line-through; }
+.ititle { font-weight: 600; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -82,6 +96,15 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
       </table>
     </div>
   </section>
+  <details class="panel" id="ideas" hidden>
+    <summary><h2>Fikirler</h2><span class="sync" id="id-n"></span></summary>
+    <form class="idform" id="idform">
+      <input id="id-t" maxlength="200" placeholder="Yeni fikir (tek satır)" aria-label="Fikir başlığı" required>
+      <button type="submit">Ekle</button>
+      <textarea id="id-b" maxlength="4000" placeholder="Ayrıntı (isteğe bağlı)" aria-label="Fikir ayrıntısı"></textarea>
+    </form>
+    <div class="list" id="idlist"><div class="empty">Fikirler yükleniyor…</div></div>
+  </details>
   <section class="panel" id="fb" aria-labelledby="fb-h" hidden>
     <h2 id="fb-h">@claude mesajları</h2>
     <div class="controls">
@@ -111,7 +134,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
     var g = $('gate'); g.textContent = '';
     g.append(el('p', '', msg));
     var p = el('p'), a = el('a', '', 'Oyuna git ve giriş yap'); a.href = '/'; p.append(a); g.append(p);
-    g.hidden = false; $('stats').hidden = true; $('fb').hidden = true; $('sync').textContent = '';
+    g.hidden = false; $('stats').hidden = true; $('fb').hidden = true; $('ideas').hidden = true; $('sync').textContent = '';
   }
   // the relay ticket: the game's stored Google session (localStorage 'aevum.auth', same origin) -> a fresh id token ->
   // POST /mp/auth. (A local test may hand one over in the address: #tk=...; the part after # never reaches a server.)
@@ -199,6 +222,15 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
       var note = el('input'); note.placeholder = 'Not (isteğe bağlı)'; note.value = r.note || ''; note.maxLength = 500; note.setAttribute('aria-label', 'Not');
       note.addEventListener('change', function () { if ((r.note || '') !== note.value) decide(r, { note: note.value }, []); });
       acts.append(note);
+      var fk = el('button', '', '📌 Fikre al'); fk.type = 'button';
+      fk.onclick = async function () {
+        fk.disabled = true;
+        var t = r.text || '(boş mesaj)';
+        var title = t.length > 120 ? t.slice(0, 117) + '…' : t;
+        if (await addIdea({ title: title, body: t.length > 120 ? t.slice(0, 4000) : '', pinned: true, from: r.id, fromName: String(r.name || '').slice(0, 60) })) fk.textContent = 'Fikirlere eklendi';
+        else fk.disabled = false;
+      };
+      acts.append(fk);
       if (r.shot) {
         // the screenshot is read only on this click (one Firestore read), then kept in r.img
         var sb = el('button', '', 'görüntü'); sb.type = 'button';
@@ -216,6 +248,47 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
     $('more').hidden = vis.length <= shown;
   }
   function renderAll() { renderFilters(); renderList(); }
+
+  // ---- Fikirler: read once per page load, written only on the owner's clicks ----
+  var ideas = [];
+  var ideaSort = function () { ideas.sort(function (a, b) { return a.pinned !== b.pinned ? (a.pinned ? -1 : 1) : (a.status !== b.status ? (a.status === 'open' ? -1 : 1) : (a.at < b.at ? 1 : -1)); }); };
+  async function ideaOp(body) {
+    try { return await api('/mp/admin/ideas', body); } catch (e) { $('sync').textContent = 'Fikir kaydedilemedi: ' + e.message; return null; }
+  }
+  function renderIdeas() {
+    ideaSort();
+    var list = $('idlist'); list.textContent = '';
+    var open = ideas.filter(function (x) { return x.status === 'open'; }).length;
+    $('id-n').textContent = open + ' açık' + (ideas.length > open ? ' · ' + (ideas.length - open) + ' yapıldı' : '');
+    if (!ideas.length) { list.append(el('div', 'empty', 'Henüz fikir yok.')); return; }
+    ideas.forEach(function (x) {
+      var it = el('article', 'item' + (x.pinned ? ' pinned' : '') + (x.status === 'done' ? ' idone' : ''));
+      var meta = el('div', 'meta'); meta.append(el('span', 'ititle', (x.pinned ? '📌 ' : '') + x.title), el('span', '', fmtTime(x.at)));
+      if (x.from) meta.append(el('span', '', 'geri bildirimden' + (x.fromName ? ': ' + x.fromName : '')));
+      it.append(meta, el('span', 'badge' + (x.status === 'done' ? ' done' : ''), x.status === 'done' ? 'Yapıldı' : 'Açık'));
+      if (x.body) it.append(el('div', 'text', x.body));
+      var acts = el('div', 'acts'), btns = [];
+      var mk = function (cls, label, fn) { var b = el('button', cls, label); b.type = 'button'; b.onclick = async function () { btns.forEach(function (q) { q.disabled = true; }); await fn(); renderIdeas(); }; btns.push(b); acts.append(b); };
+      var upd = function (ch) { return async function () { var r = await ideaOp(Object.assign({ op: 'update', id: x.id }, ch)); if (r) Object.assign(x, ch); }; };
+      mk('', x.pinned ? 'Sabitlemeyi kaldır' : '📌 Sabitle', upd({ pinned: !x.pinned }));
+      mk(x.status === 'done' ? '' : 'dn', x.status === 'done' ? 'Geri aç' : 'Yapıldı', upd({ status: x.status === 'done' ? 'open' : 'done' }));
+      mk('no', 'Sil', async function () { if (!confirm('Bu fikir silinsin mi? ' + x.title)) return; var r = await ideaOp({ op: 'delete', id: x.id }); if (r) ideas = ideas.filter(function (y) { return y !== x; }); });
+      it.append(acts); list.append(it);
+    });
+  }
+  async function loadIdeas() {
+    try { ideas = (await api('/mp/admin/ideas')).items || []; renderIdeas(); } catch (e) { $('idlist').textContent = ''; $('idlist').append(el('div', 'empty', 'Fikirler okunamadı: ' + e.message)); }
+  }
+  async function addIdea(body) {
+    var r = await ideaOp(Object.assign({ op: 'add' }, body));
+    if (r) { delete r.ok; ideas.push(r); $('ideas').open = true; renderIdeas(); }
+    return r;
+  }
+  $('idform').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var t = $('id-t').value.trim(); if (!t) return;
+    if (await addIdea({ title: t, body: $('id-b').value })) { $('id-t').value = ''; $('id-b').value = ''; }
+  });
 
   async function loadAll(fresh) {
     $('list').textContent = ''; $('list').append(el('div', 'empty', 'Mesajlar yükleniyor…'));
@@ -240,7 +313,10 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
     if (!t || !t.ticket) { gate('Giriş yapılmamış. Önce oyunda Google hesabınla giriş yap, sonra bu sayfayı yenile.'); return; }
     if (!t.owner) { gate('Bu sayfa yalnızca oyunun sahibi içindir.'); return; }
     ticket = t.ticket;
-    $('stats').hidden = false; $('fb').hidden = false;
+    $('stats').hidden = false; $('fb').hidden = false; $('ideas').hidden = false;
+    try { $('ideas').open = localStorage.getItem('aevum.admin.ideas') !== '0'; } catch (e) { $('ideas').open = true; }
+    $('ideas').addEventListener('toggle', function () { try { localStorage.setItem('aevum.admin.ideas', $('ideas').open ? '1' : '0'); } catch (e) { /* ignore */ } });
+    loadIdeas();
     loadAll();
   })();
 })();

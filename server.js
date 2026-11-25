@@ -486,6 +486,23 @@
       ADMIN.shot(String(url.searchParams.get('id') || '')).then((img) => (img ? reply(res, 200, J, JSON.stringify({ img })) : reply(res, 404, J, '{"error":"Görüntü yok."}')), (e) => fail(e, 'shot'));
       return;
     }
+    // Fikirler: GET /mp/admin/ideas (one list query), POST /mp/admin/ideas {op: add|update|delete, ...} (srv/admin.mjs)
+    if (url.pathname === '/mp/admin/ideas') {
+      if (!ADMIN) { req.resume(); reply(res, 503, J, '{"error":"Veri deposu yok (AEVUM_SA)."}'); return; }
+      if (req.method === 'GET') { ADMIN.ideas().then((r) => reply(res, 200, J, JSON.stringify(r)), (e) => fail(e, 'ideas')); return; }
+      if (req.method !== 'POST') { req.resume(); reply(res, 405, J, '{"error":"method"}'); return; }
+      readBody(req, 16384, (err, buf) => {
+        if (err) { reply(res, err === 'big' ? 413 : 400, J, '{"error":"bad body"}'); return; }
+        let body; try { body = JSON.parse(buf.toString('utf8') || '{}'); } catch { reply(res, 400, J, '{"error":"bad json"}'); return; }
+        const d = ADM.cleanIdea(body);
+        if (d.error) { reply(res, 400, J, JSON.stringify({ error: d.error })); return; }
+        const now = Date.now(), recent = (adminWrites.get(me.fb) || []).filter((t) => now - t < 60000);
+        if (recent.length >= 120) { reply(res, 429, J, '{"error":"Çok hızlı; biraz bekle."}'); return; }
+        recent.push(now); adminWrites.set(me.fb, recent);
+        ADMIN.idea(d).then((r) => reply(res, 200, J, JSON.stringify(Object.assign({ ok: true }, r))), (e) => fail(e, 'idea'));
+      }, 5000);
+      return;
+    }
     if (url.pathname !== '/mp/admin/feedback') { req.resume(); reply(res, 404, J, '{"error":"not found"}'); return; }
     if (!ADMIN) { req.resume(); reply(res, 503, J, '{"error":"Veri deposu yok (AEVUM_SA)."}'); return; }
     if (req.method === 'GET') { ADMIN.feedback({ fresh: url.searchParams.get('fresh') === '1' }).then((r) => reply(res, 200, J, JSON.stringify(r)), (e) => fail(e, 'feedback')); return; }

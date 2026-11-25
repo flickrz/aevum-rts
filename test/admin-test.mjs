@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createAdmin, createMemoryAdminStore, feedbackRows, feedbackId, cleanDecision, decisionMap } from '../srv/admin.mjs';
+import { createAdmin, createMemoryAdminStore, feedbackRows, feedbackId, cleanDecision, decisionMap, cleanIdea } from '../srv/admin.mjs';
 import { createSaStore } from '../srv/firestore-sa.mjs';
 
 let fails = 0, passes = 0;
@@ -37,6 +37,29 @@ const ID1 = feedbackId(CHAT[0].name), ID3 = feedbackId(CHAT[2].name);
   ok(store.calls.doc === 0, 'shot: listing reads no screenshot documents');
   ok((await adm.shot(a.id)) === IMG && store.calls.doc === 1, 'shot: one document read returns the image');
   ok((await adm.shot(b.id)) === null && (await adm.shot('nope')) === null && store.calls.doc === 1, 'shot: a line without one / a bad id reads nothing');
+}
+
+// ---- Fikirler (adminIdeas): add, pin, done, delete, from feedback; one query per list ----
+{
+  ok(cleanIdea({ op: 'add', title: '  ' }).error === 'bad title' && cleanIdea({ op: 'add', title: 'x'.repeat(201) }).error === 'bad title', 'ideas: a title is required, at most 200 chars');
+  ok(cleanIdea({ op: 'add', title: 'a', from: 'nope' }).error === 'bad from' && cleanIdea({ op: 'zap' }).error === 'bad op' && cleanIdea({ op: 'update', id: 'x', pinned: true }).error === 'bad id', 'ideas: bad from / op / id refused');
+  ok(cleanIdea({ op: 'update', id: 'i0123456789abcdef' }).error === 'nothing to change' && cleanIdea({ op: 'update', id: 'i0123456789abcdef', status: 'x' }).error === 'bad status', 'ideas: an update must change something valid');
+  let t = 1000;
+  const store = createMemoryAdminStore({}), adm = createAdmin({ store, now: () => (t += 1000) });
+  const a = await adm.idea(cleanIdea({ op: 'add', title: ' Boats \n', body: 'line1\nline2' }));
+  ok(/^i[0-9a-f]{16}$/.test(a.id) && a.title === 'Boats' && a.body === 'line1\nline2' && a.status === 'open' && a.pinned === false, 'ideas: add -> open, unpinned, newlines kept in the body only');
+  const b = await adm.idea(cleanIdea({ op: 'add', title: 'From fb', pinned: true, from: ID1, fromName: 'Ali' }));
+  const c = await adm.idea(cleanIdea({ op: 'add', title: 'Newest' }));
+  let l = (await adm.ideas()).items;
+  ok(l.length === 3 && l[0].id === b.id && l[0].from === ID1 && l[0].fromName === 'Ali' && l[1].id === c.id, 'ideas: pinned first (with its feedback link), then newest');
+  const q0 = store.calls.query; await adm.ideas(); ok(store.calls.query === q0 + 1, 'ideas: one query per list');
+  const p = await adm.idea(cleanIdea({ op: 'update', id: a.id, pinned: true }));
+  ok(p.pinned === true && p.title === 'Boats', 'ideas: pin');
+  const dn = await adm.idea(cleanIdea({ op: 'update', id: c.id, status: 'done' }));
+  ok(dn.status === 'done', 'ideas: done');
+  ok((await adm.idea(cleanIdea({ op: 'delete', id: b.id }))).deleted === true, 'ideas: delete');
+  l = (await adm.ideas()).items;
+  ok(l.length === 2 && l[0].id === a.id && l[0].pinned && l[1].status === 'done', 'ideas: the list after pin/done/delete');
 }
 
 // ---- pure helpers ----
@@ -194,6 +217,19 @@ try {
   j = await r.json();
   ok(r.status === 200 && j.accounts === 42 && j.live && typeof j.live.peers === 'number' && Array.isArray(j.daily) && j.daily.length >= 1 && 'visitors' in j.daily[0], 'stats: accounts, live rooms/peers and the days');
   ok(!JSON.stringify(j).includes('private_key'), 'stats: no secrets');
+  // Fikirler over the server
+  ok((await get('/mp/admin/ideas', PL)).status === 403 && (await post('/mp/admin/ideas', PL, { op: 'add', title: 'x' })).status === 403 && (await get('/mp/admin/ideas')).status === 401, 'ideas: owner only');
+  ok((await post('/mp/admin/ideas', OWN, { op: 'add', title: '' })).status === 400, 'ideas: a bad idea -> 400');
+  r = await post('/mp/admin/ideas', OWN, { op: 'add', title: 'boats', pinned: true, from: ID1, fromName: 'Ali' });
+  j = await r.json();
+  ok(r.status === 200 && j.ok && j.pinned && j.from === ID1, 'ideas: Fikre al (from a feedback line, pinned)');
+  await post('/mp/admin/ideas', OWN, { op: 'add', title: 'plain' });
+  let il = (await (await get('/mp/admin/ideas', OWN)).json()).items;
+  ok(il.length === 2 && il[0].title === 'boats', 'ideas: GET lists them, pinned first');
+  ok((await (await post('/mp/admin/ideas', OWN, { op: 'update', id: il[1].id, status: 'done' })).json()).status === 'done', 'ideas: done over POST');
+  ok((await post('/mp/admin/ideas', OWN, { op: 'delete', id: il[0].id })).status === 200 && (await (await get('/mp/admin/ideas', OWN)).json()).items.length === 1, 'ideas: delete over POST');
+  ok((await fetch(base + '/mp/admin/ideas', { method: 'PUT', headers: { 'X-Aevum-Ticket': OWN } })).status === 405, 'ideas: other methods -> 405');
+  ok(html.includes('Fikirler') && html.includes('Fikre al'), 'page: has the Fikirler block and the Fikre al button');
   ok((await get('/mp/admin/other', OWN)).status === 404, 'admin: unknown path -> 404');
   ok((await fetch(base + '/mp/admin/feedback', { method: 'DELETE', headers: { 'X-Aevum-Ticket': OWN } })).status === 405, 'admin: other methods -> 405');
 } finally {

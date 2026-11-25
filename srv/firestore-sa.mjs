@@ -109,6 +109,8 @@ export function createSaStore({ sa, projectId, fetch: fetchFn = globalThis.fetch
       const mask = Object.keys(fields).map((k) => 'updateMask.fieldPaths=' + encodeURIComponent(k)).join('&');
       await call(base + '/' + docPath + '?' + mask, { method: 'PATCH', body: JSON.stringify({ fields }) });
     },
+    // deletes one document (a missing one is fine)
+    async remove(docPath) { await call(base + '/' + docPath, { method: 'DELETE' }); },
     // the last n days (Turkey time, today first), counts only: the id lists are not downloaded (no index needed)
     async list(n) {
       const names = [];
