@@ -37,6 +37,7 @@ export class WSTransport {
     this.room = null;
     this.up = false;
     this.kind = 'ws';
+    this.reliable = true;
     this._h = new Map();
     this._peerFns = [];
     this._statusFns = [];

@@ -805,13 +805,15 @@ export class NetSession {
     const pk = { p: pid, t: upTo, c: m.get(upTo) || [] };
     if (extra) Object.assign(pk, extra);
     if (this.leftAt.size && this._authority() === this.me) pk.d = [...this.leftAt];
-    const r = [];
-    for (let k = 1; k <= back; k++) {
-      const tt = upTo - k; if (tt < DELAY) break;
-      const c = m.get(tt); if (c === undefined) continue;
-      r.push([tt, c]);
-      pk.r = r;
-      if (jsonLen(pk) > MAX_MSG) { r.pop(); if (!r.length) delete pk.r; break; }
+    if (back > 0) {
+      const r = [];
+      for (let k = 1; k <= back; k++) {
+        const tt = upTo - k; if (tt < DELAY) break;
+        const c = m.get(tt); if (c === undefined) continue;
+        r.push([tt, c]);
+        pk.r = r;
+        if (jsonLen(pk) > MAX_MSG) { r.pop(); if (!r.length) delete pk.r; break; }
+      }
     }
     return pk;
   }
@@ -833,7 +835,9 @@ export class NetSession {
   }
   _flushTurn() {
     if (!this._unsent) return;
-    this._send('turn', this._packet(this.me, this.sentUpTo, this._hx, this._unsent - 1 + REDUNDANCY));
+    // reliable ordered transports (WebSocket/TCP) need no per-packet repeat window; reconnects still call _resendWindow
+    const red = this.t && this.t.reliable ? 0 : REDUNDANCY;
+    this._send('turn', this._packet(this.me, this.sentUpTo, this._hx, this._unsent - 1 + red));
     this._unsent = 0; this._hx = null; this._lastTurnSend = this.clock.now();
   }
 

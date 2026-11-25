@@ -382,10 +382,14 @@
   function makeWsPeer(socket) {
     return {
       ws: true, socket, dead: false,
-      send(obj) {
+      sendRaw(buf) {
         if (this.dead || socket.destroyed) return;
         if (socket.writableLength > MAX_SSE_BUF) { try { socket.destroy(); } catch { /* ignore */ } return; }   // client stopped reading
-        try { socket.write(wsFrame(1, Buffer.from(JSON.stringify(obj)))); } catch { /* closed */ }
+        try { socket.write(buf); } catch { /* closed */ }
+      },
+      send(obj) {
+        if (this.dead || socket.destroyed) return;
+        this.sendRaw(wsFrame(1, Buffer.from(JSON.stringify(obj))));
       },
       end() { this.dead = true; try { socket.end(wsFrame(8, Buffer.alloc(0))); } catch { /* ignore */ } setTimeout(() => { try { socket.destroy(); } catch { /* ignore */ } }, 1000).unref(); },
     };
@@ -432,8 +436,19 @@
     if (sender && sender.dead) return;
     if (n != null && !rateOk(sender, n)) { if (sender && sender.dead) removePeer(room, peer, sender); return; }
     if (m.topic === 'lobby' && peer === r.host) noteLobby(r, m.data, sender);
-    const msg = { type: 'msg', topic: m.topic, data: m.data, from: peer, id: pub(sender && sender.ident) };
-    for (const [p, o] of r) if (p !== peer) tell(o, msg);
+    // hot match topics (turn/sync/flare) do not need verified identity repeated on every packet (sent on hello/joined/lobby/chat)
+    const hot = m.topic === 'turn' || m.topic === 'sync' || m.topic === 'flare';
+    const msg = hot ? { type: 'msg', topic: m.topic, data: m.data, from: peer } : { type: 'msg', topic: m.topic, data: m.data, from: peer, id: pub(sender && sender.ident) };
+    let wsBuf = null;
+    for (const [p, o] of r) {
+      if (p === peer) continue;
+      if (o.ws) {
+        if (!wsBuf) wsBuf = wsFrame(1, Buffer.from(JSON.stringify(msg)));
+        try { o.sendRaw(wsBuf); } catch (e) { logErr('send', e); }
+      } else {
+        tell(o, msg);
+      }
+    }
   }
   function handleUpgrade(req, socket) {
     let url; try { url = new URL(req.url || '', 'http://x'); } catch { socket.destroy(); return; }
