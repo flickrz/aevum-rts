@@ -2360,12 +2360,12 @@ export class EntityView {
       else if (v.rig === 'ship' && !v.P.glb && hasSea(e.type)) this._buildUnitMesh(v, e, age);   // (its generated model arrived)   // (type: a final-form upgrade)
     }
     if (v.pop > 0) this._pop(v, dt);
-    const map = this.game.map, k = Math.min(1, dt * 14);
+    const map = this.game.map, k = 1 - Math.exp(-32 * dt);
     const dx = e.x - v.x, dz = e.z - v.z, ox = v.x, oz = v.z, snap = dx * dx + dz * dz > 9;
     if (snap) { v.x = e.x; v.z = e.z; } else { v.x += dx * k; v.z += dz * k; }
     let dr = (e.rot || 0) - v.rot;
     while (dr > PI) dr -= PI * 2; while (dr < -PI) dr += PI * 2;
-    v.rot += dr * Math.min(1, dt * 12);
+    v.rot += dr * (1 - Math.exp(-24 * dt));
     const y = map.heightAt(v.x, v.z);
     const root = v.root, inner = v.inner, P = v.P, t = time + v.phase;
     root.position.set(v.x, y, v.z); root.rotation.y = v.rot;
