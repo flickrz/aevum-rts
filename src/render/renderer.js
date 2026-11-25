@@ -389,6 +389,7 @@ export class Renderer {
     this._flashes = [];
     if (this.floaters) this.floaters.clear();
     if (this.fowTex) { this.fowTex.dispose(); this.fowTex = null; }
+    this._fowPrev = null; this._fowPrev32 = null; this._fowAct = null; this._fowInAct = null; this._fowActN = 0; this._fowFogRef = null; this._fowFog32 = null;
     if (this.depthTex) { this.depthTex.dispose(); this.depthTex = null; }
     this.shared.uFow.value = this._blankFow;
     this.trees = new Map();
@@ -399,39 +400,90 @@ export class Renderer {
   }
 
   _buildFow() {
-    const N = this.N;
-    this._fowData = new Uint8Array(N * N);
-    this._fowCur = new Float32Array(N * N);
+    const N = this.N, n = N * N;
+    this._fowData = new Uint8Array(n);
+    this._fowCur = new Float32Array(n);
+    this._fowPrev = new Uint8Array(n).fill(255);
+    this._fowPrev32 = (n & 3) === 0 ? new Uint32Array(this._fowPrev.buffer) : null;
+    this._fowAct = new Int32Array(n);
+    this._fowInAct = new Uint8Array(n);
+    this._fowActN = 0;
+    this._fowFogRef = null; this._fowFog32 = null;
     const t = (this.fowTex = new THREE.DataTexture(this._fowData, N, N, THREE.RedFormat, THREE.UnsignedByteType));
     t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearFilter;
     t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
     t.needsUpdate = true;
     this.shared.uFow.value = t;
-    this._fowVer = -1; this._fowDirty = true; this._fowFirst = true;
+    this._fowVer = -1; this._fowFirst = true;
   }
 
   _updateFow(dt) {
     const g = this.game;
     if (!g || !this.fowTex) return;
-    if (g.fogVersion !== this._fowVer) { this._fowVer = g.fogVersion; this._fowDirty = true; }
-    if (!this._fowDirty) return;
-    const fog = g.fog, cur = this._fowCur, out = this._fowData, n = out.length;
-    const step = this._fowFirst ? 1000 : dt * 520;
-    let dirty = false;
-    for (let i = 0; i < n; i++) {
-      const f = fog ? fog[i] : 2;
+    const fog = g.fog, cur = this._fowCur, out = this._fowData, prev = this._fowPrev, n = out.length;
+    const act = this._fowAct, inAct = this._fowInAct;
+    if (this._fowFirst) {
+      this._fowFirst = false;
+      this._fowVer = g.fogVersion;
+      for (let i = 0; i < n; i++) {
+        const f = fog ? fog[i] : 2;
+        const target = f === 2 ? 255 : f === 1 ? 112 : 0;
+        cur[i] = target; out[i] = target; prev[i] = f; inAct[i] = 0;
+      }
+      this._fowActN = 0;
+      this.fowTex.needsUpdate = true;
+      return;
+    }
+    let actN = this._fowActN;
+    if (g.fogVersion !== this._fowVer) {
+      this._fowVer = g.fogVersion;
+      if (fog !== this._fowFogRef) {
+        this._fowFogRef = fog;
+        this._fowFog32 = (fog && this._fowPrev32 && (fog.byteOffset & 3) === 0 && fog.length === n) ? new Uint32Array(fog.buffer, fog.byteOffset, n >> 2) : null;
+      }
+      const f32 = this._fowFog32, p32 = this._fowPrev32;
+      if (f32 && p32) {
+        for (let w = 0, wn = f32.length; w < wn; w++) {
+          if (f32[w] === p32[w]) continue;
+          const base = w << 2;
+          for (let j = 0; j < 4; j++) {
+            const i = base + j, f = fog[i];
+            if (f !== prev[i]) {
+              prev[i] = f;
+              if (!inAct[i]) { inAct[i] = 1; act[actN++] = i; }
+            }
+          }
+        }
+      } else {
+        for (let i = 0; i < n; i++) {
+          const f = fog ? fog[i] : 2;
+          if (f !== prev[i]) {
+            prev[i] = f;
+            if (!inAct[i]) { inAct[i] = 1; act[actN++] = i; }
+          }
+        }
+      }
+    }
+    if (actN === 0) { this._fowActN = 0; return; }
+    const step = dt * 520;
+    let changed = false;
+    for (let k = actN - 1; k >= 0; k--) {
+      const i = act[k];
+      const f = prev[i];
       const target = f === 2 ? 255 : f === 1 ? 112 : 0;
       let c = cur[i];
       if (c !== target) {
         const d = target - c;
         c += d > step ? step : d < -step ? -step : d;
-        cur[i] = c; out[i] = c;
-        if (c !== target) dirty = true;
+        cur[i] = c;
+        const old = out[i];
+        out[i] = c;
+        if (out[i] !== old) changed = true;
       }
+      if (c === target) { inAct[i] = 0; act[k] = act[--actN]; }
     }
-    this._fowFirst = false;
-    this._fowDirty = dirty;
-    this.fowTex.needsUpdate = true;
+    this._fowActN = actN;
+    if (changed) this.fowTex.needsUpdate = true;
   }
 
   _buildTerrain() {
