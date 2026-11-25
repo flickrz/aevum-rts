@@ -1928,10 +1928,29 @@ export class EntityView {
     this._shb = new Map();  // pasture sheep parts: one instanced batch per (geometry, material) for every pasture
     this._sb = new StaticBatches(scene);   // finished, static-looking buildings merged per chunk (static-batch.js)
     this.batching = true;   // debug A/B switch (false: every building and sheep drawn on its own, as before)
+    this._linksVer = 1; this._linksBuilt = 0; this._bLen = -1; this._blkV = -1; this._terrainVer = 1;
+    this._statRes = [];
+    if (game && game.entities) {
+      for (const e of game.entities.values()) {
+        if (e.kind === 'resource' && e.type !== 'tree' && e.type !== 'deer' && e.type !== 'wolf' && e.type !== 'bear') this._statRes.push(e);
+      }
+    }
+    this._subs = [];
     try { loadGlbModels(); loadCrop(); } catch (err) { /* procedural models only */ }
     try {
       const ev = game && game.events;
-      if (ev && typeof ev.on === 'function') ev.on('ageUp', (d) => { try { this._onAgeUp(d); } catch (err) { /* visual only */ } });
+      if (ev && typeof ev.on === 'function') {
+        const on = (n, f) => { ev.on(n, f); this._subs.push([n, f]); };
+        on('ageUp', (d) => { try { this._onAgeUp(d); } catch (err) { /* visual only */ } });
+        on('spawn', (d) => {
+          const e = d && d.e; if (!e) return;
+          if (e.kind === 'building') this._linksVer++;
+          else if (e.kind === 'resource' && e.type !== 'tree' && e.type !== 'deer' && e.type !== 'wolf' && e.type !== 'bear') this._statRes.push(e);
+        });
+        on('remove', (d) => { if (d && d.e && d.e.kind === 'building') this._linksVer++; });
+        on('death', (d) => { if (d && d.e && d.e.kind === 'building') this._linksVer++; });
+        on('terrain', () => { this._terrainVer++; });
+      }
     } catch (err) { /* no event bus: upgrades are instant */ }
   }
 
@@ -2061,7 +2080,7 @@ export class EntityView {
     if (e.kind === 'building') {
       // (a rival's known town center first drawn while in the fog - a loaded save, a late join - shows the age the
       // match started in, not the one it has reached unseen)
-      v.mask = this._maskOf(e); this._buildBuildingMesh(v, e, e.known && this._fogged(e) ? (this.game.cfg.startAge | 0) : undefined);
+      v.mask = this._maskOf(e); v._maskVer = this._linksVer; this._buildBuildingMesh(v, e, e.known && this._fogged(e) ? (this.game.cfg.startAge | 0) : undefined);
       // the ground under it as the sim has it (levelled by the foundation): redrawn here too, so a missed or
       // early 'terrain' event, a loaded save or a late join can never leave a building sunk into a slope
       const R = this.ctx.renderer, s = e.size || 1;
@@ -2210,7 +2229,7 @@ export class EntityView {
     // only once someone goes there)
     const fogd = this._fogged(e);
     const age = v.age != null && fogd ? v.age : this._vage(v, e);
-    if (MASKED[e.type]) { const mk = this._maskOf(e); if (mk !== v.mask) { v.mask = mk; if (age === v.age) v.quiet = true; this._buildBuildingMesh(v, e, age); } }
+    if (MASKED[e.type] && e.type !== 'dock' && v._maskVer !== this._linksVer) { v._maskVer = this._linksVer; const mk = this._maskOf(e); if (mk !== v.mask) { v.mask = mk; if (age === v.age) v.quiet = true; this._buildBuildingMesh(v, e, age); } }
     // an age-up waits for the new era's generated model (owner 2026-11-17: the old look flashed in between):
     // the building keeps its old model until that era's files are in (or failed)
     if (age !== v.age) { if (glbPlanned(e.type, age) && !hasGlb(glbKey(e.type), age) && !eraSettled(age)) loadEra(age); else this._buildBuildingMesh(v, e, age); }
@@ -2497,6 +2516,66 @@ export class EntityView {
     }
   }
 
+  _stepEnt(e, dt, f, tm, gt, map, fr, meId, tVer) {
+    if (e.kind === 'resource' && e.type === 'tree') return;
+    let v = this.views.get(e.id);
+    if (!v) v = this._create(e);
+    v.e = e; v.seen = f;
+    const vis = !!this.game.isEntityVisible(e) && !e.aboard;
+    if (vis !== v.vis) { v.vis = vis; v.root.visible = vis; }
+    const sel = this.selected.has(e.id);
+    let y;
+    if (e.kind === 'building') {
+      if (v._tVer !== tVer) {
+        v._tVer = tVer;
+        v._y = e.type === 'dock' ? dockY(map, e.x, e.z, e.tx, e.tz, e.size) : map.heightAt(e.x, e.z);   // (the dock's deck above the water, see dockY)
+      }
+      y = v._y;
+      this._updBuilding(v, e, dt, y, vis);
+      this._sb.sync(v, this.batching && this._static(v, e, vis), tm);
+      if (v.root.userData.sheepSlots) this._sheep(v, vis);
+      if (sel && e.owner === meId && e.rally) this._flagB = e;
+    } else if (v.rig) {
+      if (!vis && !e.dead) { v.x = e.x; v.z = e.z; v.rot = e.rot || 0; return; }
+      // off-screen (with a margin for shadows): no animation and no matrix updates; every pose is a function of
+      // time, so it snaps to the right one on the first frame back in view (ships / trains keep their trail state)
+      if (fr && v.rig !== 'ship' && v.rig !== 'train') {
+        _fs.center.set(e.x, map.heightAt(e.x, e.z) + .5, e.z);
+        if (!fr.intersectsSphere(_fs)) {
+          v.x = e.x; v.z = e.z; v.rot = e.rot || 0;
+          if (!v.culled) { v.culled = true; v.root.matrixWorldAutoUpdate = false; }   // (instanced units: always off)
+          v.root.visible = false;
+          return;
+        }
+        if (v.culled) { v.culled = false; v.root.visible = vis; v.root.matrixWorldAutoUpdate = !v.slots; }
+      }
+      y = this._updUnit(v, e, dt, tm, gt);
+    } else {
+      if (v._tVer !== tVer) { v._tVer = tVer; v._y = map.heightAt(e.x, e.z); }
+      y = v._y;
+      if (e.amount !== v.lastAmt) {
+        if (v.lastAmt !== -1) v.amtT = tm;   // (being gathered: drawn on its own for a while, see below)
+        v.lastAmt = e.amount;
+        const s = (e.scale || 1) * (.55 + .45 * Math.max(0, Math.min(1, e.amount / (e.maxAmount || e.amount || 1))));
+        v.root.scale.setScalar(s);
+      }
+      v.root.position.set(e.x, y, e.z); v.x = e.x; v.z = e.z;
+      if (e.type === 'fish') { try { seaAnimFish(v, tm); y = .02; } catch (err) { /* visual only */ } }
+      // stone, gold and berry bushes never move: merged per chunk like the finished buildings (static-batch.js),
+      // except while being gathered (each trip shrinks them a little; 6 s after the last change they rejoin)
+      else this._sb.sync(v, this.batching && vis && tm - (v.amtT == null ? -99 : v.amtT) > 6, tm);
+    }
+    if (sel && vis && !e.dead) this._ring(v, e); else if (v.ring && v.ring.visible) v.ring.visible = false;
+    if (!v.rig) {
+      const U = v.root.userData;
+      const freeze = !!(v.sb && v.sb.c.built && !(v.ring && v.ring.visible) && !(U.spin && U.spin.visible) && !U.live && !(v.repRig && v.repRig.visible));
+      if (v.root.matrixWorldAutoUpdate === freeze) v.root.matrixWorldAutoUpdate = !freeze;
+    }
+    const showHp = vis && !e.dead && e.maxHp > 0 && !(e.kind === 'building' && this._fogged(e)) && (sel ? e.kind !== 'resource' || e.type === 'deer' || !!e.live : ((e.kind !== 'resource' || e.live) && e.hp < e.maxHp));
+    if (showHp) this._hp(v, e, true, y);
+    if (v.slots && v.root.visible) this._emit(v);
+  }
+
   update(dt, time) {
     const game = this.game, map = game.map;
     if (!map) return;
@@ -2507,58 +2586,26 @@ export class EntityView {
     if (cam) { const me = cam.matrixWorld.elements; this._rx = me[0]; this._ry = me[1]; this._rz = me[2]; } else { this._rx = 1; this._ry = 0; this._rz = 0; }
     this._camQ = cam ? cam.quaternion : _hq;
     const fr = cam ? this._frustum.setFromProjectionMatrix(_fm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse)) : null;
-    let flagB = null;
+    this._flagB = null;
     const meId = this._me();
-    this._buildLinks();
-    for (const e of game.entities.values()) {
-      if (e.kind === 'resource' && e.type === 'tree') continue;
-      let v = this.views.get(e.id);
-      if (!v) v = this._create(e);
-      v.e = e; v.seen = f;
-      const vis = !!game.isEntityVisible(e) && !e.aboard;
-      if (vis !== v.vis) { v.vis = vis; v.root.visible = vis; }
-      const sel = this.selected.has(e.id);
-      let y;
-      if (e.kind === 'building') {
-        y = e.type === 'dock' ? dockY(map, e.x, e.z, e.tx, e.tz, e.size) : map.heightAt(e.x, e.z);   // (the dock's deck above the water, see dockY)
-        this._updBuilding(v, e, dt, y, vis);
-        this._sb.sync(v, this.batching && this._static(v, e, vis), tm);
-        if (v.root.userData.sheepSlots) this._sheep(v, vis);
-        if (sel && e.owner === meId && e.rally) flagB = e;
-      } else if (v.rig) {
-        if (!vis && !e.dead) { v.x = e.x; v.z = e.z; v.rot = e.rot || 0; continue; }
-        // off-screen (with a margin for shadows): no animation and no matrix updates; every pose is a function of
-        // time, so it snaps to the right one on the first frame back in view (ships / trains keep their trail state)
-        if (fr && v.rig !== 'ship' && v.rig !== 'train') {
-          _fs.center.set(e.x, map.heightAt(e.x, e.z) + .5, e.z);
-          if (!fr.intersectsSphere(_fs)) {
-            v.x = e.x; v.z = e.z; v.rot = e.rot || 0;
-            if (!v.culled) { v.culled = true; v.root.matrixWorldAutoUpdate = false; }   // (instanced units: always off)
-            v.root.visible = false;
-            continue;
-          }
-          if (v.culled) { v.culled = false; v.root.visible = vis; v.root.matrixWorldAutoUpdate = !v.slots; }
-        }
-        y = this._updUnit(v, e, dt, tm, gt);
-      } else {
-        y = map.heightAt(e.x, e.z);
-        if (e.amount !== v.lastAmt) {
-          if (v.lastAmt !== -1) v.amtT = tm;   // (being gathered: drawn on its own for a while, see below)
-          v.lastAmt = e.amount;
-          const s = (e.scale || 1) * (.55 + .45 * Math.max(0, Math.min(1, e.amount / (e.maxAmount || e.amount || 1))));
-          v.root.scale.setScalar(s);
-        }
-        v.root.position.set(e.x, y, e.z); v.x = e.x; v.z = e.z;
-        if (e.type === 'fish') { try { seaAnimFish(v, tm); y = .02; } catch (err) { /* visual only */ } }
-        // stone, gold and berry bushes never move: merged per chunk like the finished buildings (static-batch.js),
-        // except while being gathered (each trip shrinks them a little; 6 s after the last change they rejoin)
-        else this._sb.sync(v, this.batching && vis && tm - (v.amtT == null ? -99 : v.amtT) > 6, tm);
+    const bs = game.buildings, bl = bs ? bs.length : 0, bv = game._blkV || 0;
+    if (bl !== this._bLen || bv !== this._blkV) { this._bLen = bl; this._blkV = bv; this._linksVer++; }
+    if (this._linksBuilt !== this._linksVer) { this._buildLinks(); this._linksBuilt = this._linksVer; }
+    const tVer = this._terrainVer;
+    if (game.buildings || game.units) {
+      if (game.buildings) for (let i = 0; i < game.buildings.length; i++) this._stepEnt(game.buildings[i], dt, f, tm, gt, map, fr, meId, tVer);
+      if (game.units) for (let i = 0; i < game.units.length; i++) this._stepEnt(game.units[i], dt, f, tm, gt, map, fr, meId, tVer);
+      if (game.deer) for (let i = 0; i < game.deer.length; i++) this._stepEnt(game.deer[i], dt, f, tm, gt, map, fr, meId, tVer);
+      const sr = this._statRes;
+      for (let i = sr.length - 1; i >= 0; i--) {
+        const e = sr[i];
+        if (!e || e.dead || !game.entities.has(e.id)) { sr[i] = sr[sr.length - 1]; sr.pop(); continue; }
+        this._stepEnt(e, dt, f, tm, gt, map, fr, meId, tVer);
       }
-      if (sel && vis && !e.dead) this._ring(v, e); else if (v.ring && v.ring.visible) v.ring.visible = false;
-      const showHp = vis && !e.dead && e.maxHp > 0 && !(e.kind === 'building' && this._fogged(e)) && (sel ? e.kind !== 'resource' || e.type === 'deer' || !!e.live : ((e.kind !== 'resource' || e.live) && e.hp < e.maxHp));
-      if (showHp) this._hp(v, e, true, y);
-      if (v.slots && v.root.visible) this._emit(v);
+    } else {
+      for (const e of game.entities.values()) this._stepEnt(e, dt, f, tm, gt, map, fr, meId, tVer);
     }
+    const flagB = this._flagB;
     this._flushBatches();
     const dead = this._dead; dead.length = 0;
     for (const v of this.views.values()) {
@@ -2615,8 +2662,11 @@ export class EntityView {
     const es = e.size || (BUILDINGS[e.type] && BUILDINGS[e.type].size) || 1;
     if (es > 1) {   // a 3x3 tower: walls that meet the middle of a side (bit 16 = drawn at 3x, see tower())
       const N = this.game.map.size, L = this._links, h = es >> 1; let m = 16;
-      const side = [[e.tx + h, e.tz - 1], [e.tx + es, e.tz + h], [e.tx + h, e.tz + es], [e.tx - 1, e.tz + h]];
-      for (let i = 0; i < 4; i++) { const k = side[i][1] * N + side[i][0]; if ((L && L.get(k) === e.owner) || (extra && extra.has(k))) m |= 1 << i; }
+      const k0 = (e.tz - 1) * N + e.tx + h, k1 = (e.tz + h) * N + e.tx + es, k2 = (e.tz + es) * N + e.tx + h, k3 = (e.tz + h) * N + e.tx - 1;
+      if ((L && L.get(k0) === e.owner) || (extra && extra.has(k0))) m |= 1;
+      if ((L && L.get(k1) === e.owner) || (extra && extra.has(k1))) m |= 2;
+      if ((L && L.get(k2) === e.owner) || (extra && extra.has(k2))) m |= 4;
+      if ((L && L.get(k3) === e.owner) || (extra && extra.has(k3))) m |= 8;
       return m;
     }
     const N = this.game.map.size, L = this._links; let m = 0;
@@ -2687,6 +2737,8 @@ export class EntityView {
   }
 
   dispose() {
+    const ev = this.game && this.game.events;
+    if (ev && ev.off && this._subs) { for (const [n, f] of this._subs) { try { ev.off(n, f); } catch (err) { /* ignore */ } } this._subs.length = 0; }
     this._sb.dispose();
     for (const v of this.views.values()) {
       this.scene.remove(v.root);
