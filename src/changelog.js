@@ -4,7 +4,7 @@ export const CHANGELOG = [
   {
     v: '0.9.11', date: '2026-11-26', title: 'Genel Sohbet',
     items: [
-      'Ana menüye Genel Sohbet geldi: oyundaki herkesle maç dışında da konuşabilirsin. Duyurular kutusu en üste taşındı, sohbet altında.',
+      'Ana menüye Genel Sohbet geldi: oyundaki herkesle maç dışında da konuşabilirsin. Sohbet sağda, Duyurular kutusu solda profil kartının altında.',
       'Genel Sohbet Çok Oyunculu ekranında da var, çevrimiçi oyuncular listesinin yanında.',
       'Sohbette bir oyuncunun adına tıklayınca profil kartı açılır: seviyesi, maç ve zafer sayısı, Arkadaş Ekle ve Davet Et düğmeleri.',
       'Topluluk kuralları eklendi: ilk mesajdan önce bir kez gösterilir, sohbetin üstündeki Kurallar bağlantısından her zaman okunabilir.',

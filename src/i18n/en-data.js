@@ -267,7 +267,7 @@ export default {
   'Koyun': 'Sheep',
   'Birimler konuşuyor': 'Units speak',
   'Daha akıcı oyun, daha düşük ping': 'Smoother game, lower ping',
-  'Ana menüye Genel Sohbet geldi: oyundaki herkesle maç dışında da konuşabilirsin. Duyurular kutusu en üste taşındı, sohbet altında.': 'The main menu now has a General Chat: talk with everyone in the game outside matches too. The announcements box moved to the top, the chat is under it.',
+  'Ana menüye Genel Sohbet geldi: oyundaki herkesle maç dışında da konuşabilirsin. Sohbet sağda, Duyurular kutusu solda profil kartının altında.': 'The main menu now has a General Chat: talk with everyone in the game outside matches too. The chat is on the right, the announcements box on the left under the player card.',
   'Genel Sohbet Çok Oyunculu ekranında da var, çevrimiçi oyuncular listesinin yanında.': 'General Chat is on the Multiplayer screen too, next to the online players list.',
   'Sohbette bir oyuncunun adına tıklayınca profil kartı açılır: seviyesi, maç ve zafer sayısı, Arkadaş Ekle ve Davet Et düğmeleri.': 'Click a player name in the chat to open their profile card: level, games and wins, with Add Friend and Invite buttons.',
   'Topluluk kuralları eklendi: ilk mesajdan önce bir kez gösterilir, sohbetin üstündeki Kurallar bağlantısından her zaman okunabilir.': 'Community rules added: shown once before your first message and always readable from the Rules link above the chat.',
