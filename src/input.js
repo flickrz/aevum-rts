@@ -90,7 +90,7 @@ export class Input {
   // a drop-off camp (lumber camp, mining camp, mill): a rally flag on it sends new villagers to work around it
   _dropCamp(e) { const d = BUILDINGS[e.type]; return !!d && !!d.dropoff && !(d.trains || []).length; }
   ownBuildings() { return this.app.selection.filter(id => { const e = this.ent(id); return e && e.kind === 'building' && e.owner === this.me(); }); }
-  sfx(name) { try { this.app.audio.ui(name); } catch (err) { /* ignore */ } }
+  sfx(name, kind) { try { this.app.audio.ui(name); if (name === 'command') this.app.audio.voice?.(this.app.selection, kind); } catch (err) { /* ignore */ } }
   // the target an order went to pulses for a moment (renderer.flashTarget), so the player sees which one was taken
   flash(id, col) { const r = this.app.renderer; try { if (r && typeof r.flashTarget === 'function') r.flashTarget(id, col); } catch (err) { /* ignore */ } }
 
@@ -268,7 +268,7 @@ export class Input {
     if (t.kind === 'unload' && this.game.cmdUnload?.(t.id, g.x, g.z)) { this.app.renderer.addMarker(g.x, g.z, C_MOVE); this.sfx('command'); }
     // (the whole selection in one command: the sim gives villagers, carts, healers and unarmed ships a plain move in the same formation)
     else if ((t.kind === 'amove' || t.kind === 'patrol') && this.game[t.kind === 'patrol' ? 'cmdPatrol' : 'cmdAttackMove']?.(this.ownUnits(), g.x, g.z, !!e.shiftKey)) {
-      this.app.renderer.addMarker(g.x, g.z, C_ATTACK); this.sfx('command');
+      this.app.renderer.addMarker(g.x, g.z, C_ATTACK); this.sfx('command', 'attack');
       // Shift held: stay armed for the next waypoint
       if (e.shiftKey) this.startTargeting(t, this.groundCmdLabel(t.kind));
     }
@@ -489,11 +489,11 @@ export class Input {
     }
     if (target) {
       if (target.owner >= 0 && target.owner !== this.me() && this.isEnemyOwner(target.owner)) {
-        if (game.cmdAttack(units, target.id, queue)) { r.addMarker(target.x, target.z, C_ATTACK); this.flash(target.id, C_ATTACK); this.sfx('command'); }
+        if (game.cmdAttack(units, target.id, queue)) { r.addMarker(target.x, target.z, C_ATTACK); this.flash(target.id, C_ATTACK); this.sfx('command', 'attack'); }
         return;
       }
       if (target.kind === 'resource' && target.live) {   // (a live wolf / bear: everyone who can fight goes for it)
-        if (game.cmdAttack(units, target.id, queue)) { r.addMarker(target.x, target.z, C_ATTACK); this.flash(target.id, C_ATTACK); this.sfx('command'); }
+        if (game.cmdAttack(units, target.id, queue)) { r.addMarker(target.x, target.z, C_ATTACK); this.flash(target.id, C_ATTACK); this.sfx('command', 'attack'); }
         return;
       }
       if (target.kind === 'resource') {
@@ -501,19 +501,19 @@ export class Input {
           game.cmdGather(villagers, target.id, queue);
           const rest = units.filter(id => !villagers.includes(id));
           if (rest.length) game.cmdMove(rest, target.x, target.z, queue);
-          r.addMarker(target.x, target.z, C_GATHER); this.flash(target.id, C_GATHER); this.sfx('command');
+          r.addMarker(target.x, target.z, C_GATHER); this.flash(target.id, C_GATHER); this.sfx('command', 'gather:' + ({ tree: 'wood', stone: 'stone', gold: 'gold', berries: 'food', deer: 'food', fish: 'food' })[target.type]);
           return;
         }
       } else if (target.kind === 'building' && target.owner === this.me() && villagers.length) {
         const rad = (target.size || 0) * 0.71;   // (the ring goes round the footprint, not under the model)
         if (!target.done || target.hp < target.maxHp) {
           game.cmdBuild(villagers, target.id, queue);
-          r.addMarker(target.x, target.z, C_BUILD, rad); this.flash(target.id, C_BUILD); this.sfx('command');
+          r.addMarker(target.x, target.z, C_BUILD, rad); this.flash(target.id, C_BUILD); this.sfx('command', 'build');
           return;
         }
         if (target.type === 'farm' || target.type === 'pasture') {
           game.cmdGather(villagers, target.id, queue);
-          r.addMarker(target.x, target.z, C_GATHER, rad); this.flash(target.id, C_GATHER); this.sfx('command');
+          r.addMarker(target.x, target.z, C_GATHER, rad); this.flash(target.id, C_GATHER); this.sfx('command', 'gather:food');
           return;
         }
         // a lumber camp / mine camp: work the nearest tree / stone or gold to it on explored tiles (a mine whose
@@ -524,7 +524,7 @@ export class Input {
             // (the rest of a mixed selection walks to the camp, as with a right click on a resource)
             const rest = units.filter(id => !villagers.includes(id));
             if (rest.length) game.cmdMove(rest, target.x, target.z, queue);
-            r.addMarker(target.x, target.z, C_GATHER, rad); r.addMarker(best.x, best.z, C_GATHER); this.flash(best.id, C_GATHER); this.sfx('command'); return;
+            r.addMarker(target.x, target.z, C_GATHER, rad); r.addMarker(best.x, best.z, C_GATHER); this.flash(best.id, C_GATHER); this.sfx('command', 'gather:' + ({ tree: 'wood', stone: 'stone', gold: 'gold', berries: 'food', deer: 'food', fish: 'food' })[best.type]); return;
           }
         }
       }

@@ -2,7 +2,8 @@
 // Never throws: missing files / missing AudioContext simply result in silence.
 
 import { fetchAsset, assetUrls, cdnFailed } from './cdn.js';
-import { tr } from './i18n.js';
+import { tr, LANG } from './i18n.js';
+import { VO_GROUPS, VO_COUNTS } from './voice-lines.js';
 
 const BASE = 'sfx/';   // (under assets/: from jsDelivr on the live site, src/cdn.js)
 
@@ -163,6 +164,7 @@ export class AudioManager {
       for (const k in AMBIENT) names.add(AMBIENT[k]);
       await Promise.all([...names].map((n) => this._load(n)));
       this._ready = true;
+      this._voPreload();
       if (this._wantAmbient) this._startAmbient();
     } catch (e) {
       // never throw
@@ -360,6 +362,64 @@ export class AudioManager {
       this.lastPlay[name] = now;
       return true;
     } catch (e) { return false; }
+  }
+
+  // ---------- unit voices (owner 2026-11-25: "Emrin olur", "Saldırın!") ----------
+  // assets/sfx/vo/<voice>_<lang>_<kind><n>.mp3, made by tools/gen-voices.mjs. One voice talks at a time; a new order cuts the
+  // last line, a re-select never does; a line is not repeated until the others of its set were heard.
+  _voPreload() {
+    const lang = LANG === 'en' ? 'en' : 'tr';
+    const names = [];
+    for (const k in VO_COUNTS) if (k.split('_')[1] === lang) for (let i = 1; i <= VO_COUNTS[k]; i++) names.push('vo/' + k + i);
+    // (a few at a time, after the game's own sounds, so the start is not slowed down)
+    let i = 0;
+    const next = () => { if (i < names.length) this._load(names[i++]).then(next, next); };
+    for (let k = 0; k < 4; k++) next();
+  }
+  _voFor(u) {
+    let grp = u.type === 'villager' ? (u.id & 1 ? 'vf' : 'vm') : u.naval ? 'sh' : 'sd';
+    const list = VO_GROUPS[grp];
+    if (!list || !list.length) return null;
+    return list[((u.id >> 1) * 7919 >>> 0) % list.length];
+  }
+  // ids: the selection; kind: select | move | attack | build | gather:<res>
+  voice(ids, kind) {
+    try {
+      const ctx = this.ctx, g = this.game;
+      if (!ctx || ctx.state !== 'running' || this.background || this.demo || !g || !ids || !ids.length) return;
+      let u = null;
+      for (const id of ids) { const e = g.getEntity(id); if (e && e.kind === 'unit' && !e.dead && this._isMine(e.owner)) { u = e; break; } }
+      if (!u) return;
+      const vid = this._voFor(u);
+      if (!vid) return;
+      const grp = vid.slice(0, 2), isV = grp === 'vm' || grp === 'vf';
+      let k = kind || 'move';
+      if (k.startsWith('gather:')) k = isV ? k.slice(7) : 'move';
+      if (k === 'build' && !isV) k = 'move';
+      if (k === 'attack' && isV) k = 'move';
+      const now = ctx.currentTime, sel = k === 'select';
+      const v = this._vo || (this._vo = { end: 0, src: null, at: 0, hist: {} });
+      if (sel ? now < v.end || now - v.at < 1.2 : now - v.at < 0.6) return;
+      const lang = LANG === 'en' ? 'en' : 'tr';
+      const set = vid + '_' + lang + '_' + k;
+      const n = VO_COUNTS[set];
+      if (!n) return;
+      const h = v.hist[set] || (v.hist[set] = []);
+      let pool = [];
+      for (let i = 1; i <= n; i++) if (!h.includes(i) && this.buffers.has('vo/' + set + i)) pool.push(i);
+      if (!pool.length) { h.length = 0; for (let i = 1; i <= n; i++) if (this.buffers.has('vo/' + set + i)) pool.push(i); }
+      if (!pool.length) return;
+      const pick = pool[(Math.random() * pool.length) | 0];
+      h.push(pick); if (h.length >= n) h.splice(0, h.length - 1);
+      const buf = this.buffers.get('vo/' + set + pick);
+      if (v.src) { try { v.src.stop(); } catch (e) { /* */ } }
+      const src = ctx.createBufferSource(), gn = ctx.createGain();
+      src.buffer = buf; gn.gain.value = 0.85;
+      src.connect(gn); gn.connect(this.gains.sfx);
+      src.onended = () => { try { gn.disconnect(); } catch (e) { /* */ } if (v.src === src) v.src = null; };
+      src.start(now);
+      v.src = src; v.at = now; v.end = now + buf.duration;
+    } catch (e) { /* never throw */ }
   }
 
   // ---------- ambient bed ----------

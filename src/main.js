@@ -72,7 +72,7 @@ const app = {
     });
     try { app.renderer.setSelection(app.selection); } catch (err) { console.warn(err); }
     try { app.ui.onSelectionChanged(app.selection); } catch (err) { console.warn(err); }
-    if (!silent && app.selection.length) app.audio?.ui('select');
+    if (!silent && app.selection.length) { app.audio?.ui('select'); app.audio?.voice?.(app.selection, 'select'); }
   },
 
   startPlacement(type) { if (!app.demo) app.input.startPlacement(type); },
