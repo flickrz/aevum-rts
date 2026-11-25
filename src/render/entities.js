@@ -5,7 +5,7 @@ import { BUILDINGS } from '../data.js';
 import { updateConstruction, disposeConstruction, updateRepair } from './construction.js';
 import { SEA_BUILD, SEA_UNITS, makeSeaUnit, seaAnimUnit, seaAnimBuilding, makeFish, seaAnimFish, seaMask, pastureSheepK, dockY, SEA_K } from './models-sea.js';
 import { StaticBatches } from './static-batch.js';
-import { loadGlbModels, loadEra, glbVersion, hasGlb, glbPlanned, eraSettled, addGlbBuilding, addGlbPiece, loadCrop, cropGeo, loadSea, hasSea, dockFile, addSeaModel } from './glb-models.js';
+import { loadGlbModels, loadEra, glbVersion, hasGlb, glbPlanned, eraSettled, addGlbBuilding, addGlbPiece, loadCrop, cropGeo, loadSea, hasSea, dockFile, addSeaModel, glbWarmColors } from './glb-models.js';
 
 const PI = Math.PI;
 
@@ -1177,7 +1177,8 @@ function makeBuilding(type, size, age, color, mask, seed, noGlb) {
     else BUILD.mill(c);
     bx(c.body, MT.hay, .5, .28, .5, 1.35, 0, -1.35); bx(c.body, MT.canvas, .26, .2, .2, -1.4, 0, 1.3); bx(c.body, MT.canvas, .22, .18, .2, -1.15, 0, 1.45);
     const crops = new THREE.InstancedMesh(TUFT, CROP_MAT, FARM_CELLS_R.length * FROWS * FPER);
-    crops.castShadow = true; crops.receiveShadow = true; crops.frustumCulled = false; crops.count = 0;
+    crops.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, .4, 0), size * .75 + 1);
+    crops.castShadow = true; crops.receiveShadow = true; crops.frustumCulled = true; crops.count = 0;
     root.add(crops);
     U.fur = fur; U.furs = furs; U.crops = crops; U.plotted = true; U.plotSize = P;
   } else if (type === 'farm') {
@@ -1189,7 +1190,8 @@ function makeBuilding(type, size, age, color, mask, seed, noGlb) {
     for (let i = 0; i < 6; i++) bx(fur, MT.soil2, .2, .06, size * .86, -size * .43 + .22 + i * (size * .86 - .44) / 5, .08, 0);
     bake(fur);
     const crops = new THREE.InstancedMesh(G.box, MT.sprout, 72);
-    crops.castShadow = true; crops.receiveShadow = true; crops.frustumCulled = false; crops.count = 0;
+    crops.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, .4, 0), size * .75 + 1);
+    crops.castShadow = true; crops.receiveShadow = true; crops.frustumCulled = true; crops.count = 0;
     root.add(crops);
     U.fur = fur; U.crops = crops;
   } else {
@@ -1782,13 +1784,35 @@ function segGeo(parts) {
   geo.computeBoundingSphere();
   return geo;
 }
+const SEG_CACHE = new Map(); // canonical part signature -> { geo, refs }
+function segKey(gr) {
+  let k = (gr.um ? 'U' : 'm' + gr.mat.id) + (gr.cast ? 'c' : '') + (gr.recv ? 'r' : '');
+  const ps = gr.parts;
+  for (let i = 0; i < ps.length; i++) {
+    const p = ps[i], mt = p.mat, e = p.rel.elements;
+    const c = mt.color ? mt.color.getHex() : 0xffffff;
+    const r = mt.roughness != null ? mt.roughness : 1, me = mt.metalness || 0;
+    const em = mt.emissive ? mt.emissive.getHex() : 0, ei = mt.emissiveIntensity != null ? mt.emissiveIntensity : 1;
+    k += '|' + p.geo.id + ':' + c + ':' + r + ':' + me + ':' + em + ':' + ei + ':' + e.join(',');
+  }
+  return k;
+}
+function releaseSegs(c) {
+  const sks = c.skeys;
+  if (!sks) { for (const g of c.geos) g.dispose(); return; }
+  for (let i = 0; i < sks.length; i++) {
+    const sk = sks[i], se = SEG_CACHE.get(sk);
+    if (!se) { c.geos[i].dispose(); continue; }
+    if (--se.refs <= 0) { se.geo.dispose(); SEG_CACHE.delete(sk); }
+  }
+}
 function bakeUnit(u, key) {
   const keep = unitKeep(u);
   const anc = new Set();   // nodes that hold a kept node somewhere below them
   for (const k of keep) for (let p = k.parent; p; p = p.parent) anc.add(p);
   let c = UGEO.get(key);
   const fresh = !c;
-  if (fresh) c = { geos: [], sigs: [], refs: 0 };
+  if (fresh) c = { geos: [], skeys: [], sigs: [], refs: 0 };
   let gi = 0;
   const seg = (C) => {
     const parts = [];
@@ -1824,7 +1848,13 @@ function bakeUnit(u, key) {
     for (const [gk, gr] of groups) {
       const sig = gk + ':' + gr.parts.length;
       let geo;
-      if (fresh) { geo = segGeo(gr.parts); geo.userData.cast = gr.cast; geo.userData.recv = gr.recv; c.geos.push(geo); c.sigs.push(sig); }
+      if (fresh) {
+        const sk = segKey(gr);
+        let se = SEG_CACHE.get(sk);
+        if (se) { se.refs++; geo = se.geo; }
+        else { geo = segGeo(gr.parts); geo.userData.cast = gr.cast; geo.userData.recv = gr.recv; SEG_CACHE.set(sk, { geo, refs: 1 }); }
+        c.geos.push(geo); c.skeys.push(sk); c.sigs.push(sig);
+      }
       else { if (c.sigs[gi] !== sig) throw new Error('unit bake cache mismatch ' + key); geo = c.geos[gi]; }
       gi++;
       const mesh = new THREE.Mesh(geo, gr.um ? UMAT : gr.mat);
@@ -1835,9 +1865,9 @@ function bakeUnit(u, key) {
   try {
     seg(u.root);
     if (!fresh && gi !== c.geos.length) throw new Error('unit bake cache mismatch ' + key);
-  } catch (err) { if (fresh) for (const g of c.geos) g.dispose(); throw err; }
+  } catch (err) { if (fresh) releaseSegs(c); throw err; }
   if (fresh) {
-    if (UGEO.size > 96) for (const [k2, c2] of UGEO) if (c2.refs <= 0) { for (const g of c2.geos) g.dispose(); UGEO.delete(k2); }
+    if (UGEO.size > 96) for (const [k2, c2] of UGEO) if (c2.refs <= 0) { releaseSegs(c2); UGEO.delete(k2); }
     UGEO.set(key, c);
   }
   c.refs++;
@@ -1848,7 +1878,18 @@ function releaseUnit(key) {
   if (c) c.refs--;   // unreferenced entries are disposed lazily (a new unit of the same kind often follows soon)
 }
 
-const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
+const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _upY = new THREE.Vector3(0, 1, 0), _s = new THREE.Vector3(), _tmpB = new THREE.Box3();
+function groupMaxY(grp) {
+  let my = -Infinity;
+  if (!grp) return my;
+  grp.traverse(o => {
+    if (!o.isMesh || !o.geometry) return;
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    _tmpB.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld);
+    if (_tmpB.max.y > my) my = _tmpB.max.y;
+  });
+  return my;
+}
 const _hits = [];
 const _fm = new THREE.Matrix4(), _fs = new THREE.Sphere(new THREE.Vector3(), 2.5);
 const PROJ = {
@@ -1865,7 +1906,7 @@ function grpStatic(g) { return !g || (g.visible && g.scale.x === 1 && g.scale.y 
 class IBatch {
   constructor(scene, geo, mat, order, cast, recv, colors) {
     this.scene = scene; this.geo = geo; this.mat = mat; this.order = order; this.cast = cast; this.recv = recv; this.colors = !!colors;
-    this.cap = 0; this.n = 0; this.idle = 0; this.mesh = null; this.arr = null; this.carr = null;
+    this.cap = 0; this.n = 0; this.idle = 0; this.disposed = false; this.mesh = null; this.arr = null; this.carr = null;
     this._grow();
   }
   _grow() {
@@ -1891,12 +1932,21 @@ class IBatch {
   // returns true once it has been empty long enough to be dropped
   flush() {
     const m = this.mesh; m.count = this.n;
-    if (this.n) { this.idle = 0; m.visible = true; m.instanceMatrix.needsUpdate = true; if (this.colors) m.instanceColor.needsUpdate = true; this.n = 0; return false; }
+    if (this.n) {
+      this.idle = 0; m.visible = true;
+      if (m.instanceMatrix.clearUpdateRanges) { m.instanceMatrix.clearUpdateRanges(); m.instanceMatrix.addUpdateRange(0, this.n * 16); }
+      m.instanceMatrix.needsUpdate = true;
+      if (this.colors) {
+        if (m.instanceColor.clearUpdateRanges) { m.instanceColor.clearUpdateRanges(); m.instanceColor.addUpdateRange(0, this.n * 3); }
+        m.instanceColor.needsUpdate = true;
+      }
+      this.n = 0; return false;
+    }
     m.visible = false;
     if (++this.idle > 600 && !this.keep) { this.dispose(); return true; }
     return false;
   }
-  dispose() { this.scene.remove(this.mesh); this.mesh.dispose(); }
+  dispose() { this.disposed = true; this.scene.remove(this.mesh); this.mesh.dispose(); }
 }
 // health bars: camera-facing quads anchored at their left edge (what the sprites with center (0, .5) were)
 const HPQ = new THREE.PlaneGeometry(1, 1).translate(.5, 0, 0);
@@ -1910,7 +1960,7 @@ export class EntityView {
     this.fx = this.ctx.fx || (this.ctx.renderer && this.ctx.renderer.fx) || null;
     this.views = new Map(); this.proxies = []; this.selected = new Set();
     this.frame = 0; this.t = 0;
-    this.projs = new Map(); this.projPool = { arrow: [], bolt: [], bullet: [], stone: [], cannonball: [] };
+    this.projs = new Map();
     this.ghost = null; this.ghostType = null; this.ghostValid = null;
     this.flag = new THREE.Group();
     cy(this.flag, MT.dwood, .03, 1.3, 0, 0, 0);
@@ -1922,16 +1972,37 @@ export class EntityView {
     this._ib = new Map();   // shared unit segment geometry -> instanced batch
     this._rb = new Map();   // selection ring material -> instanced batch
     this._cb = new Map();   // carried load material -> instanced batch (villagers' bundles)
+    this._pb = new Map();   // projectile type -> instanced batch
+    this._fb = new Map();   // fish shoal parts: one instanced batch per (geometry, material, shadow)
     this._hpB = new IBatch(scene, HPQ, HPQM, 20, false, false, true);
     this._hpF = new IBatch(scene, HPQ, HPQM, 21, false, false, true);
     this._hpB.keep = this._hpF.keep = true;   // fixed batches: never idle-dispose (nothing would recreate them)
     this._shb = new Map();  // pasture sheep parts: one instanced batch per (geometry, material) for every pasture
     this._sb = new StaticBatches(scene);   // finished, static-looking buildings merged per chunk (static-batch.js)
     this.batching = true;   // debug A/B switch (false: every building and sheep drawn on its own, as before)
-    try { loadGlbModels(); loadCrop(); } catch (err) { /* procedural models only */ }
+    this._linksVer = 1; this._linksBuilt = 0; this._bLen = -1; this._blkV = -1; this._terrainVer = 1;
+    this._statRes = [];
+    if (game && game.entities) {
+      for (const e of game.entities.values()) {
+        if (e.kind === 'resource' && e.type !== 'tree' && e.type !== 'deer' && e.type !== 'wolf' && e.type !== 'bear') this._statRes.push(e);
+      }
+    }
+    this._subs = [];
+    try { loadGlbModels(); loadCrop(); if (game && game.players) glbWarmColors(game.players.map(p => this._color(p.id))); } catch (err) { /* procedural models only */ }
     try {
       const ev = game && game.events;
-      if (ev && typeof ev.on === 'function') ev.on('ageUp', (d) => { try { this._onAgeUp(d); } catch (err) { /* visual only */ } });
+      if (ev && typeof ev.on === 'function') {
+        const on = (n, f) => { ev.on(n, f); this._subs.push([n, f]); };
+        on('ageUp', (d) => { try { this._onAgeUp(d); } catch (err) { /* visual only */ } });
+        on('spawn', (d) => {
+          const e = d && d.e; if (!e) return;
+          if (e.kind === 'building') this._linksVer++;
+          else if (e.kind === 'resource' && e.type !== 'tree' && e.type !== 'deer' && e.type !== 'wolf' && e.type !== 'bear') this._statRes.push(e);
+        });
+        on('remove', (d) => { if (d && d.e && d.e.kind === 'building') this._linksVer++; });
+        on('death', (d) => { if (d && d.e && d.e.kind === 'building') this._linksVer++; });
+        on('terrain', () => { this._terrainVer++; });
+      }
     } catch (err) { /* no event bus: upgrades are instant */ }
   }
 
@@ -2044,7 +2115,7 @@ export class EntityView {
       for (const sh of U.live.userData.sheep) { sh.scale.setScalar(shk); sh.traverse(o => { if (o.isMesh) sl.push({ o, sh, k: o.geometry.uuid + o.material.uuid }); }); }
     }
     if (e.type === 'farm') v.h = .5;
-    else { v.root.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(U.body); const b2 = new THREE.Box3().setFromObject(U.roof); v.h = Math.max(.6, b.max.y, isFinite(b2.max.y) ? b2.max.y : 0); }
+    else { v.root.updateMatrixWorld(true); const b1 = groupMaxY(U.body), b2 = groupMaxY(U.roof); v.h = Math.max(.6, isFinite(b1) ? b1 : 0, isFinite(b2) ? b2 : 0); }
     { const k = v.k || 1; this._proxy(v, (e.size || 1) * .85 / k, Math.max(.4, v.h * .6) / k, (e.size || 1) * .85 / k); }
     // (owner 2026-11-25: the dock was hard to select) the dock model is drawn ~3x its plot and pushed out over the water:
     // its click box is the model's own box, riding on the model
@@ -2061,7 +2132,7 @@ export class EntityView {
     if (e.kind === 'building') {
       // (a rival's known town center first drawn while in the fog - a loaded save, a late join - shows the age the
       // match started in, not the one it has reached unseen)
-      v.mask = this._maskOf(e); this._buildBuildingMesh(v, e, e.known && this._fogged(e) ? (this.game.cfg.startAge | 0) : undefined);
+      v.mask = this._maskOf(e); v._maskVer = this._linksVer; this._buildBuildingMesh(v, e, e.known && this._fogged(e) ? (this.game.cfg.startAge | 0) : undefined);
       // the ground under it as the sim has it (levelled by the foundation): redrawn here too, so a missed or
       // early 'terrain' event, a loaded save or a late join can never leave a building sunk into a slope
       const R = this.ctx.renderer, s = e.size || 1;
@@ -2071,7 +2142,12 @@ export class EntityView {
       this._buildUnitMesh(v, e, e.kind === 'unit' ? this._age(e.owner) : 0);
     } else {
       v.root = makeResource(e); v.root.userData.id = e.id; v.h = .7;
-      if (e.type !== 'fish') v.root.userData.body = v.root.userData.g;   // (static batching merges this group, see update)
+      if (e.type === 'fish') {
+        const sl = v.root.userData.fishSlots = [];
+        v.root.userData.g.traverse(o => {
+          if (o.isMesh) sl.push({ o, p: o.parent, k: o.geometry.uuid + '|' + o.material.uuid + '|' + (o.castShadow ? 1 : 0) + (o.receiveShadow ? 1 : 0), b: null });
+        });
+      } else v.root.userData.body = v.root.userData.g;   // (static batching merges this group, see update)
       v.root.rotation.y = (e.variant || 0) * 1.3 + e.id;
       this._proxy(v, .95, .7, .95);
       this.scene.add(v.root);
@@ -2210,7 +2286,7 @@ export class EntityView {
     // only once someone goes there)
     const fogd = this._fogged(e);
     const age = v.age != null && fogd ? v.age : this._vage(v, e);
-    if (MASKED[e.type]) { const mk = this._maskOf(e); if (mk !== v.mask) { v.mask = mk; if (age === v.age) v.quiet = true; this._buildBuildingMesh(v, e, age); } }
+    if (MASKED[e.type] && e.type !== 'dock' && v._maskVer !== this._linksVer) { v._maskVer = this._linksVer; const mk = this._maskOf(e); if (mk !== v.mask) { v.mask = mk; if (age === v.age) v.quiet = true; this._buildBuildingMesh(v, e, age); } }
     // an age-up waits for the new era's generated model (owner 2026-11-17: the old look flashed in between):
     // the building keeps its old model until that era's files are in (or failed)
     if (age !== v.age) { if (glbPlanned(e.type, age) && !hasGlb(glbKey(e.type), age) && !eraSettled(age)) loadEra(age); else this._buildBuildingMesh(v, e, age); }
@@ -2294,8 +2370,40 @@ export class EntityView {
     for (let i = 0; i < sl.length; i++) {
       const s = sl[i];
       if (!s.sh.visible) continue;
-      let b = this._shb.get(s.k);
-      if (!b) { b = new IBatch(this.scene, s.o.geometry, s.o.material, 0, s.o.castShadow, s.o.receiveShadow); this._shb.set(s.k, b); }
+      let b = s.b;
+      if (!b || b.disposed) {
+        b = this._shb.get(s.k);
+        if (!b) { b = new IBatch(this.scene, s.o.geometry, s.o.material, 0, s.o.castShadow, s.o.receiveShadow); this._shb.set(s.k, b); }
+        s.b = b;
+      }
+      b.push(s.o.matrixWorld.elements);
+    }
+  }
+  // fish shoals -> shared instanced batches, frustum-culled (same matrices and visibility as the individual meshes)
+  _fish(v, vis, fr) {
+    const U = v.root.userData, sl = U.fishSlots, on = !!this.batching;
+    if (U.fishInst !== on) {
+      U.fishInst = on;
+      for (let i = 0; i < sl.length; i++) sl[i].o.visible = !on;
+      v.root.matrixWorldAutoUpdate = !on;
+    }
+    if (!on) { if (vis) try { seaAnimFish(v, this.t); } catch (err) { /* visual only */ } return; }
+    if (!vis) return;
+    if (fr) {
+      _fs.center.set(v.x, .05, v.z);
+      if (!fr.intersectsSphere(_fs)) return;
+    }
+    try { seaAnimFish(v, this.t); } catch (err) { /* visual only */ }
+    v.root.updateMatrixWorld(true);
+    for (let i = 0; i < sl.length; i++) {
+      const s = sl[i];
+      if (s.p && !s.p.visible) continue;
+      let b = s.b;
+      if (!b || b.disposed) {
+        b = this._fb.get(s.k);
+        if (!b) { b = new IBatch(this.scene, s.o.geometry, s.o.material, s.o.renderOrder || 0, s.o.castShadow, s.o.receiveShadow); this._fb.set(s.k, b); }
+        s.b = b;
+      }
       b.push(s.o.matrixWorld.elements);
     }
   }
@@ -2432,8 +2540,12 @@ export class EntityView {
     outer: for (let i = 0; i < sl.length; i++) {
       const s = sl[i];
       for (let o = s.p; o && o !== root; o = o.parent) if (!o.visible) continue outer;
-      let b = this._ib.get(s.g);
-      if (!b) { b = new IBatch(this.scene, s.g, UMAT, 0, s.g.userData.cast !== false, s.g.userData.recv !== false); this._ib.set(s.g, b); }
+      let b = s.b;
+      if (!b || b.disposed) {
+        b = this._ib.get(s.g);
+        if (!b) { b = new IBatch(this.scene, s.g, UMAT, 0, s.g.userData.cast !== false, s.g.userData.recv !== false); this._ib.set(s.g, b); }
+        s.b = b;
+      }
       b.push(s.p.matrixWorld.elements);
     }
     const bu = v.carryM && v.P && v.P.bundle;
@@ -2453,7 +2565,7 @@ export class EntityView {
     }
   }
   _flushBatches() {
-    for (const M of [this._ib, this._rb, this._shb, this._cb]) for (const [k, b] of M) if (b.flush()) M.delete(k);
+    for (const M of [this._ib, this._rb, this._shb, this._cb, this._pb, this._fb]) for (const [k, b] of M) if (b.flush()) M.delete(k);
     this._hpB.flush(); this._hpF.flush();
   }
 
@@ -2468,16 +2580,12 @@ export class EntityView {
       const p = arr[i];
       let r = this.projs.get(p.id);
       if (!r) {
-        const type = p.type === 'arrow' && p.bolt ? 'bolt' : PROJ[p.type] ? p.type : 'arrow', pool = this.projPool[type];
-        let mesh = pool.pop();
-        if (!mesh) { const d = PROJ[type]; mesh = new THREE.Mesh(d[0], d[1]); mesh.scale.set(d[2], d[3], d[4]); mesh.castShadow = true; this.scene.add(mesh); }
+        const type = p.type === 'arrow' && p.bolt ? 'bolt' : PROJ[p.type] ? p.type : 'arrow';
         const hs = Math.imul(p.id ^ 0x9e3779b9, 0x85ebca6b) >>> 0, h1 = (hs & 1023) / 1023, h2 = ((hs >>> 10) & 1023) / 1023;
-        r = { mesh, type, px: p.x, py: p.y, pz: p.z, seen: f, pt: p.t, off: 0, k: 1 + 0.2 * h1, w: (h2 - 0.5) * (type === 'bolt' ? 0.12 : 0.36) };
+        r = { type, px: p.x, py: p.y, pz: p.z, qx: 0, qy: 0, qz: 0, qw: 1, seen: f, pt: p.t, off: 0, k: 1 + 0.2 * h1, w: (h2 - 0.5) * (type === 'bolt' ? 0.12 : 0.36) };
         this.projs.set(p.id, r);
-        mesh.position.set(p.x, p.y, p.z);
       }
       r.seen = f;
-      const m = r.mesh;
       let x = p.x, y = p.y, z = p.z, vx = p.x - r.px, vy = p.y - r.py, vz = p.z - r.pz;
       if (p.type === 'arrow' && p.dur > 0) {
         if (p.t !== r.pt) { r.pt = p.t; r.off = 0; } else r.off = Math.min(r.off + dt, 1 / 30);
@@ -2486,15 +2594,86 @@ export class EntityView {
         x = p.sx + dx * fr + nx * sw; z = p.sz + dz * fr + nz * sw; y = p.sy + dy * fr + 4 * h * fr * (1 - fr);
         vx = dx + nx * sv; vz = dz + nz * sv; vy = dy + 4 * h * (1 - 2 * fr);
       } else if (p.vx !== undefined && p.vz !== undefined) { vx = p.vx; vy = p.vy || 0; vz = p.vz; }
-      m.position.set(x, y, z);
-      if (vx * vx + vy * vy + vz * vz > 1e-8) m.lookAt(x + vx, y + vy, z + vz);
+      if (vx * vx + vy * vy + vz * vz > 1e-8) {
+        _m4.lookAt(_v2.set(x + vx, y + vy, z + vz), _v.set(x, y, z), _upY);
+        _q.setFromRotationMatrix(_m4);
+        r.qx = _q.x; r.qy = _q.y; r.qz = _q.z; r.qw = _q.w;
+      } else {
+        _q.set(r.qx, r.qy, r.qz, r.qw);
+      }
       r.px = p.x; r.py = p.y; r.pz = p.z;
       const tx = x | 0, tz = z | 0;
-      m.visible = !fog || tx < 0 || tz < 0 || tx >= N || tz >= N || fog[tz * N + tx] === 2;
+      if (!fog || tx < 0 || tz < 0 || tx >= N || tz >= N || fog[tz * N + tx] === 2) {
+        const d = PROJ[r.type];
+        let b = this._pb.get(r.type);
+        if (!b) { b = new IBatch(this.scene, d[0], d[1], 0, true, false); this._pb.set(r.type, b); }
+        _m4.compose(_v.set(x, y, z), _q, _s.set(d[2], d[3], d[4]));
+        b.push(_m4.elements);
+      }
     }
     for (const [id, r] of this.projs) {
-      if (r.seen !== f) { r.mesh.visible = false; this.projPool[r.type].push(r.mesh); this.projs.delete(id); }
+      if (r.seen !== f) this.projs.delete(id);
     }
+  }
+
+  _stepEnt(e, dt, f, tm, gt, map, fr, meId, tVer) {
+    if (e.kind === 'resource' && e.type === 'tree') return;
+    let v = this.views.get(e.id);
+    if (!v) v = this._create(e);
+    v.e = e; v.seen = f;
+    const vis = !!this.game.isEntityVisible(e) && !e.aboard;
+    if (vis !== v.vis) { v.vis = vis; v.root.visible = vis; }
+    const sel = this.selected.has(e.id);
+    let y;
+    if (e.kind === 'building') {
+      if (v._tVer !== tVer) {
+        v._tVer = tVer;
+        v._y = e.type === 'dock' ? dockY(map, e.x, e.z, e.tx, e.tz, e.size) : map.heightAt(e.x, e.z);   // (the dock's deck above the water, see dockY)
+      }
+      y = v._y;
+      this._updBuilding(v, e, dt, y, vis);
+      this._sb.sync(v, this.batching && this._static(v, e, vis), tm);
+      if (v.root.userData.sheepSlots) this._sheep(v, vis);
+      if (sel && e.owner === meId && e.rally) this._flagB = e;
+    } else if (v.rig) {
+      if (!vis && !e.dead) { v.x = e.x; v.z = e.z; v.rot = e.rot || 0; return; }
+      // off-screen (with a margin for shadows): no animation and no matrix updates; every pose is a function of
+      // time, so it snaps to the right one on the first frame back in view (ships / trains keep their trail state)
+      if (fr && v.rig !== 'ship' && v.rig !== 'train') {
+        _fs.center.set(e.x, map.heightAt(e.x, e.z) + .5, e.z);
+        if (!fr.intersectsSphere(_fs)) {
+          v.x = e.x; v.z = e.z; v.rot = e.rot || 0;
+          if (!v.culled) { v.culled = true; v.root.matrixWorldAutoUpdate = false; }   // (instanced units: always off)
+          v.root.visible = false;
+          return;
+        }
+        if (v.culled) { v.culled = false; v.root.visible = vis; v.root.matrixWorldAutoUpdate = !v.slots; }
+      }
+      y = this._updUnit(v, e, dt, tm, gt);
+    } else {
+      if (v._tVer !== tVer) { v._tVer = tVer; v._y = map.heightAt(e.x, e.z); }
+      y = v._y;
+      if (e.amount !== v.lastAmt) {
+        if (v.lastAmt !== -1) v.amtT = tm;   // (being gathered: drawn on its own for a while, see below)
+        v.lastAmt = e.amount;
+        const s = (e.scale || 1) * (.55 + .45 * Math.max(0, Math.min(1, e.amount / (e.maxAmount || e.amount || 1))));
+        v.root.scale.setScalar(s);
+      }
+      v.root.position.set(e.x, y, e.z); v.x = e.x; v.z = e.z;
+      if (e.type === 'fish') { this._fish(v, vis, fr); y = .02; }
+      // stone, gold and berry bushes never move: merged per chunk like the finished buildings (static-batch.js),
+      // except while being gathered (each trip shrinks them a little; 6 s after the last change they rejoin)
+      else this._sb.sync(v, this.batching && vis && tm - (v.amtT == null ? -99 : v.amtT) > 6, tm);
+    }
+    if (sel && vis && !e.dead) this._ring(v, e); else if (v.ring && v.ring.visible) v.ring.visible = false;
+    if (!v.rig) {
+      const U = v.root.userData;
+      const freeze = !!(((v.sb && v.sb.c.built) || U.fishInst) && !(v.ring && v.ring.visible) && !(U.spin && U.spin.visible) && !U.live && !(v.repRig && v.repRig.visible));
+      if (v.root.matrixWorldAutoUpdate === freeze) v.root.matrixWorldAutoUpdate = !freeze;
+    }
+    const showHp = vis && !e.dead && e.maxHp > 0 && !(e.kind === 'building' && this._fogged(e)) && (sel ? e.kind !== 'resource' || e.type === 'deer' || !!e.live : ((e.kind !== 'resource' || e.live) && e.hp < e.maxHp));
+    if (showHp) this._hp(v, e, true, y);
+    if (v.slots && v.root.visible) this._emit(v);
   }
 
   update(dt, time) {
@@ -2507,58 +2686,27 @@ export class EntityView {
     if (cam) { const me = cam.matrixWorld.elements; this._rx = me[0]; this._ry = me[1]; this._rz = me[2]; } else { this._rx = 1; this._ry = 0; this._rz = 0; }
     this._camQ = cam ? cam.quaternion : _hq;
     const fr = cam ? this._frustum.setFromProjectionMatrix(_fm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse)) : null;
-    let flagB = null;
+    this._flagB = null;
     const meId = this._me();
-    this._buildLinks();
-    for (const e of game.entities.values()) {
-      if (e.kind === 'resource' && e.type === 'tree') continue;
-      let v = this.views.get(e.id);
-      if (!v) v = this._create(e);
-      v.e = e; v.seen = f;
-      const vis = !!game.isEntityVisible(e) && !e.aboard;
-      if (vis !== v.vis) { v.vis = vis; v.root.visible = vis; }
-      const sel = this.selected.has(e.id);
-      let y;
-      if (e.kind === 'building') {
-        y = e.type === 'dock' ? dockY(map, e.x, e.z, e.tx, e.tz, e.size) : map.heightAt(e.x, e.z);   // (the dock's deck above the water, see dockY)
-        this._updBuilding(v, e, dt, y, vis);
-        this._sb.sync(v, this.batching && this._static(v, e, vis), tm);
-        if (v.root.userData.sheepSlots) this._sheep(v, vis);
-        if (sel && e.owner === meId && e.rally) flagB = e;
-      } else if (v.rig) {
-        if (!vis && !e.dead) { v.x = e.x; v.z = e.z; v.rot = e.rot || 0; continue; }
-        // off-screen (with a margin for shadows): no animation and no matrix updates; every pose is a function of
-        // time, so it snaps to the right one on the first frame back in view (ships / trains keep their trail state)
-        if (fr && v.rig !== 'ship' && v.rig !== 'train') {
-          _fs.center.set(e.x, map.heightAt(e.x, e.z) + .5, e.z);
-          if (!fr.intersectsSphere(_fs)) {
-            v.x = e.x; v.z = e.z; v.rot = e.rot || 0;
-            if (!v.culled) { v.culled = true; v.root.matrixWorldAutoUpdate = false; }   // (instanced units: always off)
-            v.root.visible = false;
-            continue;
-          }
-          if (v.culled) { v.culled = false; v.root.visible = vis; v.root.matrixWorldAutoUpdate = !v.slots; }
-        }
-        y = this._updUnit(v, e, dt, tm, gt);
-      } else {
-        y = map.heightAt(e.x, e.z);
-        if (e.amount !== v.lastAmt) {
-          if (v.lastAmt !== -1) v.amtT = tm;   // (being gathered: drawn on its own for a while, see below)
-          v.lastAmt = e.amount;
-          const s = (e.scale || 1) * (.55 + .45 * Math.max(0, Math.min(1, e.amount / (e.maxAmount || e.amount || 1))));
-          v.root.scale.setScalar(s);
-        }
-        v.root.position.set(e.x, y, e.z); v.x = e.x; v.z = e.z;
-        if (e.type === 'fish') { try { seaAnimFish(v, tm); y = .02; } catch (err) { /* visual only */ } }
-        // stone, gold and berry bushes never move: merged per chunk like the finished buildings (static-batch.js),
-        // except while being gathered (each trip shrinks them a little; 6 s after the last change they rejoin)
-        else this._sb.sync(v, this.batching && vis && tm - (v.amtT == null ? -99 : v.amtT) > 6, tm);
+    const bs = game.buildings, bl = bs ? bs.length : 0, bv = game._blkV || 0;
+    if (bl !== this._bLen || bv !== this._blkV) { this._bLen = bl; this._blkV = bv; this._linksVer++; }
+    if (this._linksBuilt !== this._linksVer) { this._buildLinks(); this._linksBuilt = this._linksVer; }
+    const tVer = this._terrainVer;
+    if (game.buildings || game.units) {
+      if (game.buildings) for (let i = 0; i < game.buildings.length; i++) this._stepEnt(game.buildings[i], dt, f, tm, gt, map, fr, meId, tVer);
+      if (game.units) for (let i = 0; i < game.units.length; i++) this._stepEnt(game.units[i], dt, f, tm, gt, map, fr, meId, tVer);
+      if (game.deer) for (let i = 0; i < game.deer.length; i++) this._stepEnt(game.deer[i], dt, f, tm, gt, map, fr, meId, tVer);
+      const sr = this._statRes;
+      for (let i = sr.length - 1; i >= 0; i--) {
+        const e = sr[i];
+        if (!e || e.dead || !game.entities.has(e.id)) { sr[i] = sr[sr.length - 1]; sr.pop(); continue; }
+        this._stepEnt(e, dt, f, tm, gt, map, fr, meId, tVer);
       }
-      if (sel && vis && !e.dead) this._ring(v, e); else if (v.ring && v.ring.visible) v.ring.visible = false;
-      const showHp = vis && !e.dead && e.maxHp > 0 && !(e.kind === 'building' && this._fogged(e)) && (sel ? e.kind !== 'resource' || e.type === 'deer' || !!e.live : ((e.kind !== 'resource' || e.live) && e.hp < e.maxHp));
-      if (showHp) this._hp(v, e, true, y);
-      if (v.slots && v.root.visible) this._emit(v);
+    } else {
+      for (const e of game.entities.values()) this._stepEnt(e, dt, f, tm, gt, map, fr, meId, tVer);
     }
+    const flagB = this._flagB;
+    this._updProjectiles(dt);
     this._flushBatches();
     const dead = this._dead; dead.length = 0;
     for (const v of this.views.values()) {
@@ -2578,7 +2726,6 @@ export class EntityView {
       this.flagCloth.material = mat(this._color(meId), .8, 0);
       this.flagCloth.scale.y = .26 * (1 + Math.sin(tm * 5) * .06);
     } else if (this.flag.visible) this.flag.visible = false;
-    this._updProjectiles(dt);
   }
 
   pick(raycaster) {
@@ -2615,8 +2762,11 @@ export class EntityView {
     const es = e.size || (BUILDINGS[e.type] && BUILDINGS[e.type].size) || 1;
     if (es > 1) {   // a 3x3 tower: walls that meet the middle of a side (bit 16 = drawn at 3x, see tower())
       const N = this.game.map.size, L = this._links, h = es >> 1; let m = 16;
-      const side = [[e.tx + h, e.tz - 1], [e.tx + es, e.tz + h], [e.tx + h, e.tz + es], [e.tx - 1, e.tz + h]];
-      for (let i = 0; i < 4; i++) { const k = side[i][1] * N + side[i][0]; if ((L && L.get(k) === e.owner) || (extra && extra.has(k))) m |= 1 << i; }
+      const k0 = (e.tz - 1) * N + e.tx + h, k1 = (e.tz + h) * N + e.tx + es, k2 = (e.tz + es) * N + e.tx + h, k3 = (e.tz + h) * N + e.tx - 1;
+      if ((L && L.get(k0) === e.owner) || (extra && extra.has(k0))) m |= 1;
+      if ((L && L.get(k1) === e.owner) || (extra && extra.has(k1))) m |= 2;
+      if ((L && L.get(k2) === e.owner) || (extra && extra.has(k2))) m |= 4;
+      if ((L && L.get(k3) === e.owner) || (extra && extra.has(k3))) m |= 8;
       return m;
     }
     const N = this.game.map.size, L = this._links; let m = 0;
@@ -2683,10 +2833,12 @@ export class EntityView {
     for (const b of this._ib.values()) inst += b.mesh.count;
     for (const c of UGEO.values()) { refs += c.refs; if (c.refs > 0) live++; }
     let held = 0; for (const v of this.views.values()) if (v.ukey) held++;
-    return { batches: this._ib.size, ringBatches: this._rb.size, instances: inst, hpBars: this._hpB.mesh.count, geoKeys: UGEO.size, liveKeys: live, refs, held, sheepBatches: this._shb.size, staticBatch: this._sb.stats() };
+    return { batches: this._ib.size, ringBatches: this._rb.size, instances: inst, hpBars: this._hpB.mesh.count, geoKeys: UGEO.size, liveKeys: live, refs, held, sheepBatches: this._shb.size, projBatches: this._pb.size, fishBatches: this._fb.size, staticBatch: this._sb.stats() };
   }
 
   dispose() {
+    const ev = this.game && this.game.events;
+    if (ev && ev.off && this._subs) { for (const [n, f] of this._subs) { try { ev.off(n, f); } catch (err) { /* ignore */ } } this._subs.length = 0; }
     this._sb.dispose();
     for (const v of this.views.values()) {
       this.scene.remove(v.root);
@@ -2694,11 +2846,9 @@ export class EntityView {
       if (v.ukey) { releaseUnit(v.ukey); v.ukey = null; }
     }
     this.views.clear(); this.proxies.length = 0;
-    for (const M of [this._ib, this._rb, this._shb]) { for (const b of M.values()) b.dispose(); M.clear(); }
+    for (const M of [this._ib, this._rb, this._shb, this._cb, this._pb, this._fb]) { for (const b of M.values()) b.dispose(); M.clear(); }
     this._hpB.dispose(); this._hpF.dispose();
-    for (const r of this.projs.values()) this.scene.remove(r.mesh);
     this.projs.clear();
-    for (const k in this.projPool) { for (const m of this.projPool[k]) this.scene.remove(m); this.projPool[k].length = 0; }
     if (this.ghosts) { for (const g of this.ghosts) if (g) { this.scene.remove(g.root); disposeBaked(g.root); } this.ghosts.length = 0; }
     this.ghost = null;
     this.scene.remove(this.flag);

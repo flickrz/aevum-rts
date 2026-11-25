@@ -389,49 +389,102 @@ export class Renderer {
     this._flashes = [];
     if (this.floaters) this.floaters.clear();
     if (this.fowTex) { this.fowTex.dispose(); this.fowTex = null; }
+    this._fowPrev = null; this._fowPrev32 = null; this._fowAct = null; this._fowInAct = null; this._fowActN = 0; this._fowFogRef = null; this._fowFog32 = null;
     if (this.depthTex) { this.depthTex.dispose(); this.depthTex = null; }
     this.shared.uFow.value = this._blankFow;
     this.trees = new Map();
     this._falling = [];
     this.treeMeshes = null;
+    this.decor = null; this._decorIdx = null; this._decorMeshes = null;
     this.terrain = null;
     this.water = null;
   }
 
   _buildFow() {
-    const N = this.N;
-    this._fowData = new Uint8Array(N * N);
-    this._fowCur = new Float32Array(N * N);
+    const N = this.N, n = N * N;
+    this._fowData = new Uint8Array(n);
+    this._fowCur = new Float32Array(n);
+    this._fowPrev = new Uint8Array(n).fill(255);
+    this._fowPrev32 = (n & 3) === 0 ? new Uint32Array(this._fowPrev.buffer) : null;
+    this._fowAct = new Int32Array(n);
+    this._fowInAct = new Uint8Array(n);
+    this._fowActN = 0;
+    this._fowFogRef = null; this._fowFog32 = null;
     const t = (this.fowTex = new THREE.DataTexture(this._fowData, N, N, THREE.RedFormat, THREE.UnsignedByteType));
     t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearFilter;
     t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
     t.needsUpdate = true;
     this.shared.uFow.value = t;
-    this._fowVer = -1; this._fowDirty = true; this._fowFirst = true;
+    this._fowVer = -1; this._fowFirst = true;
   }
 
   _updateFow(dt) {
     const g = this.game;
     if (!g || !this.fowTex) return;
-    if (g.fogVersion !== this._fowVer) { this._fowVer = g.fogVersion; this._fowDirty = true; }
-    if (!this._fowDirty) return;
-    const fog = g.fog, cur = this._fowCur, out = this._fowData, n = out.length;
-    const step = this._fowFirst ? 1000 : dt * 520;
-    let dirty = false;
-    for (let i = 0; i < n; i++) {
-      const f = fog ? fog[i] : 2;
+    const fog = g.fog, cur = this._fowCur, out = this._fowData, prev = this._fowPrev, n = out.length;
+    const act = this._fowAct, inAct = this._fowInAct;
+    if (this._fowFirst) {
+      this._fowFirst = false;
+      this._fowVer = g.fogVersion;
+      for (let i = 0; i < n; i++) {
+        const f = fog ? fog[i] : 2;
+        const target = f === 2 ? 255 : f === 1 ? 112 : 0;
+        cur[i] = target; out[i] = target; prev[i] = f; inAct[i] = 0;
+      }
+      this._fowActN = 0;
+      this.fowTex.needsUpdate = true;
+      return;
+    }
+    let actN = this._fowActN;
+    if (g.fogVersion !== this._fowVer) {
+      this._fowVer = g.fogVersion;
+      if (fog !== this._fowFogRef) {
+        this._fowFogRef = fog;
+        this._fowFog32 = (fog && this._fowPrev32 && (fog.byteOffset & 3) === 0 && fog.length === n) ? new Uint32Array(fog.buffer, fog.byteOffset, n >> 2) : null;
+      }
+      const f32 = this._fowFog32, p32 = this._fowPrev32;
+      if (f32 && p32) {
+        for (let w = 0, wn = f32.length; w < wn; w++) {
+          if (f32[w] === p32[w]) continue;
+          const base = w << 2;
+          for (let j = 0; j < 4; j++) {
+            const i = base + j, f = fog[i];
+            if (f !== prev[i]) {
+              prev[i] = f;
+              if (!inAct[i]) { inAct[i] = 1; act[actN++] = i; }
+            }
+          }
+        }
+      } else {
+        for (let i = 0; i < n; i++) {
+          const f = fog ? fog[i] : 2;
+          if (f !== prev[i]) {
+            prev[i] = f;
+            if (!inAct[i]) { inAct[i] = 1; act[actN++] = i; }
+          }
+        }
+      }
+    }
+    if (actN === 0) { this._fowActN = 0; return; }
+    const step = dt * 520;
+    let changed = false;
+    for (let k = actN - 1; k >= 0; k--) {
+      const i = act[k];
+      const f = prev[i];
       const target = f === 2 ? 255 : f === 1 ? 112 : 0;
       let c = cur[i];
       if (c !== target) {
         const d = target - c;
         c += d > step ? step : d < -step ? -step : d;
-        cur[i] = c; out[i] = c;
-        if (c !== target) dirty = true;
+        cur[i] = c;
+        const old = out[i];
+        out[i] = c;
+        if (out[i] !== old) changed = true;
       }
+      if (c === target) { inAct[i] = 0; act[k] = act[--actN]; }
     }
-    this._fowFirst = false;
-    this._fowDirty = dirty;
-    this.fowTex.needsUpdate = true;
+    this._fowActN = actN;
+    if (changed) this.fowTex.needsUpdate = true;
   }
 
   _buildTerrain() {
@@ -854,18 +907,29 @@ export class Renderer {
     gGeo.setAttribute('normal', new THREE.Float32BufferAttribute(gn, 3));
     const gMat = this.patchMaterial(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), { sway: 0.28, hide: true });
     const nGrass = Math.min(9000, Math.floor(N * N * 0.45));
-    const grass = new THREE.InstancedMesh(gGeo, gMat, nGrass);
     const fGeo = new THREE.IcosahedronGeometry(0.06, 0).translate(0, 0.17, 0);
     const fMat = this.patchMaterial(new THREE.MeshLambertMaterial({}), { sway: 0.2, hide: true });
     const KD = this.climate || CLIMATES.temperate;
     const nFl = Math.floor(Math.min(1400, Math.floor(N * N * 0.07)) * KD.flowerMul);
-    const flowers = new THREE.InstancedMesh(fGeo, fMat, nFl);
     const rGeo = new THREE.DodecahedronGeometry(0.22, 0);
     const rMat = this.patchMaterial(new THREE.MeshLambertMaterial({ color: 0x9a948c, flatShading: true }), { hide: true });
     const nRock = Math.min(700, Math.floor(N * N * 0.035));
-    const rocks = new THREE.InstancedMesh(rGeo, rMat, nRock);
     const gcols = KD.blade.map((c) => new THREE.Color(c));
     const fcols = KD.flowers.map((c) => new THREE.Color(c));
+    const CH = 32, cs = Math.ceil(N / CH);
+    const gBk = new Map(), fBk = new Map(), rBk = new Map();
+    const put = (map, x, y, z, matEl, col) => {
+      const ck = Math.floor(z / CH) * cs + Math.floor(x / CH);
+      let c = map.get(ck);
+      if (!c) map.set(ck, c = { mats: [], cols: col ? [] : null, x0: x, x1: x, y0: y, y1: y, z0: z, z1: z });
+      else {
+        if (x < c.x0) c.x0 = x; else if (x > c.x1) c.x1 = x;
+        if (y < c.y0) c.y0 = y; else if (y > c.y1) c.y1 = y;
+        if (z < c.z0) c.z0 = z; else if (z > c.z1) c.z1 = z;
+      }
+      for (let m = 0; m < 16; m++) c.mats.push(matEl[m]);
+      if (col) c.cols.push(col);
+    };
     let ng = 0, nf = 0, nr = 0;
     const tries = (nGrass + nFl + nRock) * 4;
     for (let i = 0; i < tries && (ng < nGrass || nf < nFl || nr < nRock); i++) {
@@ -879,45 +943,60 @@ export class Renderer {
         if (vnoise(x * 0.2, z * 0.2) < 0.35) continue; // clumps
         const s = 0.8 + rnd() * 1.0;
         d.position.set(x, y - 0.01, z); d.scale.set(s, s * (0.8 + rnd() * 0.6), s); d.updateMatrix();
-        grass.setMatrixAt(ng, d.matrix);
-        grass.setColorAt(ng, gcols[(rnd() * gcols.length) | 0]);
+        put(gBk, x, y - 0.01, z, d.matrix.elements, gcols[(rnd() * gcols.length) | 0]);
         ng++;
       } else if (t === 0 && pick < 0.9 && nf < nFl) {
         if (vnoise(x * 0.11 + 50, z * 0.11) < 0.55) continue;
         const s = 0.8 + rnd() * 0.7;
         d.position.set(x, y, z); d.scale.set(s, s, s); d.updateMatrix();
-        flowers.setMatrixAt(nf, d.matrix);
-        flowers.setColorAt(nf, fcols[(rnd() * fcols.length) | 0]);
+        put(fBk, x, y, z, d.matrix.elements, fcols[(rnd() * fcols.length) | 0]);
         nf++;
       } else if ((t === 0 || t === 2 || t === 5 || t === 6) && pick >= 0.9 && nr < nRock) {
         if (map.blocked && map.blocked[(z | 0) * N + (x | 0)] && t !== 5) continue;
         const s = 0.5 + rnd() * (t === 5 ? 2.2 : 1.0);
         d.rotation.set(rnd() * 3, rnd() * 6.28, rnd() * 3);
         d.position.set(x, y + 0.02, z); d.scale.set(s, s * 0.7, s * (0.7 + rnd() * 0.6)); d.updateMatrix();
-        rocks.setMatrixAt(nr, d.matrix);
+        put(rBk, x, y + 0.02, z, d.matrix.elements, null);
         nr++;
       }
     }
-    grass.count = ng; flowers.count = nf; rocks.count = nr;
-    for (const m of [grass, flowers, rocks]) {
-      m.frustumCulled = false;
-      m.instanceMatrix.needsUpdate = true;
-      if (m.instanceColor) m.instanceColor.needsUpdate = true;
-      this.world.add(m);
-    }
-    grass.receiveShadow = true;
-    rocks.castShadow = true; rocks.receiveShadow = true;
+    const buildChunks = (bk, geo, mat, cast, recv) => {
+      const out = [];
+      for (const c of bk.values()) {
+        const cnt = c.mats.length >> 4;
+        const m = new THREE.InstancedMesh(geo, mat, cnt);
+        m.instanceMatrix.array.set(c.mats);
+        m.instanceMatrix.needsUpdate = true;
+        if (c.cols) {
+          for (let i = 0; i < cnt; i++) m.setColorAt(i, c.cols[i]);
+          if (m.instanceColor) m.instanceColor.needsUpdate = true;
+        }
+        const mx = (c.x0 + c.x1) * 0.5, my = (c.y0 + c.y1) * 0.5, mz = (c.z0 + c.z1) * 0.5;
+        const rx = (c.x1 - c.x0) * 0.5, ry = (c.y1 - c.y0) * 0.5, rz = (c.z1 - c.z0) * 0.5;
+        m.boundingSphere = new THREE.Sphere(new THREE.Vector3(mx, my, mz), Math.hypot(rx, ry, rz) + 1.5);
+        m.frustumCulled = true;
+        m.castShadow = cast; m.receiveShadow = recv;
+        this.world.add(m);
+        out.push(m);
+      }
+      if (!out.length) { geo.dispose(); mat.dispose(); }
+      return out;
+    };
+    const grass = buildChunks(gBk, gGeo, gMat, false, true);
+    const flowers = buildChunks(fBk, fGeo, fMat, false, false);
+    const rocks = buildChunks(rBk, rGeo, rMat, true, true);
     this.decor = { grass, flowers, rocks };
     d.rotation.set(0, 0, 0);
     // tile -> decor instances (packed meshIndex * 2^16 + instance), so buildings / rails can hide what they cover
-    const idx = new Map(), meshes = [grass, flowers, rocks], mm = new THREE.Matrix4();
-    meshes.forEach((m, k) => {
+    const idx = new Map(), meshes = grass.concat(flowers, rocks);
+    for (let k = 0; k < meshes.length; k++) {
+      const m = meshes[k], arr = m.instanceMatrix.array;
       for (let i = 0; i < m.count; i++) {
-        m.getMatrixAt(i, mm); const tx = Math.floor(mm.elements[12]), tz = Math.floor(mm.elements[14]);
+        const tx = Math.floor(arr[i * 16 + 12]), tz = Math.floor(arr[i * 16 + 14]);
         if (tx < 0 || tz < 0 || tx >= N || tz >= N) continue;
         const key = tz * N + tx; let a = idx.get(key); if (!a) idx.set(key, a = []); a.push(k * 65536 + i);
       }
-    });
+    }
     this._decorIdx = idx; this._decorMeshes = meshes;
     const bs = this.game && this.game.buildings; if (bs) for (const b of bs) if (b && !b.dead) this._hideDecor(b);
   }
@@ -925,13 +1004,12 @@ export class Renderer {
   _hideDecor(b) {
     const idx = this._decorIdx, ms = this._decorMeshes; if (!idx || !ms || !b) return;
     const N = this.N, s = b.size || 1, tx0 = b.tx != null ? b.tx : Math.floor(b.x - s / 2), tz0 = b.tz != null ? b.tz : Math.floor(b.z - s / 2);
-    const Z = this._zeroM || (this._zeroM = new THREE.Matrix4().makeScale(0, 0, 0)); let hit = 0;
+    const Z = this._zeroM || (this._zeroM = new THREE.Matrix4().makeScale(0, 0, 0));
     for (let j = 0; j < s; j++) for (let i = 0; i < s; i++) {
       const a = idx.get((tz0 + j) * N + tx0 + i); if (!a) continue;
-      for (const p of a) { const m = ms[(p / 65536) | 0]; if (!m) continue; m.setMatrixAt(p & 65535, Z); hit |= 1 << ((p / 65536) | 0); }
+      for (const p of a) { const m = ms[(p / 65536) | 0]; if (!m) continue; m.setMatrixAt(p & 65535, Z); m.instanceMatrix.needsUpdate = true; }
       idx.delete((tz0 + j) * N + tx0 + i);
     }
-    for (let k = 0; k < ms.length; k++) if (hit & (1 << k)) ms[k].instanceMatrix.needsUpdate = true;
   }
 
   // ---------------------------------------------------------------- events -> particles
@@ -1059,7 +1137,10 @@ export class Renderer {
     this.renderer.setPixelRatio(low ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.shadowMap.enabled = !low;
     this.sun.castShadow = !low;
-    if (this.decor) { this.decor.grass.visible = !low; this.decor.flowers.visible = !low; }
+    if (this.decor) {
+      for (const m of this.decor.grass) m.visible = !low;
+      for (const m of this.decor.flowers) m.visible = !low;
+    }
     this.scene.traverse((o) => { if (o.material && !Array.isArray(o.material)) o.material.needsUpdate = true; });
     this.resize();
   }

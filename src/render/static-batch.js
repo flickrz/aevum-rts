@@ -107,6 +107,7 @@ export class StaticBatches {
   leave(v) {
     const m = v.sb; if (!m) return;
     v.sb = null;
+    if (v.root) v.root.matrixWorldAutoUpdate = true;
     for (const o of m.meshes) o.visible = true;
     const c = m.c; c.members.delete(v);
     this._unbuild(c);
@@ -118,7 +119,7 @@ export class StaticBatches {
     c.meshes.length = 0;
     if (!c.built) return;
     c.built = false;
-    for (const v of c.members) for (const o of v.sb.meshes) o.visible = true;
+    for (const v of c.members) { if (v.root) v.root.matrixWorldAutoUpdate = true; for (const o of v.sb.meshes) o.visible = true; }
   }
   _build(c) {
     this._unbuild(c);
@@ -175,7 +176,7 @@ export class StaticBatches {
   dispose() {
     for (const c of this.chunks.values()) {
       for (const mesh of c.meshes) { this.scene.remove(mesh); if (mesh.userData.inst) mesh.dispose(); else mesh.geometry.dispose(); }
-      for (const v of c.members) { for (const o of v.sb.meshes) o.visible = true; v.sb = null; }
+      for (const v of c.members) { if (v.root) v.root.matrixWorldAutoUpdate = true; for (const o of v.sb.meshes) o.visible = true; v.sb = null; }
     }
     this.chunks.clear();
   }

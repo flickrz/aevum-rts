@@ -227,9 +227,12 @@ export class Game {
     this.fog = new Uint8Array(N * N);
     if (this.cfg.fog === 'explored') this.fog.fill(1);   // (explored map, owner 2026-11-15: the land is known from the start)
     this.resAt = new Int32Array(N * N);
+    this._bAt = new Array(N * N).fill(null);
+    this._bFogVer = 1;
     this._g = new Float32Array(N * N); this._st = new Int32Array(N * N); this._par = new Int32Array(N * N); this._stamp = 0;
     this._hn = []; this._hf = [];
     const hc = Math.ceil(N / CELL); this._hc = hc; this._cells = []; for (let i = 0; i < hc * hc; i++) this._cells.push([]);
+    this._dirtyCells = [];
     if (saved) this._restore(saved); else this._generate();
     this._initTeams();
     this.ais = [];
@@ -799,8 +802,22 @@ export class Game {
     const bv = done ? this._solidV(b) : (this._solidV(b) === 3 ? 3 : 2);
     if (type === 'dock') this._navBlockDock(b, bv, bv === 2); else this._block(b, bv, bv === 2);   // (2 on free ground changes nobody's way: no flow-field rebuild)
     if (type !== 'dock' && type !== 'wall' && type !== 'gate' && type !== 'rail') this._flatten(b);   // a level foundation
-    this.entities.set(b.id, b); this.buildings.push(b);
+    this.entities.set(b.id, b); this.buildings.push(b); this._bAtSet(b, b);
+    if (b.done) this._bFogVer++;
     this.events.emit('spawn', { e: b }); return b;
+  }
+  _bAtSet(b, val) {
+    const N = this.map.size, g = this._bAt;
+    if (!g) return;
+    for (let j = 0; j < b.size; j++) {
+      const tz = b.tz + j; if (tz < 0 || tz >= N) continue;
+      const row = tz * N;
+      for (let i = 0; i < b.size; i++) {
+        const tx = b.tx + i; if (tx < 0 || tx >= N) continue;
+        if (val) g[row + tx] = val;
+        else if (g[row + tx] === b) g[row + tx] = null;
+      }
+    }
   }
   // A foundation levels the ground under it (owner 2026-11-13): the footprint's corners take their average
   // height and a one-vertex ring around eases into the land. Part of the simulation (map.heights is saved and the
@@ -950,8 +967,10 @@ export class Game {
   }
   // building whose footprint covers tile (tx,tz), or null
   buildingAt(tx, tz) {
-    for (const b of this.buildings) { if (b.dead) continue; if (tx >= b.tx && tx < b.tx + b.size && tz >= b.tz && tz < b.tz + b.size) return b; }
-    return null;
+    const N = this.map.size, fx = Math.floor(tx), fz = Math.floor(tz);
+    if (!(fx >= 0 && fx < N && fz >= 0 && fz < N)) return null;
+    const b = this._bAt[fz * N + fx];
+    return b && !b.dead ? b : null;
   }
   // ---- gates are opened in a wall (Empire Earth style): select a finished wall piece, "Kapı aç" turns it and its two
   // neighbours on a straight run into a 3-tile gate at once (no construction), for the gate's cost.
@@ -983,7 +1002,7 @@ export class Game {
       const hp = old.hp / old.maxHp, tx = old.tx, tz = old.tz;
       this._dropBuilding(old);
       const b = this._addBuilding('gate', owner, tx, tz, true);
-      b.hp = Math.max(1, Math.round(b.maxHp * hp)); b.progress = 1; b.done = true;   // (_addBuilding already announced it)
+      b.hp = Math.max(1, Math.round(b.maxHp * hp)); b.progress = 1; b.done = true; this._bFogVer++;   // (_addBuilding already announced it)
       if (k === 1) mid = b;
     });
     this.events.emit('buildComplete', { e: mid });
@@ -992,7 +1011,7 @@ export class Game {
   _wallToGate(tx, tz, owner) { const b = this.buildingAt(tx, tz); return b && b.type === 'wall' && b.owner === owner && b.done ? b : null; }
   // silently remove a building (no stats, no death event): used when a gate replaces a wall
   _dropBuilding(b) {
-    this._block(b, 0); b.dead = true;
+    this._block(b, 0); b.dead = true; this._bAtSet(b, null); this._bFogVer++;
     const i = this.buildings.indexOf(b); if (i >= 0) this.buildings.splice(i, 1);
     this.entities.delete(b.id); this.events.emit('remove', { e: b });
   }
@@ -1316,7 +1335,7 @@ export class Game {
     const p = this.players[this.me]; if (!p) return false;
     age = Math.max(0, Math.min(AGES.length - 1, age | 0)); if (age === p.age) return false;
     for (const b of this.buildings) if (b.owner === p.id) for (let i = b.queue.length - 1; i >= 0; i--) if (b.queue[i].kind === 'age') b.queue.splice(i, 1);
-    p.age = age; p.ageProgress = 0; p.ageAt = this.time; this._rescaleBuildings(p);
+    p.age = age; p.ageProgress = 0; p.ageAt = this.time; this._rescaleBuildings(p); this._bFogVer++;
     this.events.emit('ageUp', { owner: p.id, age, dev: true });
     this.events.emit('notify', { text: tr('{0} (geliştirici modu)', tr(AGES[age].name)), type: 'good' });
     return true;
@@ -1747,7 +1766,7 @@ export class Game {
       p.pop -= UNITS[e.type].pop; p.stats.unitsLost++; if (kp) kp.stats.kills++;
       this.events.emit('death', { e, killer: killer || null });
     } else if (e.kind === 'building') {
-      this._block(e, 0);
+      this._block(e, 0); this._bAtSet(e, null); this._bFogVer++;
       const i = this.buildings.indexOf(e); if (i >= 0) this.buildings.splice(i, 1);
       for (const q of e.queue) if (q.kind === 'tech') { const k = p.pending.indexOf(q.id); if (k >= 0) p.pending.splice(k, 1); }
       p.stats.buildingsLost++; if (kp) kp.stats.razed++;
@@ -2238,7 +2257,7 @@ export class Game {
     } else b.hp = Math.min(b.maxHp, b.hp + b.maxHp * dt / d.time * 0.6 * c);
   }
   _complete(b) {
-    b.progress = 1; b.done = true; const p = this.players[b.owner];
+    b.progress = 1; b.done = true; this._bFogVer++; const p = this.players[b.owner];
     // the foundation becomes solid now (flow fields go stale through _blkMark); units inside step out, routes across it are planned again
     const v = this._solidV(b);
     if (v !== 3) { if (b.type === 'dock') this._navBlockDock(b, v); else this._block(b, v); this._repathAround(b); this._pushOut(b); }
@@ -2337,7 +2356,7 @@ export class Game {
       this.events.emit('researched', { owner: b.owner, tech: q.id });
       if (b.owner === this.me) this.events.emit('notify', { text: tr('{0} araştırıldı', tr(TECHS[q.id].name)), type: 'good' });
     } else if (q.kind === 'age') {
-      b.queue.shift(); p.age = Math.min(4, q.id); p.ageProgress = 0; p.ageAt = this.time; this._rescaleBuildings(p);
+      b.queue.shift(); p.age = Math.min(4, q.id); p.ageProgress = 0; p.ageAt = this.time; this._rescaleBuildings(p); this._bFogVer++;
       this.events.emit('ageUp', { owner: b.owner, age: p.age });
       if (b.owner === this.me) { const cnt = o => Object.values(o).filter(x => x.age === p.age && x.id !== 'house').length, nb = cnt(BUILDINGS), nu = cnt(UNITS), nt = cnt(TECHS);
         this.events.emit('notify', { text: tr('Yeni çağ: {0} bina, {1} birlik ve {2} teknoloji açıldı. Tüm binaların güçlendi!', nb, nu, nt), type: 'good' }); }
@@ -2356,9 +2375,16 @@ export class Game {
     // developer mode (single player, the owner's account only; see ui _menuSetup): whole map visible, resources never run out
     if (this.cfg.dev) { this.reveal = true; const p = this.players[this.me]; if (p) for (const k in p.res) if (p.res[k] < 50000) p.res[k] = 99999; }
     if (this.time >= (this._expT || 0)) { this._expT = this.time + 0.7; for (const u of this.units) if (u.explore && !u.dead && !u.order && this.time >= (u.exploreT || 0)) this._exploreStep(u); }
-    const hc = this._hc, cells = this._cells, units = this.units;
-    for (let i = 0; i < cells.length; i++) cells[i].length = 0;
-    for (let i = 0; i < units.length; i++) { const u = units[i]; if (u.dead || u.aboard) continue; const c = Math.min(hc - 1, (u.z / CELL) | 0) * hc + Math.min(hc - 1, (u.x / CELL) | 0); cells[c].push(u); }
+    const hc = this._hc, cells = this._cells, dirty = this._dirtyCells, units = this.units;
+    for (let i = 0; i < dirty.length; i++) cells[dirty[i]].length = 0;
+    dirty.length = 0;
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i]; if (u.dead || u.aboard) continue;
+      const ci = Math.min(hc - 1, (u.z / CELL) | 0) * hc + Math.min(hc - 1, (u.x / CELL) | 0);
+      const cell = cells[ci];
+      if (cell.length === 0) dirty.push(ci);
+      cell.push(u);
+    }
     for (let i = 0; i < units.length; i++) { const u = units[i]; if (u.dead || u.aboard) continue; if (u.naval || (u.order && u.order.type === 'board')) this._navUpdateUnit(u, dt); else this._updateUnit(u, dt); }
     // separation for idle units. Each unit has a body radius (SEP_R by class): two units are pushed apart when they
     // are closer than the sum, so cannons and catapults no longer sit inside each other (2026-11-17 playtest: "the
@@ -2369,7 +2395,25 @@ export class Game {
       if (u.order && u.state !== 'move' && !(u.state === 'attack' && ru === SEP_R.siege)) continue;
       const mv = !!u.order && u.state === 'move';   // (a walking unit keeps the old small gap: a bigger push stalls slow siege)
       let px = 0, pz = 0;
-      this._near(u.x, u.z, u.naval ? 1.2 : mv ? 0.7 : ru + SEP_R.siege + 0.15, e => { if (e === u || e.dead || !e.naval !== !u.naval) return; let dx = u.x - e.x, dz = u.z - e.z; const d = dhypot(dx, dz), sr = u.naval || mv ? (u.order ? 0.42 : 0.55) : ru + (SEP_R[UNITS[e.type].cls] || SEP_R.other); if (d < sr) { if (d < 0.01) { const a = u.id * 2.39996; dx = dcos(a); dz = dsin(a); px += dx; pz += dz; } else { px += dx / d; pz += dz / d; } } });
+      const r = u.naval ? 1.2 : mv ? 0.7 : ru + SEP_R.siege + 0.15;
+      const ux = u.x, uz = u.z, uNav = !u.naval, fixedSr = u.naval || mv ? (u.order ? 0.42 : 0.55) : 0;
+      const c0 = Math.max(0, ((ux - r) / CELL) | 0), c1 = Math.min(hc - 1, ((ux + r) / CELL) | 0);
+      const r0 = Math.max(0, ((uz - r) / CELL) | 0), r1 = Math.min(hc - 1, ((uz + r) / CELL) | 0);
+      for (let cj = r0; cj <= r1; cj++) {
+        const row = cj * hc;
+        for (let ci = c0; ci <= c1; ci++) {
+          const cell = cells[row + ci];
+          for (let k = 0; k < cell.length; k++) {
+            const e = cell[k];
+            if (e === u || e.dead || !e.naval !== uNav) continue;
+            let dx = ux - e.x, dz = uz - e.z;
+            const sr = fixedSr || (ru + (SEP_R[UNITS[e.type].cls] || SEP_R.other));
+            if (dx >= sr || dx <= -sr || dz >= sr || dz <= -sr) continue;
+            const d = dhypot(dx, dz);
+            if (d < sr) { if (d < 0.01) { const a = u.id * 2.39996; dx = dcos(a); dz = dsin(a); px += dx; pz += dz; } else { px += dx / d; pz += dz / d; } }
+          }
+        }
+      }
       // a walking unit is nudged at most at half its own speed, whatever the crowd (2026-11-17: four cannons at a ford
       // pushed each other back as fast as they walk and never got through)
       if (mv && (px || pz)) { const L = dhypot(px, pz), c = Math.min(1.2, this._speed(u) * 0.5) / Math.max(1, L) / 1.2; px *= c; pz *= c; }
@@ -2436,21 +2480,77 @@ export class Game {
     for (const q of this.players) if (q.startX != null) forDisc(N, mid(q.startX), mid(q.startZ), r, (a, b) => { for (let i = a; i < b; i++) if (!g[i]) g[i] = 1; });
   }
   _updateFog() {
-    const N = this.map.size, fog = this.fog;
+    const N = this.map.size, NN = N * N, fog = this.fog;
     if (!this._tv) this._tv = new Map();
     const tv = this._tv;
-    for (const p of this.players) if (!tv.has(p.team)) { const g = new Uint8Array(N * N); if (this.cfg.fog === 'explored') g.fill(1); else this._knownStarts(g); if (this._fogSeed && p.team === this.teamOf(this.me)) g.set(this._fogSeed); tv.set(p.team, g); }
+    for (const p of this.players) if (!tv.has(p.team)) { const g = new Uint8Array(NN); if (this.cfg.fog === 'explored') g.fill(1); else this._knownStarts(g); if (this._fogSeed && p.team === this.teamOf(this.me)) g.set(this._fogSeed); tv.set(p.team, g); this._bFogVer++; }
     this._fogSeed = null;
-    for (const g of tv.values()) for (let i = 0; i < g.length; i++) if (g[i] === 2) g[i] = 1;
-    let gr = null;
-    // a disc of tile centres within r of (x, z), one row span at a time (the soldiers' long sight since 2026-11-14
-    // made the per-tile test the cost of the fog update)
-    const mark = (x, z, r) => { forDisc(N, x, z, r, (a, b) => gr.fill(2, a, b)); };
-    for (const u of this.units) { if (u.dead || !(u.owner >= 0)) continue; gr = tv.get(this.teamOf(u.owner)); if (gr) mark(u.x, u.z, unitLos(u.type)); }
-    // (an unfinished foundation gives no sight: one placed in the dark used to reveal the land round it)
-    for (const b of this.buildings) { if (!(b.owner >= 0) || !b.done) continue; gr = tv.get(this.teamOf(b.owner)); if (gr) mark(b.x, b.z, buildingLos(b, this.players[b.owner])); }
+    for (const g of tv.values()) {
+      if ((g.length & 3) === 0 && (g.byteOffset & 3) === 0) {
+        const g32 = g._u32 || (g._u32 = new Uint32Array(g.buffer, g.byteOffset, g.length >> 2));
+        for (let w = 0, wn = g32.length; w < wn; w++) {
+          const v = g32[w];
+          if (v & 0x02020202) { const m = (v & 0x02020202) & (~v << 1); if (m) g32[w] = v ^ (m | (m >>> 1)); }
+        }
+      } else {
+        for (let i = 0; i < g.length; i++) if (g[i] === 2) g[i] = 1;
+      }
+    }
+    // units: stamp discs inline (no per-unit closure)
+    const units = this.units;
+    for (let ui = 0; ui < units.length; ui++) {
+      const u = units[ui]; if (u.dead || !(u.owner >= 0)) continue;
+      const gr = tv.get(this.teamOf(u.owner)); if (!gr) continue;
+      const r = unitLos(u.type), r2 = r * r, ux = u.x, uz = u.z;
+      const z0 = Math.max(0, Math.ceil(uz - 0.5 - r)), z1 = Math.min(N - 1, Math.floor(uz - 0.5 + r));
+      for (let tz = z0; tz <= z1; tz++) {
+        const dz = tz + 0.5 - uz, h2 = r2 - dz * dz; if (h2 < 0) continue;
+        const h = Math.sqrt(h2), a = Math.max(0, Math.ceil(ux - 0.5 - h)), b = Math.min(N - 1, Math.floor(ux - 0.5 + h));
+        if (a <= b) gr.fill(2, tz * N + a, tz * N + b + 1);
+      }
+    }
+    // finished buildings: cache merged per-team row spans until a building finishes/dies or an age/blos mod changes
+    const bs = this.buildings, ps = this.players;
+    let bDone = 0;
+    for (let i = 0; i < bs.length; i++) if (bs[i].done) bDone++;
+    let pSig = '';
+    for (let i = 0; i < ps.length; i++) pSig += ps[i].age + ',' + (ps[i].mods ? ps[i].mods.blos : 0) + ';';
+    if (!this._tvBld || this._tvBldVer !== this._bFogVer || this._tvBldDone !== bDone || this._tvBldPSig !== pSig) {
+      this._tvBldVer = this._bFogVer; this._tvBldDone = bDone; this._tvBldPSig = pSig;
+      const tb = this._tvBld || (this._tvBld = new Map());
+      tb.clear();
+      const tmp = this._fogTmp && this._fogTmp.length === NN ? this._fogTmp : (this._fogTmp = new Uint8Array(NN));
+      for (const team of tv.keys()) {
+        tmp.fill(0);
+        let any = false;
+        for (let bi = 0; bi < bs.length; bi++) {
+          const b = bs[bi]; if (!(b.owner >= 0) || !b.done || this.teamOf(b.owner) !== team) continue;
+          const r = buildingLos(b, ps[b.owner]), r2 = r * r, bx = b.x, bz = b.z;
+          const z0 = Math.max(0, Math.ceil(bz - 0.5 - r)), z1 = Math.min(N - 1, Math.floor(bz - 0.5 + r));
+          for (let tz = z0; tz <= z1; tz++) {
+            const dz = tz + 0.5 - bz, h2 = r2 - dz * dz; if (h2 < 0) continue;
+            const h = Math.sqrt(h2), a = Math.max(0, Math.ceil(bx - 0.5 - h)), bb = Math.min(N - 1, Math.floor(bx - 0.5 + h));
+            if (a <= bb) { tmp.fill(1, tz * N + a, tz * N + bb + 1); any = true; }
+          }
+        }
+        if (!any) { tb.set(team, null); continue; }
+        const spans = [];
+        let i = 0;
+        while (i < NN) {
+          if (!tmp[i]) { i++; continue; }
+          const s = i;
+          while (i < NN && tmp[i]) i++;
+          spans.push(s, i);
+        }
+        tb.set(team, Int32Array.from(spans));
+      }
+    }
+    for (const [team, gr] of tv) {
+      const sp = this._tvBld.get(team);
+      if (sp) for (let i = 0; i < sp.length; i += 2) gr.fill(2, sp[i], sp[i + 1]);
+    }
     // explored map: a building is shown to a team only once it has been in that team's sight (bit per team in b.sv)
-    if (this.cfg.fog === 'explored') for (const b of this.buildings) {
+    if (this.cfg.fog === 'explored') for (const b of bs) {
       if (b.dead) continue; const i = Math.min(N - 1, Math.max(0, b.z | 0)) * N + Math.min(N - 1, Math.max(0, b.x | 0));
       for (const [team, g] of tv) if (g[i] === 2) b.sv = (b.sv | 0) | (1 << (team & 31));
     }
@@ -2956,6 +3056,7 @@ export class Game {
     const tiles = s.map.tilesR ? rleDecode(s.map.tilesR, N * N) : Uint8Array.from(s.map.tiles);
     const blocked = s.map.blockedR ? rleDecode(s.map.blockedR, N * N) : Uint8Array.from(s.map.blocked);
     this.map = makeMap(N, heights, tiles, blocked);
+    this._bAt = new Array(N * N).fill(null); this._bFogVer++;
     this.time = s.time; this.tick = s.tick | 0; this.nextId = s.nextId; this.rs = s.rs; this.over = s.over || null;
     this.history = Array.isArray(s.hist) ? s.hist : []; this._histEnd = !!this.over;
     this.fog = s.fogR ? rleDecode(s.fogR, N * N) : Uint8Array.from(s.fog); this._fogSeed = this.fog.slice();
@@ -2970,7 +3071,7 @@ export class Game {
         if (Array.isArray(e.queue)) for (const q of e.queue) if (q && q.grp) q.grp = join(q.grp);
       }
       if (e.kind === 'unit') { if (!e.queue) e.queue = []; this.units.push(e); }
-      else if (e.kind === 'building') this.buildings.push(e);
+      else if (e.kind === 'building') { this.buildings.push(e); if (!e.dead) this._bAtSet(e, e); }
       else if (PREY[e.type]) { if (e.type === 'deer' && e.alive === undefined) e.alive = !e.hunted && e.amount >= e.maxAmount; this.deer.push(e); }   // (saves from before hunting: an untouched deer is alive)
       else this.resAt[(e.z | 0) * N + (e.x | 0)] = e.id;
     }

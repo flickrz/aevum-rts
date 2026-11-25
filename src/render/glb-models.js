@@ -227,24 +227,23 @@ function prepMask(geo, map) {
     const im = map.image, w = im.width, h = im.height;
     const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
     const cx = cv.getContext('2d', { willReadFrequently: true }); cx.drawImage(im, 0, 0);
-    const data = cx.getImageData(0, 0, w, h), px = data.data, blue = new Uint8Array(w * h);
-    let any = 0;
+    const data = cx.getImageData(0, 0, w, h), px = data.data, idx = [];
     // (the exact test runs only where blue is the brightest channel and bright enough: most pixels skip it)
     for (let i = 0, j = 0; i < w * h; i++, j += 4) {
       const R = px[j], G = px[j + 1], B = px[j + 2];
       if (B < R || B < G || B <= 114) continue;
-      if (isTeamBlue(R / 255, G / 255, B / 255)) { blue[i] = 1; any++; }
+      if (isTeamBlue(R / 255, G / 255, B / 255)) idx.push(i);
     }
-    r.img = data; r.blue = any ? blue : null; r.map = map; r.flipY = map.flipY;
+    r.img = data; r.blue = idx.length ? Int32Array.from(idx) : null; r.map = map; r.flipY = map.flipY;
   } else if (geo.attributes.color) {
     // untextured (vertex-coloured) file: mark the team-colour vertices
-    const c = geo.attributes.color.array, blue = new Uint8Array(c.length / 3), s = new THREE.Color();
-    for (let i = 0; i < blue.length; i++) {
+    const c = geo.attributes.color.array, n = c.length / 3, idx = [], s = new THREE.Color();
+    for (let i = 0; i < n; i++) {
       s.setRGB(c[i * 3], c[i * 3 + 1], c[i * 3 + 2], THREE.LinearSRGBColorSpace);
       const f = (x) => x <= .0031308 ? x * 12.92 : 1.055 * Math.pow(x, 1 / 2.4) - .055;
-      blue[i] = isTeamBlue(f(s.r), f(s.g), f(s.b)) ? 1 : 0;
+      if (isTeamBlue(f(s.r), f(s.g), f(s.b))) idx.push(i);
     }
-    r.blue = blue;
+    r.blue = idx.length ? Int32Array.from(idx) : null;
   }
   return r;
 }
@@ -269,20 +268,49 @@ function prepPump() {
 // (drawn to the canvas through a 1x1 viewport right before the frame's own render, which clears it: the same light
 // set-up as the game scene, so the same shader program is compiled; one shared material, never disposed, keeps it)
 const WARM_Q = [];
+const WARMED = new Set();
+let warmCols = [];
 let warmScene = null, warmCam = null, warmStd = null;
 const _vp = new THREE.Vector4();
+function queueWarm(key, r) {
+  if (!r) return;
+  if (warmCols.length) {
+    if (r.blue) {
+      for (let i = 0; i < warmCols.length; i++) {
+        const col = warmCols[i], wk = key + '|' + col;
+        if (!WARMED.has(wk)) { WARMED.add(wk); WARM_Q.push({ key, r, col }); }
+      }
+    } else {
+      const col = warmCols[0], wk = key + '|n';
+      if (!WARMED.has(wk)) { WARMED.add(wk); WARM_Q.push({ key, r, col }); }
+    }
+  } else {
+    const wk = key + '|raw';
+    if (!WARMED.has(wk)) { WARMED.add(wk); WARM_Q.push({ key, r, col: null }); }
+  }
+}
+export function glbWarmColors(cols) {
+  warmCols = [...new Set((cols || []).map(c => c & 0xffffff))];
+  for (const [key, r] of GEO) queueWarm(key, r);
+}
 export function glbWarm(renderer) {
-  const r = WARM_Q.shift();
-  if (!r || !renderer) return;
+  const it = WARM_Q.shift();
+  if (!it || !renderer) return;
+  const r = it.r;
   if (!warmScene) {
     warmScene = new THREE.Scene(); warmCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
     const sun = new THREE.DirectionalLight(0xffffff, 1); sun.castShadow = true;
     warmScene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1), sun, sun.target);
     warmStd = new THREE.MeshStandardMaterial({ roughness: .9, metalness: 0 });
   }
-  let mat = VC_MAT;
-  if (r.img) { mat = warmStd; if (mat.map !== r.map) { mat.map = r.map; mat.needsUpdate = !mat.userData.mapped; mat.userData.mapped = true; } }
-  const m = new THREE.Mesh(r.geo, mat); m.frustumCulled = false; m.receiveShadow = true;
+  let geo = r.geo, mat = VC_MAT;
+  if (it.col != null && GEO.has(it.key)) {
+    const L = look(it.key, it.col);
+    geo = L.geo; mat = L.mat;
+  } else if (r.img) {
+    mat = warmStd; if (mat.map !== r.map) { mat.map = r.map; mat.needsUpdate = !mat.userData.mapped; mat.userData.mapped = true; }
+  }
+  const m = new THREE.Mesh(geo, mat); m.frustumCulled = false; m.receiveShadow = true;
   warmScene.add(m);
   const sh = renderer.shadowMap.autoUpdate;
   renderer.getViewport(_vp); renderer.shadowMap.autoUpdate = false;
@@ -304,7 +332,7 @@ export function loadEra(era, pre) {
   const settle = () => { if (--left > 0) return; ERA_DONE.add(era); version++; if (WANTED.has(era)) setTimeout(() => loadEra(era + 1, true), 1500); };
   for (const type of FILES[era]) {
     loadGlb(era + '/' + type + '.glb', (gltf) => prepLater(() => {
-      const fin = (r) => { if (r) { GEO.set(era + '|' + type, r); version++; WARM_Q.push(r); } settle(); };
+      const fin = (r) => { if (r) { const key = era + '|' + type; GEO.set(key, r); version++; queueWarm(key, r); } settle(); };
       try { prepare(gltf.scene, PIECE[type], era + '|' + type, fin); }
       catch (err) { console.warn('[glb] prepare failed', era, type, err); settle(); }
     }), (err) => { console.warn('[glb] load failed', era, type, err && err.message); settle(); });
@@ -337,10 +365,11 @@ function look(key, color) {
       let tex = base.map;
       if (base.blue) {
         const { width: w, height: h } = base.img, out = new ImageData(new Uint8ClampedArray(base.img.data), w, h), px = out.data;
-        const tc = new THREE.Color(color).convertLinearToSRGB();
-        for (let i = 0; i < w * h; i++) if (base.blue[i]) {
-          const l = Math.max(.55, Math.min(1.3, (px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2]) / 3 / 140));   // keep the cloth's shading
-          px[i * 4] = Math.min(255, tc.r * 255 * l); px[i * 4 + 1] = Math.min(255, tc.g * 255 * l); px[i * 4 + 2] = Math.min(255, tc.b * 255 * l);
+        const tc = new THREE.Color(color).convertLinearToSRGB(), bi = base.blue;
+        for (let idx = 0; idx < bi.length; idx++) {
+          const o = bi[idx] << 2;
+          const l = Math.max(.55, Math.min(1.3, (px[o] + px[o + 1] + px[o + 2]) / 3 / 140));   // keep the cloth's shading
+          px[o] = Math.min(255, tc.r * 255 * l); px[o + 1] = Math.min(255, tc.g * 255 * l); px[o + 2] = Math.min(255, tc.b * 255 * l);
         }
         const cv = document.createElement('canvas'); cv.width = w; cv.height = h; cv.getContext('2d').putImageData(out, 0, 0);
         tex = new THREE.CanvasTexture(cv);
@@ -355,10 +384,11 @@ function look(key, color) {
   if (!g) {
     g = base.geo.clone();
     if (base.blue && g.attributes.color) {
-      const col = g.attributes.color.array, tc = new THREE.Color(color);
-      for (let i = 0; i < base.blue.length; i++) if (base.blue[i]) {
-        const s = Math.max(.55, Math.min(1.3, (col[i * 3] + col[i * 3 + 1] + col[i * 3 + 2]) / 3 / .25));
-        col[i * 3] = tc.r * s; col[i * 3 + 1] = tc.g * s; col[i * 3 + 2] = tc.b * s;
+      const col = g.attributes.color.array, tc = new THREE.Color(color), bi = base.blue;
+      for (let idx = 0; idx < bi.length; idx++) {
+        const o = bi[idx] * 3;
+        const s = Math.max(.55, Math.min(1.3, (col[o] + col[o + 1] + col[o + 2]) / 3 / .25));
+        col[o] = tc.r * s; col[o + 1] = tc.g * s; col[o + 2] = tc.b * s;
       }
     }
     VC_GEO.set(k, g);
@@ -507,7 +537,7 @@ export function loadSea() {
           if (b.max.x - b.min.x > b.max.z - b.min.z) g.rotateY(Math.PI / 2);
           if (SEA_FLIP[name]) g.rotateY(SEA_FLIP[name]);
           g.computeVertexNormals(); g.computeBoundingBox();
-          GEO.set('s|' + name, r); version++; WARM_Q.push(r);
+          const skey = 's|' + name; GEO.set(skey, r); version++; queueWarm(skey, r);
         });
       } catch (err) { console.warn('[glb] sea prepare failed', name, err); }
     }), (err) => console.warn('[glb] sea load failed', name, err && err.message));

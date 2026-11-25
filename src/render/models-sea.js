@@ -102,8 +102,9 @@ export function seaMask(view, e, extra) {
   try {
     const game = view.game, map = game.map, N = map.size;
     if (e.type === 'dock') return 1 << dockWaterDir(map, e.tx, e.tz, e.size || 3);
-    if (view._seaFrame !== view.frame || !view._seaLinks) {
-      const L = view._seaLinks || (view._seaLinks = new Map()); L.clear(); view._seaFrame = view.frame;
+    const ver = view._linksVer != null ? view._linksVer : view.frame;
+    if (view._seaVer !== ver || !view._seaLinks) {
+      const L = view._seaLinks || (view._seaLinks = new Map()); L.clear(); view._seaVer = ver;
       const bs = game.buildings;
       if (bs) for (const b of bs) {
         if (b.dead || !RAIL_LINK[b.type]) continue;

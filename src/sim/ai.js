@@ -1131,10 +1131,11 @@ export class AIController {
       const n = Math.min(d.wallChunk - unfinished, Math.floor((freeStone() - keep - towerWait) / BUILDINGS.wall.cost.stone), todo.length);
       if (n > 0 && n >= Math.min(4, todo.length)) {
         const N = g.map.size, blk = new Set(), pick = [];
-        for (const i of todo.slice(0, n)) { const [x, z] = W.tiles[i]; blk.add(z * N + x); pick.push(i); }
-        if (!this._wallSafe(c, blk)) {   // one by one: a piece that would shut something in is dropped for good
+        for (let ti = 0; ti < n; ti++) { const i = todo[ti], [x, z] = W.tiles[i]; blk.add(z * N + x); pick.push(i); }
+        const FA = W && c.tc ? this._wallFlood(c, W.cx, W.cz, W.R, null, false, null) : null;
+        if (!this._wallSafe(c, blk, FA)) {   // one by one: a piece that would shut something in is dropped for good
           blk.clear(); pick.length = 0;
-          for (const i of todo.slice(0, n)) { const [x, z] = W.tiles[i], k = z * N + x; blk.add(k); if (this._wallSafe(c, blk)) pick.push(i); else { blk.delete(k); W.bad.push(i); W.gates.push({ t: [[x, z]], direct: true }); } }   // (a piece that would shut something in becomes a gate piece, not a hole)
+          for (let ti = 0; ti < n; ti++) { const i = todo[ti], [x, z] = W.tiles[i], k = z * N + x; blk.add(k); if (this._wallSafe(c, blk, FA)) pick.push(i); else { blk.delete(k); W.bad.push(i); W.gates.push({ t: [[x, z]], direct: true }); } }   // (a piece that would shut something in becomes a gate piece, not a hole)
         }
         if (pick.length && this._wallPlace(c, 'wall', pick.map(i => W.tiles[i]), d.wallBuilders)) return;
       }
@@ -1314,54 +1315,102 @@ export class AIController {
   // resource it works, a tile on the box's edge) would no longer be reachable
   // the tiles the town center reaches over our walkable ground in the box round a ring (radius R + 6), with the
   // tiles in blk (a set of z*N+x, or null) blocked; at(x, z) reads it
-  _wallFlood(c, cx, cz, R, blk) {
+  _wallFlood(c, cx, cz, R, blk, useB, fndPre) {
     const g = this.game, N = g.map.size, pid = this.pid, tc = c.tc;
     const x0 = Math.max(1, cx - R - 6), x1 = Math.min(N - 2, cx + R + 6), z0 = Math.max(1, cz - R - 6), z1 = Math.min(N - 2, cz + R + 6);
-    const w = x1 - x0 + 1, h = z1 - z0 + 1, seen = new Uint8Array(w * h), q = [];
+    const w = x1 - x0 + 1, h = z1 - z0 + 1, wh = w * h;
+    let seen = useB ? this._wfSeenB : this._wfSeenA;
+    if (!seen || seen.length < wh) { seen = new Uint8Array(wh); if (useB) this._wfSeenB = seen; else this._wfSeenA = seen; }
+    else seen.fill(0, 0, wh);
+    let q = this._wfQ;
+    if (!q || q.length < wh * 2) q = this._wfQ = new Int32Array(wh * 2);
+    let qh = 0, qt = 0;
     const P = g._passMap(pid);
     // (foundations block nobody until they are finished, 2026-11-14; the flood counts them as the walls they become)
-    const fnd = new Uint8Array(w * h);
-    for (const b of g.buildings) {
-      if (b.done || b.dead || g._solidV(b) !== 1 || b.tx > x1 || b.tz > z1 || b.tx + b.size <= x0 || b.tz + b.size <= z0) continue;
-      for (let j = 0; j < b.size; j++) for (let i = 0; i < b.size; i++) { const x = b.tx + i, z = b.tz + j; if (x >= x0 && x <= x1 && z >= z0 && z <= z1) fnd[(z - z0) * w + x - x0] = 1; }
-    }
-    const okc = (x, z) => x >= x0 && x <= x1 && z >= z0 && z <= z1 && P[z * N + x] === 1 && !fnd[(z - z0) * w + x - x0] && !(blk && blk.has(z * N + x));
-    if (tc) for (let x = tc.tx - 1; x <= tc.tx + tc.size; x++) for (let z = tc.tz - 1; z <= tc.tz + tc.size; z++) {
-      if (x >= tc.tx && x < tc.tx + tc.size && z >= tc.tz && z < tc.tz + tc.size) continue;
-      if (okc(x, z) && !seen[(z - z0) * w + x - x0]) { seen[(z - z0) * w + x - x0] = 1; q.push(x, z); }
-    }
-    for (let i = 0; i < q.length; i += 2) {
-      const qx = q[i], qz = q[i + 1];
-      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-        if (!dx && !dz) continue; const nx = qx + dx, nz = qz + dz;
-        if (!okc(nx, nz)) continue; const k = (nz - z0) * w + nx - x0; if (seen[k]) continue;
-        if (dx && dz && (!okc(nx, qz) || !okc(qx, nz))) continue;
-        seen[k] = 1; q.push(nx, nz);
+    let fnd = fndPre;
+    if (!fnd) {
+      fnd = this._wfFnd;
+      if (!fnd || fnd.length < wh) fnd = this._wfFnd = new Uint8Array(wh);
+      else fnd.fill(0, 0, wh);
+      const bs = g.buildings;
+      for (let bi = 0; bi < bs.length; bi++) {
+        const b = bs[bi];
+        if (b.done || b.dead || g._solidV(b) !== 1 || b.tx > x1 || b.tz > z1 || b.tx + b.size <= x0 || b.tz + b.size <= z0) continue;
+        for (let j = 0; j < b.size; j++) for (let i = 0; i < b.size; i++) { const x = b.tx + i, z = b.tz + j; if (x >= x0 && x <= x1 && z >= z0 && z <= z1) fnd[(z - z0) * w + x - x0] = 1; }
       }
     }
-    return { x0, x1, z0, z1, at: (x, z) => x >= x0 && x <= x1 && z >= z0 && z <= z1 && seen[(z - z0) * w + x - x0] === 1 };
+    if (tc) for (let x = tc.tx - 1; x <= tc.tx + tc.size; x++) for (let z = tc.tz - 1; z <= tc.tz + tc.size; z++) {
+      if (x >= tc.tx && x < tc.tx + tc.size && z >= tc.tz && z < tc.tz + tc.size) continue;
+      if (x < x0 || x > x1 || z < z0 || z > z1) continue;
+      const k = (z - z0) * w + x - x0;
+      if (!seen[k] && P[z * N + x] === 1 && !fnd[k] && !(blk && blk.has(z * N + x))) { seen[k] = 1; q[qt++] = x; q[qt++] = z; }
+    }
+    while (qh < qt) {
+      const qx = q[qh++], qz = q[qh++];
+      for (let dz = -1; dz <= 1; dz++) {
+        const nz = qz + dz;
+        if (nz < z0 || nz > z1) continue;
+        const row = (nz - z0) * w, gRow = nz * N;
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dz) continue;
+          const nx = qx + dx;
+          if (nx < x0 || nx > x1) continue;
+          const k = row + nx - x0;
+          if (seen[k] || fnd[k]) continue;
+          const gk = gRow + nx;
+          if (P[gk] !== 1 || (blk && blk.has(gk))) continue;
+          if (dx && dz) {
+            const k1 = (qz - z0) * w + nx - x0, gk1 = qz * N + nx;
+            if (fnd[k1] || P[gk1] !== 1 || (blk && blk.has(gk1))) continue;
+            const k2 = row + qx - x0, gk2 = gRow + qx;
+            if (fnd[k2] || P[gk2] !== 1 || (blk && blk.has(gk2))) continue;
+          }
+          seen[k] = 1; q[qt++] = nx; q[qt++] = nz;
+        }
+      }
+    }
+    return { x0, x1, z0, z1, w, seen, fnd, at: (x, z) => x >= x0 && x <= x1 && z >= z0 && z <= z1 && seen[(z - z0) * w + x - x0] === 1 };
   }
-  _wallSafe(c, blk) {
+  _wallSafe(c, blk, faPre) {
     const g = this.game, W = this.wall, N = g.map.size;
     if (!W || !c.tc) return false;
-    const FA = this._wallFlood(c, W.cx, W.cz, W.R, null), FB = this._wallFlood(c, W.cx, W.cz, W.R, blk);
-    const { x0, x1, z0, z1 } = FA, A = FA, B = FB;
-    const at = (S, x, z) => S.at(x, z);
-    const near = (S, bx, bz, s) => { for (let x = bx - 1; x <= bx + s; x++) for (let z = bz - 1; z <= bz + s; z++) if (at(S, x, z)) return true; return false; };
-    for (const b of c.blds) {
+    const FA = faPre || this._wallFlood(c, W.cx, W.cz, W.R, null, false, null);
+    const FB = this._wallFlood(c, W.cx, W.cz, W.R, blk, true, FA.fnd);
+    const { x0, x1, z0, z1, w } = FA, sA = FA.seen, sB = FB.seen;
+    const atA = (x, z) => x >= x0 && x <= x1 && z >= z0 && z <= z1 && sA[(z - z0) * w + x - x0] === 1;
+    const atB = (x, z) => x >= x0 && x <= x1 && z >= z0 && z <= z1 && sB[(z - z0) * w + x - x0] === 1;
+    const near = (s, bx, bz, sz) => {
+      const lx0 = bx - 1 < x0 ? x0 : bx - 1, lx1 = bx + sz > x1 ? x1 : bx + sz;
+      const lz0 = bz - 1 < z0 ? z0 : bz - 1, lz1 = bz + sz > z1 ? z1 : bz + sz;
+      for (let z = lz0; z <= lz1; z++) {
+        const row = (z - z0) * w - x0;
+        for (let x = lx0; x <= lx1; x++) if (s[row + x] === 1) return true;
+      }
+      return false;
+    };
+    for (let i = 0; i < c.blds.length; i++) {
+      const b = c.blds[i];
       if (b.dead || b.type === 'wall' || b.type === 'gate' || b.type === 'rail') continue;
       if (b.tx + b.size < x0 || b.tx > x1 || b.tz + b.size < z0 || b.tz > z1) continue;
-      if (near(A, b.tx, b.tz, b.size) && !near(B, b.tx, b.tz, b.size)) return false;
+      if (near(sA, b.tx, b.tz, b.size) && !near(sB, b.tx, b.tz, b.size)) return false;
     }
-    for (const v of c.vills) {
-      const vx = v.x | 0, vz = v.z | 0;
-      if (!blk.has(vz * N + vx) && at(A, vx, vz) && !at(B, vx, vz)) return false;
+    for (let i = 0; i < c.vills.length; i++) {
+      const v = c.vills[i], vx = v.x | 0, vz = v.z | 0;
+      if (!blk.has(vz * N + vx) && atA(vx, vz) && !atB(vx, vz)) return false;
       let o = v.order; if (o && o.type === 'return' && o.resume) o = o.resume;
       const t = o && o.targetId != null ? g.getEntity(o.targetId) : null;
-      if (t && !t.dead && t.kind === 'resource') { const rx = t.x | 0, rz = t.z | 0; if (near(A, rx, rz, 1) && !near(B, rx, rz, 1)) return false; }
+      if (t && !t.dead && t.kind === 'resource') { const rx = t.x | 0, rz = t.z | 0; if (near(sA, rx, rz, 1) && !near(sB, rx, rz, 1)) return false; }
     }
-    for (let x = x0; x <= x1; x++) for (const z of [z0, z1]) if (at(A, x, z) && !at(B, x, z)) return false;
-    for (let z = z0; z <= z1; z++) for (const x of [x0, x1]) if (at(A, x, z) && !at(B, x, z)) return false;
+    const r0 = 0, r1 = (z1 - z0) * w;
+    for (let x = 0; x < w; x++) {
+      if (sA[r0 + x] === 1 && sB[r0 + x] !== 1) return false;
+      if (sA[r1 + x] === 1 && sB[r1 + x] !== 1) return false;
+    }
+    for (let z = 0, lim = z1 - z0; z <= lim; z++) {
+      const row = z * w;
+      if (sA[row] === 1 && sB[row] !== 1) return false;
+      if (sA[row + w - 1] === 1 && sB[row + w - 1] !== 1) return false;
+    }
     return true;
   }
   // a new building must not stand on the planned ring (or a corner tower's spot) nor in front of / behind a gate
