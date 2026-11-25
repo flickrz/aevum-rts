@@ -30,6 +30,8 @@ export function feedbackRows(docs) {
   return (docs || []).map((d) => {
     const f = d.fields || {};
     const r = { id: lineId(d.name), at: String(val(f.at) || val(f.t) || ''), room: String(val(f.room) || ''), name: String(val(f.name) || '?'), text: String(val(f.text) || '') };
+    // (2026-11-25) the writer's account id, from the document path users/{uid}/...: unlike the chosen name it cannot be faked
+    const um = /\/users\/([^/]+)\//.exec(String(d.name || '')); if (um) r.uid = um[1];
     if (val(f.shot) === true && shotPath(d.name)) r.shot = true;
     return r;
   }).filter((r) => /@claude/i.test(r.text)).map((r) => ({ ...r, text: r.text.replace(/@claude/ig, '').trim() }))
