@@ -219,10 +219,10 @@ function renderBody(body, history, prof) {
     const tb = h('table', 'st prof-h2h');
     const hr = h('tr'); for (const x of [tr('Oyuncu'), tr('Karşı karşıya'), tr('Aynı takımda'), tr('Son maç')]) hr.append(h('th', '', x)); tb.append(hr);
     for (const o of hh) {
-      const tr = h('tr');
+      const row = h('tr');   // (2026-11-25: was named tr, which hid the tr() translator and broke this table: "Maç geçmişi okunamadı")
       const wl = (b) => (b.games ? tr('{0} G - {1} M', b.wins, b.losses) + (b.abandoned ? ' · ' + tr('{0} yarıda', b.abandoned) : '') : '-');
-      tr.append(h('td', 'prof-pn', pn(o.name)), h('td', o.vs.wins > o.vs.losses ? 'prof-w' : o.vs.losses > o.vs.wins ? 'prof-l' : '', wl(o.vs)), h('td', '', wl(o.with)), h('td', 'prof-dim', fmtDate(o.lastAt)));
-      tb.append(tr);
+      row.append(h('td', 'prof-pn', pn(o.name)), h('td', o.vs.wins > o.vs.losses ? 'prof-w' : o.vs.losses > o.vs.wins ? 'prof-l' : '', wl(o.vs)), h('td', '', wl(o.with)), h('td', 'prof-dim', fmtDate(o.lastAt)));
+      tb.append(row);
     }
     const wrap = h('div', 'prof-scroll'); wrap.append(tb); body.append(wrap);
   }
