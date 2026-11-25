@@ -1183,10 +1183,19 @@ export class NetSession {
         this._noteStall(this.turn);
       }
       const miss = this._missing(this.turn);
-      // late packets usually still arrive (latency); ask for a re-send only after 200 ms of waiting
-      if (miss.length && now - this.stallSince >= 200 && now - this._lastNeed >= 300) {
+      // late packets usually still arrive (latency); on reliable WS scale wait/repeat with RTT to avoid spurious resend storms
+      let needWait = 200, needEvery = 300;
+      if (this.t && this.t.reliable && up) {
+        let worst = 0;
+        for (const p of miss) { const r = this._rttOf(p); if (r != null && r > worst) worst = r; }
+        if (!worst) for (const p of this.humans) if (p !== this.me) { const r = this._rttOf(p); if (r != null && r > worst) worst = r; }
+        const rtt = worst || 200;
+        needWait = Math.max(400, Math.round(rtt * 1.25));
+        needEvery = Math.max(400, Math.round(rtt));
+      }
+      if (miss.length && now - this.stallSince >= needWait && now - this._lastNeed >= needEvery) {
         this._lastNeed = now;
-        const need = []; for (let t = this.turn; t <= this.turn + DELAY; t++) need.push(t);
+        const need = []; for (let t = this.turn; t <= this.turn + this.delay; t++) need.push(t);
         const relay = now - this.stallSince > 2000 ? 1 : 0;
         if (relay) for (const p of miss) this._relayAsk.set(p, now);
         this._send('sync', { need, of: miss, relay });
