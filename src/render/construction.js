@@ -102,11 +102,20 @@ function rootPos(o) {
   let per = _rootPos.get(o.geometry); if (!per) _rootPos.set(o.geometry, per = new Map());
   let a = per.get(key);
   if (!a) {
-    a = new Float32Array(pa.count * 3); const v = new THREE.Vector3();
-    for (let i = 0; i < pa.count; i++) { v.fromBufferAttribute(pa, i).applyMatrix4(o.matrix); a[i * 3] = v.x; a[i * 3 + 1] = v.y; a[i * 3 + 2] = v.z; }
+    const cnt = pa.count, e = o.matrix.elements;
+    const e0 = e[0], e1 = e[1], e2 = e[2], e3 = e[3], e4 = e[4], e5 = e[5], e6 = e[6], e7 = e[7],
+      e8 = e[8], e9 = e[9], e10 = e[10], e11 = e[11], e12 = e[12], e13 = e[13], e14 = e[14], e15 = e[15];
+    a = new Float32Array(cnt * 3);
+    for (let i = 0; i < cnt; i++) {
+      const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i);
+      const w = 1 / (e3 * x + e7 * y + e11 * z + e15);
+      a[i * 3] = (e0 * x + e4 * y + e8 * z + e12) * w;
+      a[i * 3 + 1] = (e1 * x + e5 * y + e9 * z + e13) * w;
+      a[i * 3 + 2] = (e2 * x + e6 * y + e10 * z + e14) * w;
+    }
     per.set(key, a);
   }
-  return { getX: (i) => a[i * 3], getY: (i) => a[i * 3 + 1], getZ: (i) => a[i * 3 + 2] };
+  return { arr: a, getX: (i) => a[i * 3], getY: (i) => a[i * 3 + 1], getZ: (i) => a[i * 3 + 2] };
 }
 function rootBox(o) {
   if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
@@ -115,21 +124,48 @@ function rootBox(o) {
   return _box;
 }
 // highest surface of a baked group (root-space triangles) above each sample point (x,z pairs); -1e9 = no hit
-function topsAt(grp, pts) {
+function topsAt(grp, pts, gridN, hs) {
   const n = pts.length >> 1, out = new Float32Array(n).fill(-1e9);
+  const hasGrid = gridN > 0 && hs > 0, inv = hasGrid ? gridN / (hs * 2) : 0;
   grp.traverse(o => {
     if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
-    const pa = rootPos(o), ix = o.geometry.index, cnt = ix ? ix.count : o.geometry.attributes.position.count;
+    const pa = rootPos(o), arr = pa.arr, ix = o.geometry.index, cnt = ix ? ix.count : o.geometry.attributes.position.count;
     for (let t = 0; t + 2 < cnt; t += 3) {
       const a = ix ? ix.getX(t) : t, b = ix ? ix.getX(t + 1) : t + 1, c = ix ? ix.getX(t + 2) : t + 2;
-      const x0 = pa.getX(a), z0 = pa.getZ(a), x1 = pa.getX(b), z1 = pa.getZ(b), x2 = pa.getX(c), z2 = pa.getZ(c);
+      let x0, y0, z0, x1, y1, z1, x2, y2, z2;
+      if (arr) {
+        const a3 = a * 3, b3 = b * 3, c3 = c * 3;
+        x0 = arr[a3]; y0 = arr[a3 + 1]; z0 = arr[a3 + 2];
+        x1 = arr[b3]; y1 = arr[b3 + 1]; z1 = arr[b3 + 2];
+        x2 = arr[c3]; y2 = arr[c3 + 1]; z2 = arr[c3 + 2];
+      } else {
+        x0 = pa.getX(a); y0 = pa.getY(a); z0 = pa.getZ(a);
+        x1 = pa.getX(b); y1 = pa.getY(b); z1 = pa.getZ(b);
+        x2 = pa.getX(c); y2 = pa.getY(c); z2 = pa.getZ(c);
+      }
       const d = (z1 - z2) * (x0 - x2) + (x2 - x1) * (z0 - z2); if (Math.abs(d) < 1e-7) continue;
       const mnx = Math.min(x0, x1, x2), mxx = Math.max(x0, x1, x2), mnz = Math.min(z0, z1, z2), mxz = Math.max(z0, z1, z2);
-      for (let k = 0; k < n; k++) {
-        const px = pts[k * 2], pz = pts[k * 2 + 1]; if (px < mnx || px > mxx || pz < mnz || pz > mxz) continue;
-        const l0 = ((z1 - z2) * (px - x2) + (x2 - x1) * (pz - z2)) / d, l1 = ((z2 - z0) * (px - x2) + (x0 - x2) * (pz - z2)) / d, l2 = 1 - l0 - l1;
-        if (l0 < -1e-4 || l1 < -1e-4 || l2 < -1e-4) continue;
-        const y = l0 * pa.getY(a) + l1 * pa.getY(b) + l2 * pa.getY(c); if (y > out[k]) out[k] = y;
+      if (hasGrid) {
+        const i0 = Math.max(0, Math.floor((mnx + hs) * inv - .5)), i1 = Math.min(gridN - 1, Math.ceil((mxx + hs) * inv - .5));
+        const j0 = Math.max(0, Math.floor((mnz + hs) * inv - .5)), j1 = Math.min(gridN - 1, Math.ceil((mxz + hs) * inv - .5));
+        if (i0 > i1 || j0 > j1) continue;
+        for (let j = j0; j <= j1; j++) {
+          const row = j * gridN;
+          for (let i = i0; i <= i1; i++) {
+            const k = row + i, px = pts[k * 2], pz = pts[k * 2 + 1];
+            if (px < mnx || px > mxx || pz < mnz || pz > mxz) continue;
+            const l0 = ((z1 - z2) * (px - x2) + (x2 - x1) * (pz - z2)) / d, l1 = ((z2 - z0) * (px - x2) + (x0 - x2) * (pz - z2)) / d, l2 = 1 - l0 - l1;
+            if (l0 < -1e-4 || l1 < -1e-4 || l2 < -1e-4) continue;
+            const y = l0 * y0 + l1 * y1 + l2 * y2; if (y > out[k]) out[k] = y;
+          }
+        }
+      } else {
+        for (let k = 0; k < n; k++) {
+          const px = pts[k * 2], pz = pts[k * 2 + 1]; if (px < mnx || px > mxx || pz < mnz || pz > mxz) continue;
+          const l0 = ((z1 - z2) * (px - x2) + (x2 - x1) * (pz - z2)) / d, l1 = ((z2 - z0) * (px - x2) + (x0 - x2) * (pz - z2)) / d, l2 = 1 - l0 - l1;
+          if (l0 < -1e-4 || l1 < -1e-4 || l2 < -1e-4) continue;
+          const y = l0 * y0 + l1 * y1 + l2 * y2; if (y > out[k]) out[k] = y;
+        }
       }
     }
   });
@@ -154,7 +190,7 @@ function mainRoofScan(U, hs, bTop, rMax) {
   try {
     const pts = []; const N = 9;
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) pts.push(-hs + (i + .5) * hs * 2 / N, -hs + (j + .5) * hs * 2 / N);
-    const bt = topsAt(U.body, pts), rt = topsAt(U.roof, pts), bh = [], rhs = [];
+    const bt = topsAt(U.body, pts, N, hs), rt = topsAt(U.roof, pts, N, hs), bh = [], rhs = [];
     for (let k = 0; k < bt.length; k++) { if (bt[k] > .1) bh.push(bt[k]); }
     let base = pct(bh, .5); if (base == null || base > bTop) base = bTop;
     for (let k = 0; k < rt.length; k++) if (rt[k] > base - .05) rhs.push(rt[k]);

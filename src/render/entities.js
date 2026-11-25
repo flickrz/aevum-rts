@@ -5,7 +5,7 @@ import { BUILDINGS } from '../data.js';
 import { updateConstruction, disposeConstruction, updateRepair } from './construction.js';
 import { SEA_BUILD, SEA_UNITS, makeSeaUnit, seaAnimUnit, seaAnimBuilding, makeFish, seaAnimFish, seaMask, pastureSheepK, dockY, SEA_K } from './models-sea.js';
 import { StaticBatches } from './static-batch.js';
-import { loadGlbModels, loadEra, glbVersion, hasGlb, glbPlanned, eraSettled, addGlbBuilding, addGlbPiece, loadCrop, cropGeo, loadSea, hasSea, dockFile, addSeaModel } from './glb-models.js';
+import { loadGlbModels, loadEra, glbVersion, hasGlb, glbPlanned, eraSettled, addGlbBuilding, addGlbPiece, loadCrop, cropGeo, loadSea, hasSea, dockFile, addSeaModel, glbWarmColors } from './glb-models.js';
 
 const PI = Math.PI;
 
@@ -1848,7 +1848,18 @@ function releaseUnit(key) {
   if (c) c.refs--;   // unreferenced entries are disposed lazily (a new unit of the same kind often follows soon)
 }
 
-const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
+const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _tmpB = new THREE.Box3();
+function groupMaxY(grp) {
+  let my = -Infinity;
+  if (!grp) return my;
+  grp.traverse(o => {
+    if (!o.isMesh || !o.geometry) return;
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    _tmpB.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld);
+    if (_tmpB.max.y > my) my = _tmpB.max.y;
+  });
+  return my;
+}
 const _hits = [];
 const _fm = new THREE.Matrix4(), _fs = new THREE.Sphere(new THREE.Vector3(), 2.5);
 const PROJ = {
@@ -1936,7 +1947,7 @@ export class EntityView {
       }
     }
     this._subs = [];
-    try { loadGlbModels(); loadCrop(); } catch (err) { /* procedural models only */ }
+    try { loadGlbModels(); loadCrop(); if (game && game.players) glbWarmColors(game.players.map(p => this._color(p.id))); } catch (err) { /* procedural models only */ }
     try {
       const ev = game && game.events;
       if (ev && typeof ev.on === 'function') {
@@ -2063,7 +2074,7 @@ export class EntityView {
       for (const sh of U.live.userData.sheep) { sh.scale.setScalar(shk); sh.traverse(o => { if (o.isMesh) sl.push({ o, sh, k: o.geometry.uuid + o.material.uuid }); }); }
     }
     if (e.type === 'farm') v.h = .5;
-    else { v.root.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(U.body); const b2 = new THREE.Box3().setFromObject(U.roof); v.h = Math.max(.6, b.max.y, isFinite(b2.max.y) ? b2.max.y : 0); }
+    else { v.root.updateMatrixWorld(true); const b1 = groupMaxY(U.body), b2 = groupMaxY(U.roof); v.h = Math.max(.6, isFinite(b1) ? b1 : 0, isFinite(b2) ? b2 : 0); }
     { const k = v.k || 1; this._proxy(v, (e.size || 1) * .85 / k, Math.max(.4, v.h * .6) / k, (e.size || 1) * .85 / k); }
     // (owner 2026-11-25: the dock was hard to select) the dock model is drawn ~3x its plot and pushed out over the water:
     // its click box is the model's own box, riding on the model
