@@ -886,7 +886,7 @@ function wArmBase(p, m, d, a0, a1, w, h, y, off) {
 }
 const wArm = wArmBase;
 // walls are WALL_T thicker across the line than their design (owner 2026-11-14), stubs and gates follow
-const WALL_T = 1.4;
+const WALL_T = 1.6;   // (2026-11-25: 1.4 -> 1.6 with the taller walls)
 // era look: palisade (ages 0-1), stone (2), brick + plaster (3), brick + iron (4).
 // pal: stake/stake2 log woods, plank walkway, foot stone footing, band team-colour lashing. Masonry: body/base(plinth)/
 // cap(walkway)/line(courses)/acc(blocks of another shade, nAcc of them)/mer(merlons)/merCap/band/quoin(corner strips)/
@@ -1022,7 +1022,7 @@ function wallScaf(c, scaf) {
 
 // walls and gates: WALL_H x taller on their 1-tile footprint (same thickness everywhere, so straight runs, corners and
 // junctions still meet flush); towers grow through their 3x3 footprint instead (data.js BUILDING_SIZES)
-const WALL_H = 2.5;
+const WALL_H = 3.6;   // (owner 2026-11-25: 2.5 -> 3.6, walls had fallen behind the grown buildings)
 function bigScale(type, mask) {
   if (type === 'wall') return [1, WALL_H, 1];   // (thickness is built into wall() itself so corners still meet flush)
   if (type !== 'gate') return null;
