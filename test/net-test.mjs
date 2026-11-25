@@ -1,6 +1,6 @@
 // Aevum - lockstep network test: in-memory lossy hub, 3 NetSessions (host + 2 joiners), real Game sims.
 // Run: node test/net-test.mjs
-import { NetSession, STEP, TURN_TICKS, desyncVerdict } from '../src/net/session.js';
+import { NetSession, STEP, TURN_TICKS, DELAY, desyncVerdict } from '../src/net/session.js';
 import * as G from '../src/sim/game.js';
 
 let failed = 0;
@@ -205,7 +205,7 @@ let worst = null; for (const [k, v] of hub.sent) if (v === maxRate) worst = k;
 let tot = 0, cnt = 0; for (const v of hub.sent.values()) { tot += v; cnt++; }
 console.log('  average ' + (tot / cnt).toFixed(1) + ' msgs/s per client; worst second', worst, [...hub.byTopic].filter(([k]) => k.startsWith(worst + ':')).map(([k, v]) => k.split(':').pop() + '=' + v).join(' '));
 if (false) console.log('  worst second', worst, [...hub.byTopic].filter(([k]) => k.startsWith(worst + ':')).map(([k, v]) => k.split(':').pop() + '=' + v).join(' '));
-ok(tot / cnt <= 12 && maxRate <= 16, 'message budget: avg <= 12/s, peak ' + maxRate + ' msgs/s per client (peak = catch-up second after a stall)');
+ok(tot / cnt <= 18 && maxRate <= 26, 'message budget: avg <= 18/s, peak ' + maxRate + ' msgs/s per client (peak = catch-up second after a stall)');
 ok(hub.maxSize <= 3500, 'largest message ' + hub.maxSize + ' bytes (<= 3500)');
 
 console.log('Disconnect');
@@ -241,6 +241,159 @@ ok(JSON.stringify(S[0]._log) === JSON.stringify(S[1]._log) && games[0].hash() ==
   const t1 = desyncVerdict(1, 0xbb, new Map([[0, 0xaa]]), 0), t0v = desyncVerdict(0, 0xaa, new Map([[1, 0xbb]]), 0);
   ok(t1.diverged && !t0v.diverged && t1.odd.join() === '1' && t0v.odd.join() === '1', 'vote: a 1-1 tie goes to the authority, both sides agree');
 }
+
+console.log('Protocol optimizations (reliable no-redundancy, micro-stall, no 90ms brake, RTT need-wait, 2-client lossy)');
+{
+  const mkCapTransport = (id, reliable) => {
+    const sent = [];
+    const t = {
+      id, reliable, up: true, kind: reliable ? 'ws' : 'poll',
+      async connect() {}, send(topic, data) { sent.push({ topic, data: JSON.parse(JSON.stringify(data)), at: cNow }); },
+      on() {}, peers() { return []; }, onPeers() {}, onStatus() {}, close() {},
+    };
+    return { t, sent };
+  };
+  let cNow = 1000;
+  const miniClock = { now: () => cNow, setInterval: () => 1, clearInterval: () => {} };
+  const stubGame = { tick: 0, update() { this.tick++; }, execCommand() {}, hash: () => 1 };
+  const start2 = { settings: { seed: 7 }, seed: 7, slots: [{ kind: 'human', peer: 'p0', name: 'A', team: 1 }, { kind: 'human', peer: 'p1', name: 'B', team: 2 }] };
+
+  // 1. Reliable transport sends no redundancy (`r` omitted on single-turn flush); unreliable keeps `r`
+  {
+    cNow = 1000;
+    const rel = mkCapTransport('p0', true), unrel = mkCapTransport('p0', false);
+    const sr = new NetSession(rel.t, { clock: miniClock, name: 'A' });
+    const su = new NetSession(unrel.t, { clock: miniClock, name: 'A' });
+    sr._beginGame(start2); su._beginGame(start2);
+    // pre-fill peer 1 turns so neither stalls
+    for (let t = 0; t < 20; t++) { sr.recv.get(1).set(t, []); su.recv.get(1).set(t, []); }
+    for (let k = 0; k < 6; k++) {
+      cNow += 67;
+      sr.advance(stubGame, STEP * TURN_TICKS);
+      su.advance(stubGame, STEP * TURN_TICKS);
+    }
+    const rTurns = rel.sent.filter(m => m.topic === 'turn').slice(1);   // skip turn-0 initial multi-turn fill
+    const uTurns = unrel.sent.filter(m => m.topic === 'turn').slice(1);
+    ok(rTurns.length >= 4 && rTurns.every(m => m.data.r === undefined), 'reliable transport sends no turn repeat window (r omitted on ' + rTurns.length + ' steady turns)');
+    ok(uTurns.length >= 4 && uTurns.every(m => Array.isArray(m.data.r) && m.data.r.length > 0), 'unreliable transport keeps turn repeat window (r present)');
+    sr.close(); su.close();
+  }
+
+  // 2. No micro-stall delay inflation (< 60 ms waits are ignored; >= 60 ms waits count once per stall)
+  {
+    cNow = 10000;
+    const { t } = mkCapTransport('p0', true);
+    const s = new NetSession(t, { clock: miniClock, name: 'A' });
+    s._beginGame(start2);
+    s.rtt.set(1, [120, 120, 120, 120, 120]);
+    s._updateDelay();
+    const d0 = s.delay;
+    // advance through DELAY-1 so turn === DELAY needs peer 1's list
+    for (let k = 0; k < DELAY; k++) { cNow += 67; s.advance(stubGame, STEP * TURN_TICKS); }
+    // simulate 8 short micro-stalls of 30 ms (< 60 ms)
+    for (let i = 0; i < 8; i++) {
+      const needT = s.turn;
+      s.advance(stubGame, STEP * TURN_TICKS);      // enters stall at cNow
+      cNow += 30;
+      s.advance(stubGame, 0.03);                   // still < 60 ms
+      s.recv.get(1).set(needT, []);                // peer's packet arrives at +30 ms
+      cNow += 5;
+      s.advance(stubGame, STEP * TURN_TICKS);      // resumes and advances
+      s._updateDelay();
+    }
+    const microStalls = (s.stalls.get(1) || []).length;
+    ok(microStalls === 0 && s.delay === d0, 'micro-stalls (< 60 ms) do not inflate delay (counted ' + microStalls + ', delay ' + d0 + ' -> ' + s.delay + ')');
+    // now a real 80 ms stall (>= 60 ms) must count exactly once across multiple ticks/pumps
+    s.advance(stubGame, STEP * TURN_TICKS);
+    cNow += 80;
+    s.advance(stubGame, 0.04);
+    s._pump();
+    cNow += 40;
+    s.advance(stubGame, 0.04);
+    const realStalls = (s.stalls.get(1) || []).length;
+    ok(realStalls === 1, 'a real stall (>= 60 ms) is counted once per stall period (' + realStalls + ')');
+    s.close();
+  }
+
+  // 3. The 90 ms send brake is gone: a turn scheduled 67 ms after the previous send flushes immediately
+  {
+    cNow = 20000;
+    const { t, sent } = mkCapTransport('p0', true);
+    const s = new NetSession(t, { clock: miniClock, name: 'A' });
+    s._beginGame(start2);
+    for (let tt = 0; tt < 15; tt++) s.recv.get(1).set(tt, []);
+    s.advance(stubGame, STEP * TURN_TICKS);   // flushes initial turns at t=20000
+    const before = sent.filter(m => m.topic === 'turn').length;
+    cNow += 67;                               // 67 ms < old 90 ms brake
+    s.advance(stubGame, STEP * TURN_TICKS);
+    const after = sent.filter(m => m.topic === 'turn').length;
+    ok(after === before + 1 && s._unsent === 0, '90 ms send brake is gone: turn flushed immediately after 67 ms (sent ' + before + ' -> ' + after + ')');
+    s.close();
+  }
+
+  // 4. need-wait scales with RTT on reliable transport and requests up to turn + delay
+  {
+    cNow = 30000;
+    const rel = mkCapTransport('p0', true);
+    const s = new NetSession(rel.t, { clock: miniClock, name: 'A' });
+    s._beginGame(start2);
+    s.rtt.set(1, [600, 600, 600, 600, 600]);   // 600 ms RTT -> needWait = 750 ms
+    s._updateDelay();
+    for (let k = 0; k < DELAY; k++) { cNow += 67; s.advance(stubGame, STEP * TURN_TICKS); }
+    s.advance(stubGame, STEP * TURN_TICKS);    // stalls on turn DELAY at cNow
+    const stallAt = cNow;
+    const needs = () => rel.sent.filter(m => m.topic === 'sync' && Array.isArray(m.data.need));
+    cNow = stallAt + 250; s._pump();           // past old 200 ms, below 750 ms
+    const at250 = needs().length;
+    cNow = stallAt + 700; s._pump();           // still below 750 ms
+    const at700 = needs().length;
+    cNow = stallAt + 760; s._pump();           // past 750 ms -> must send need
+    const sentNeeds = needs();
+    const maxReq = sentNeeds.length ? Math.max(...sentNeeds[0].data.need) : -1;
+    ok(at250 === 0 && at700 === 0 && sentNeeds.length === 1, 'need-wait scales with RTT on reliable transport (600 ms RTT -> 0 at 250/700 ms, 1 at 760 ms)');
+    ok(maxReq === s.turn + s.delay && s.delay > DELAY, 'need request covers full adaptive delay window (' + s.turn + '..' + maxReq + ', delay=' + s.delay + ')');
+    s.close();
+  }
+
+  // 5. Two clients over a lossy MemTransport (15% loss, 0-250 ms latency) stay in sync with identical hashes
+  {
+    const waitFor = async (fn, ms = 8000) => { const end = clock.t + ms; while (clock.t < end && !fn()) { clock.t += 20; hub.deliver(); clock.fire(); await flush(); } };
+    const T2 = ['lossy0', 'lossy1'].map(id => new MemTransport(id));
+    const S2 = T2.map((t, i) => new NetSession(t, { clock: makeClock(t.id), name: ['Derya', 'Eren'][i] }));
+    const cfgs2 = [null, null], desync2 = [0, 0];
+    S2.forEach((s, i) => { s.on('start', d => { cfgs2[i] = d.cfg; }); s.on('desync', () => { desync2[i]++; }); });
+    const code2 = await S2[0].host();
+    let j2 = false; S2[1].join(code2).then(() => { j2 = true; });
+    await waitFor(() => j2 && S2[0].state.slots.filter(s => s.kind === 'human').length === 2);
+    S2[1].setTeam(2); S2[1].setReady(true);
+    S2[0].setSettings({ mapSize: 160, seed: 91919, fog: 'explored' });
+    await waitFor(() => S2[0].canStart().ok);
+    await S2[0].start();
+    await waitFor(() => cfgs2.every(Boolean));
+    const G2 = cfgs2.map(c => new G.Game(Object.assign({}, c)));
+    const sr2 = mulberry(9191);
+    let iss2 = 0;
+    await runFor(30000, 1000 / 60, dt => {
+      for (let i = 0; i < 2; i++) {
+        if (sr2() < 0.04) {
+          const me = cfgs2[i].me, mine = G2[i].units.filter(u => u.owner === me && !u.dead);
+          if (mine.length) { S2[i].issue('cmdMove', [mine.slice(0, 4).map(u => u.id), 30 + sr2() * 90, 30 + sr2() * 90, false]); iss2++; }
+        }
+        S2[i].advance(G2[i], dt);
+      }
+    });
+    const tgt2 = Math.max(S2[0].tick, S2[1].tick) + 20 * TURN_TICKS;
+    for (let k = 0; k < 10000 && (S2[0].tick < tgt2 || S2[1].tick < tgt2); k++) {
+      clock.t += 5; hub.deliver(); clock.fire();
+      for (let i = 0; i < 2; i++) if (S2[i].tick < tgt2) { S2[i]._acc = 0; S2[i]._slow = false; S2[i].advance(G2[i], STEP); }
+      await flush();
+    }
+    ok(S2[0].tick === tgt2 && S2[1].tick === tgt2 && G2[0].hash() === G2[1].hash() && desync2[0] === 0 && desync2[1] === 0 && S2[0].execCount === iss2 && S2[1].execCount === iss2,
+      '2-client lossy MemTransport stays in sync with identical hashes (' + G2[0].hash() + ' / ' + G2[1].hash() + ', ' + iss2 + ' cmds, tick ' + tgt2 + ')');
+    S2.forEach(s => s.close());
+  }
+}
+
 console.log(`(${((Date.now() - t0) / 1000).toFixed(1)} s wall time)`);
 S.forEach(s => s.close());
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll net checks passed.');

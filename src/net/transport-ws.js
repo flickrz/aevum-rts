@@ -14,8 +14,7 @@ function wsUrl(base, path) {
   return (loc && loc.protocol === 'https:' ? 'wss://' : 'ws://') + (loc ? loc.host : 'localhost') + base + path;
 }
 
-// do WebSockets reach the relay from here (some proxies / tunnels do not pass them)? -> true / false within `ms`
-export function wsProbe(base = '', ms = 2500) {
+function wsProbeOnce(base, ms) {
   return new Promise((resolve) => {
     if (typeof WebSocket === 'undefined') { resolve(false); return; }
     let ws, done = false;
@@ -28,6 +27,15 @@ export function wsProbe(base = '', ms = 2500) {
   });
 }
 
+// do WebSockets reach the relay from here (some proxies / tunnels do not pass them)? -> true / false within `ms`
+export async function wsProbe(base = '', ms = 5000, retries = 1) {
+  for (let i = 0; i <= retries; i++) {
+    if (await wsProbeOnce(base, ms)) return true;
+    if (i < retries) await new Promise(r => setTimeout(r, 300));
+  }
+  return false;
+}
+
 export class WSTransport {
   constructor(base = '', opts = {}) {
     this.base = base;
@@ -37,13 +45,15 @@ export class WSTransport {
     this.room = null;
     this.up = false;
     this.kind = 'ws';
+    this.reliable = true;
+    this.srvRtt = null;
     this._h = new Map();
     this._peerFns = [];
     this._statusFns = [];
     this._peers = new Set();
     this.ws = null;
     this._run = false;
-    this._fails = 0; this._retryT = null; this._wd = null; this._lastMsg = 0;
+    this._fails = 0; this._retryT = null; this._wd = null; this._pingT = null; this._lastMsg = 0;
   }
 
   connect(roomCode) {
@@ -58,7 +68,14 @@ export class WSTransport {
         // a socket that stopped delivering (even heartbeats) is dead: re-open it
         if (this._run && this.ws && Date.now() - this._lastMsg > 40000) { this._setUp(false); this._open(); }
       }, 5000);
+      this._pingT = setInterval(() => this._sendPing(), 2000);
     });
+  }
+
+  _sendPing() {
+    const ws = this.ws;
+    if (!this._run || !ws || ws.readyState !== 1) return;
+    try { ws.send(JSON.stringify({ type: 'ping', t: Date.now() })); } catch { /* ignore */ }
   }
 
   async _open() {
@@ -75,6 +92,13 @@ export class WSTransport {
       let m; try { m = JSON.parse(ev.data); } catch { return; }
       if (!m || typeof m !== 'object') return;
       if (m.type === 'hb') { this._setUp(true); return; }
+      if (m.type === 'pong') {
+        if (typeof m.t === 'number') {
+          const rtt = Date.now() - m.t;
+          if (rtt >= 0 && rtt < 30000) this.srvRtt = this.srvRtt == null ? rtt : this.srvRtt * 0.7 + rtt * 0.3;
+        }
+        return;
+      }
       if (m.type === 'err') { if (m.code === 401 || m.code === 403) this._fails = Math.max(this._fails, 2); return; }   // (next open fetches a fresh ticket)
       this._noteIds(m);
       if (m.type === 'dup') { this._dupStop(); this.ws = null; try { ws.close(); } catch { /* ignore */ } return; }
@@ -85,6 +109,7 @@ export class WSTransport {
         if (joined.length || left.length) this._emitPeers(joined, left);
         this._fails = 0;
         this._setUp(true);
+        this._sendPing();
         if (this._onHello) this._onHello();
       } else if (m.type === 'joined') {
         if (m.peer !== this.id && !this._peers.has(m.peer)) { this._peers.add(m.peer); this._emitPeers([m.peer], []); }
@@ -138,6 +163,7 @@ export class WSTransport {
   close() {
     this._run = false;
     clearTimeout(this._retryT); this._retryT = null; clearInterval(this._wd); this._wd = null;
+    clearInterval(this._pingT); this._pingT = null;
     const ws = this.ws; this.ws = null;
     try { ws && ws.close(); } catch { /* ignore */ }
     this.room = null; this._peers.clear(); this.up = false;

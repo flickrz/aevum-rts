@@ -73,7 +73,7 @@ try {
   const secs = RUN / 1000;
   console.log('  ticks ' + A.tick + ' / ' + B.tick + ' in ' + secs + ' s; stalls ' + stalls.join('/') + '; delay ' + A.delay + '/' + B.delay + ' turns; ping ' + JSON.stringify(A.netInfo()) + ' ' + JSON.stringify(B.netInfo()));
   ok(A.netInfo().ping > 300 && B.netInfo().ping > 300, 'pings measure the ~400 ms round trip between the players');
-  { const need = (s, p) => Math.ceil((s._rttOf(p) / 2 + 70) / 100);   // (one-way trip + margin, in 100 ms turns)
+  { const need = (s, p) => Math.ceil((s._rttOf(p) / 2 + 35) / (STEP * TURN_TICKS * 1000));   // (one-way trip + margin, in turns)
     ok(A.delay >= need(A, started[1].me) && B.delay >= need(B, started[0].me), 'input delay covers the measured round trip (' + A.delay + ', ' + B.delay + ' turns)'); }
   ok(Math.min(A.tick, B.tick) > secs * 30 * 0.85, 'both ran close to real time (' + A.tick + ', ' + B.tick + ' of ' + secs * 30 + ' ticks)');
   ok(stalls[0] + stalls[1] <= 3, 'smooth: at most 3 visible stalls in ' + secs + ' s (' + stalls.join('+') + ')');

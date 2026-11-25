@@ -50,6 +50,7 @@ export class PollTransport {
     this.id = rid();
     this.room = null;
     this.up = false;              // relay reachable (last poll answered)
+    this.kind = 'poll';
     this._h = new Map();
     this._peerFns = [];
     this._statusFns = [];

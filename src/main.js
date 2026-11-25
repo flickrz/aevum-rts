@@ -20,7 +20,7 @@ import { tr, loc } from './i18n.js';
 
 const STEP = 1 / 30;
 const AUTOSAVE_EVERY = 90;
-const MP_AUTOSAVE_TICKS = 2 * 60 * 30;
+const MP_AUTOSAVE_TICKS = 5 * 60 * 30;
 const ABANDON_MIN_S = 30;                 // a game left before the end is recorded as 'abandoned' only after 30 game seconds
 // update notices from the server (GET /mp/notice every 20 s, src/net/notice.js): started at once, so the first build id
 // it sees (this tab's baseline) is the one these files came from
@@ -37,7 +37,7 @@ const cloudSafe = (fn) => { try { if (cloud) fn(cloud); } catch (err) { console.
 function gameIdOf(game) { const c = game && histCtx.get(game); return c ? (c.mode === 'mp' ? 'mp-' + c.match : c.matchId) : null; }
 // match history context per Game (UI/session metadata, never part of the simulation):
 // {mode 'sp'|'mp', matchId (sp) | match (mp code), uids [uid|null per player], done}
-const histCtx = new WeakMap();   // multiplayer: the host requests a lockstep autosave every 2 game minutes
+const histCtx = new WeakMap();   // multiplayer: the host requests a lockstep autosave every 5 game minutes
 // commands that travel over the network in a multiplayer match (same list as Game.execCommand's whitelist)
 const NET_METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload',
   'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol', 'cmdRotateBuilding'];
@@ -116,6 +116,7 @@ const app = {
     Object.defineProperty(game, 'reveal', { configurable: false, get: () => !!(game.over || (game.players[game.me] && game.players[game.me].defeated)), set: () => {} });
     wrapNetCommands(game);
     app.net = session;
+    cloudSafe(c => c.stopInbox());   // pause /mp/inbox long-poll while in a match (resumed on close / leave / menu)
     attachGame(game, false);
     histCtx.set(game, {
       mode: 'mp', match: session.match || session.code || 'MP',
@@ -169,6 +170,7 @@ const app = {
       offs.forEach(f => { try { f(); } catch (err) { /* ignore */ } });
       if (app.net === session) {
         app.net = null;
+        cloudSafe(c => c.startInbox());
         if (app.game === game) app.paused = true;   // the match cannot continue without the lockstep
         status('closed', ev && ev.reason === 'dropped' ? tr('Bağlantı koptu, oyundan düşürüldün.') : tr('Çok oyunculu oturum kapandı.'), ev);
       }
@@ -189,6 +191,7 @@ const app = {
   leaveMultiplayer() {
     const s = app.net; app.net = null;
     if (s) { try { s.close(); } catch (err) { console.warn(err); } }
+    cloudSafe(c => c.startInbox());
     app.toMenu();
   },
 
@@ -281,6 +284,7 @@ const app = {
 
   toMenu() {
     if (app.net) { const s = app.net; app.net = null; try { s.close(); } catch (err) { console.warn(err); } }
+    cloudSafe(c => c.startInbox());
     app.cancelPlacement();
     startDemo();
     app.ui.showMenu();
