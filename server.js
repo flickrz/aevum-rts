@@ -272,7 +272,49 @@
   // the identity of a request: ticket in the X-Aevum-Ticket header or the tk query parameter (EventSource cannot set headers)
   function identOf(req, url) {
     const tk = req.headers['x-aevum-ticket'] || url.searchParams.get('tk') || '';
-    return tk ? ID.checkTicket(String(tk)) : null;
+    const id = tk ? ID.checkTicket(String(tk)) : null;
+    if (id && isBanned(id.fb, req)) { noteBannedIp(id.fb, req); return null; }   // (banned: as if it had no ticket)
+    return id;
+  }
+  // ---- bans (owner 2026-11-25, srv/admin.mjs BANS): a banned account gets no relay ticket and no relay access; the
+  // addresses it is seen on are refused for IP_BAN_MS too (a new account from the same place). Loaded at start and every
+  // 5 minutes; a ban from the admin page applies at once and drops the account's live connections.
+  const BANNED = new Map();      // fb -> ban row {fb, name, ips: []}
+  const BANNED_IPS = new Map();  // ip -> refused until (ms)
+  function banApply(items) {
+    BANNED.clear(); BANNED_IPS.clear();
+    for (const b of items) {
+      BANNED.set(b.fb, b);
+      const t0 = Date.parse(b.ipAt || b.at) || Date.now();
+      for (const ip of b.ips || []) if (t0 + ADM.IP_BAN_MS > Date.now()) BANNED_IPS.set(ip, t0 + ADM.IP_BAN_MS);
+    }
+  }
+  function banLoad() { if (ADMIN) ADMIN.bans().then((r) => banApply(r.items), (e) => logErr('bans', e)); }
+  banLoad(); setInterval(banLoad, 5 * 60000).unref();
+  function isBanned(fb, req) {
+    if (fb && OWNERS.has(fb)) return false;
+    if (fb && BANNED.has(fb)) return true;
+    const ip = req ? clientIp(req) : '';
+    const until = ip && ip !== '?' ? BANNED_IPS.get(ip) : 0;
+    return !!(until && until > Date.now());
+  }
+  // a banned account seen on a new address: remember it (memory now, the ban doc in the background)
+  function noteBannedIp(fb, req) {
+    const b = BANNED.get(fb), ip = req ? clientIp(req) : '';
+    if (!b || !ip || ip === '?' || (b.ips || []).includes(ip)) return;
+    b.ips = [ip, ...(b.ips || [])].slice(0, ADM.IP_MAX);
+    BANNED_IPS.set(ip, Date.now() + ADM.IP_BAN_MS);
+    if (ADMIN) ADMIN.banIps(fb, [ip], b.ips).catch((e) => logErr('ban ip', e));
+  }
+  // drops every live relay connection of an account (just banned)
+  function kickBanned(fb) {
+    for (const [room, r] of [...rooms]) for (const [p, o] of [...r]) {
+      if (!o.ident || o.ident.fb !== fb) continue;
+      if (o.ip) { const b = BANNED.get(fb); if (b && !(b.ips || []).includes(o.ip)) { b.ips = [o.ip, ...(b.ips || [])].slice(0, ADM.IP_MAX); BANNED_IPS.set(o.ip, Date.now() + ADM.IP_BAN_MS); if (ADMIN) ADMIN.banIps(fb, [o.ip], b.ips).catch((e) => logErr('ban ip', e)); } }
+      tell(o, { type: 'err', code: 403, banned: true });
+      removePeer(room, p, o);
+      try { o.dead = true; o.end(); } catch { /* ignore */ }
+    }
   }
   function makeSsePeer(room, peer, res) {
     return {
@@ -468,6 +510,7 @@
     if (roomRefused(room, peer, ident)) { bye({ type: 'err', code: 429 }); return; }
     const pe = makeWsPeer(socket);
     pe.ident = ident;
+    pe.ip = clientIp(req);
     addPeer(room, peer, pe, getRoom(room));
     const hb = setInterval(() => pe.send({ type: 'hb' }), 15000);
     wsReader(socket, (text) => {
@@ -502,6 +545,26 @@
       return;
     }
     // Fikirler: GET /mp/admin/ideas (one list query), POST /mp/admin/ideas {op: add|update|delete, ...} (srv/admin.mjs)
+    // Banlar: GET /mp/admin/bans, POST /mp/admin/bans {op: ban, name|fb, reason} | {op: unban, fb} (srv/admin.mjs)
+    if (url.pathname === '/mp/admin/bans') {
+      if (!ADMIN) { req.resume(); reply(res, 503, J, '{"error":"Veri deposu yok (AEVUM_SA)."}'); return; }
+      if (req.method === 'GET') { ADMIN.bans().then((r) => { banApply(r.items); reply(res, 200, J, JSON.stringify(r)); }, (e) => fail(e, 'bans')); return; }
+      if (req.method !== 'POST') { req.resume(); reply(res, 405, J, '{"error":"method"}'); return; }
+      readBody(req, 4096, (err, buf) => {
+        if (err) { reply(res, err === 'big' ? 413 : 400, J, '{"error":"bad body"}'); return; }
+        let body; try { body = JSON.parse(buf.toString('utf8') || '{}'); } catch { reply(res, 400, J, '{"error":"bad json"}'); return; }
+        const d = ADM.cleanBan(body);
+        if (d.error) { reply(res, 400, J, JSON.stringify({ error: d.error })); return; }
+        if (d.fb && OWNERS.has(d.fb)) { reply(res, 400, J, '{"error":"Kendini banlayamazsın."}'); return; }
+        ADMIN.ban(d).then((r) => {
+          if (r.unbanned) { const b = BANNED.get(r.fb); BANNED.delete(r.fb); for (const ip of (b && b.ips) || []) BANNED_IPS.delete(ip); }
+          else if (OWNERS.has(r.fb)) { ADMIN.ban({ op: 'unban', fb: r.fb }).catch(() => {}); reply(res, 400, J, '{"error":"Kendini banlayamazsın."}'); return; }
+          else { BANNED.set(r.fb, Object.assign({ ips: [] }, r)); kickBanned(r.fb); }
+          reply(res, 200, J, JSON.stringify(Object.assign({ ok: true }, r)));
+        }, (e) => { if (e && e.status === 404) reply(res, 404, J, JSON.stringify({ error: e.message })); else fail(e, 'ban'); });
+      }, 5000);
+      return;
+    }
     if (url.pathname === '/mp/admin/ideas') {
       if (!ADMIN) { req.resume(); reply(res, 503, J, '{"error":"Veri deposu yok (AEVUM_SA)."}'); return; }
       if (req.method === 'GET') { ADMIN.ideas().then((r) => reply(res, 200, J, JSON.stringify(r)), (e) => fail(e, 'ideas')); return; }
@@ -702,7 +765,10 @@
         if (!body || typeof body !== 'object') { reply(res, 400, J, '{"error":"bad json"}'); return; }
         const fail = (code, msg) => reply(res, code, J, JSON.stringify({ error: msg }));
         if (url.pathname === '/mp/auth') {
-          ID.auth(body).then((r) => reply(res, 200, J, JSON.stringify(Object.assign(r, OWNERS.has(r.ident.fb) ? { owner: true } : {}))), (e) => {
+          ID.auth(body).then((r) => {
+            if (isBanned(r.ident.fb, req)) { noteBannedIp(r.ident.fb, req); fail(403, 'Bu hesap oyundan uzaklaştırıldı.'); return; }
+            reply(res, 200, J, JSON.stringify(Object.assign(r, OWNERS.has(r.ident.fb) ? { owner: true } : {})));
+          }, (e) => {
             if (e instanceof IDM.IdentityError) { fail(e.status, e.message); return; }
             logErr('auth', e); fail(503, 'Kimlik şu an doğrulanamadı.');
           });

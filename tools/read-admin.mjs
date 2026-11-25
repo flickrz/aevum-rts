@@ -4,6 +4,8 @@
 //   node tools/read-admin.mjs --done <id> ["note"]
 //   node tools/read-admin.mjs --approve <id> ["note"]   /   --reject <id> ["note"]
 //   node tools/read-admin.mjs --shot <id> [out.jpg]   (the screenshot attached to that line)
+//   node tools/read-admin.mjs --bans | --ban <name|account id> ["reason"] | --unban <account id>   (the live server
+//     reloads bans every 5 minutes; a ban from the /admin page applies at once)
 //   node tools/read-admin.mjs --ideas [--json]          (the owner's Fikirler list, pinned first)
 //   node tools/read-admin.mjs --idea "title" ["body"]   (adds a pinned idea)
 // Needs the Firebase service-account key: $AEVUM_SA (a file path), else ~/.aevum/firebase-sa.json. Never commit it.
@@ -11,7 +13,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { createSaStore } from '../srv/firestore-sa.mjs';
-import { createAdmin, cleanDecision, cleanIdea, STATUSES } from '../srv/admin.mjs';
+import { createAdmin, cleanDecision, cleanIdea, cleanBan, STATUSES } from '../srv/admin.mjs';
 
 const argv = process.argv.slice(2);
 const arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
@@ -22,7 +24,17 @@ if (process.platform !== 'win32' && (fs.statSync(saPath).mode & 0o077)) { consol
 const sa = JSON.parse(fs.readFileSync(saPath, 'utf8'));
 const admin = createAdmin({ store: createSaStore({ sa }) });
 
-if (argv.includes('--idea')) {
+if (argv.includes('--bans')) {
+  const items = (await admin.bans()).items;
+  for (const x of items) console.log(`${x.fb}  ${x.at}  ${x.name || '?'}${x.reason ? '  (' + x.reason + ')' : ''}${x.ips.length ? '  ips: ' + x.ips.length : ''}`);
+  console.log(items.length + ' banned');
+} else if (argv.includes('--ban') || argv.includes('--unban')) {
+  const un = argv.includes('--unban'), f = un ? '--unban' : '--ban', who = arg(f) || '', reason = argv[argv.indexOf(f) + 2] || '';
+  const d = cleanBan(un ? { op: 'unban', fb: who } : (/^[A-Za-z0-9]{20,128}$/.test(who) ? { op: 'ban', fb: who, reason } : { op: 'ban', name: who, reason }));
+  if (d.error) { console.error(d.error); process.exit(1); }
+  const r = await admin.ban(d);
+  console.log(r.unbanned ? r.fb + ' -> unbanned' : r.fb + ' -> banned' + (r.name ? ' (' + r.name + ')' : ''));
+} else if (argv.includes('--idea')) {
   const i = argv.indexOf('--idea'), body = argv[i + 2];
   const d = cleanIdea({ op: 'add', title: argv[i + 1] || '', body: body != null ? body : '', pinned: true });
   if (d.error) { console.error(d.error); process.exit(1); }

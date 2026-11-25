@@ -6,6 +6,7 @@
 // claude.ai panel used (aevum-admin/sync.mjs), so imported decisions match.
 // The store: createSaStore (srv/firestore-sa.mjs) on the server, createMemoryAdminStore in the tests.
 import crypto from 'node:crypto';
+import { nameKey } from './identity.mjs';
 
 export const STATUSES = ['new', 'approved', 'rejected', 'done'];
 export const NOTE_MAX = 500;
@@ -127,6 +128,40 @@ const ideaFields = (o) => {
   return f;
 };
 
+// ---- Banlar (owner 2026-11-25: "banlama sistemi, acil"): adminBans/{fb} {fb, name, reason, at}. fb is the
+// verified Firebase account id (the relay ticket's fb, the users/{fb}/... path): a player can change the name he shows,
+// not this. The game server keeps the set in memory (loaded at start, refreshed every few minutes, updated at once on a
+// ban from this page) and refuses /mp/auth and relay tickets of a banned account, and drops its live connections.
+export const BANS = 'adminBans';
+export const BAN_FB_RE = /^[A-Za-z0-9]{10,128}$/;
+export const REASON_MAX = 300;
+export function banRows(docs) {
+  return (docs || []).map((d) => {
+    const fb = String(d.name || '').split('/').pop(), f = d.fields || {};
+    if (!BAN_FB_RE.test(fb)) return null;
+    const ips = String(val(f.ips) || '').split(',').map((x) => x.trim()).filter(Boolean);
+    return { fb, name: String(val(f.name) || ''), reason: String(val(f.reason) || ''), at: String(val(f.at) || ''), ips, ipAt: String(val(f.ipAt) || '') };
+  }).filter(Boolean).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+}
+// a ban request -> {op:'ban', fb?, name?, reason} | {op:'unban', fb} | {error}   (ban by account id or by user name)
+export function cleanBan(b) {
+  if (!b || typeof b !== 'object') return { error: 'bad json' };
+  if (b.op === 'unban') return BAN_FB_RE.test(String(b.fb || '')) ? { op: 'unban', fb: String(b.fb) } : { error: 'bad fb' };
+  if (b.op !== 'ban') return { error: 'bad op' };
+  const reason = typeof b.reason === 'string' ? clean1(b.reason).slice(0, REASON_MAX) : '';
+  if (b.fb !== undefined && b.fb !== '') { if (!BAN_FB_RE.test(String(b.fb))) return { error: 'bad fb' }; return { op: 'ban', fb: String(b.fb), reason }; }
+  const name = typeof b.name === 'string' ? clean1(b.name).slice(0, 40) : '';
+  if (!name) return { error: 'İsim ya da hesap kimliği gerekli.' };
+  return { op: 'ban', name, reason };
+}
+// names/{key} of a user name: srv/identity.mjs nameKey (the same folding as src/cloud/sync.js)
+export const banNameKey = (name) => nameKey(name);
+// (IP bans, owner 2026-11-25: "ipden de banla") the addresses a banned account was seen on are kept on its ban doc
+// (ips: comma list) and refused for IP_BAN_MS, so a new account from the same place cannot just join again. Kept short:
+// mobile and home addresses are shared and change.
+export const IP_BAN_MS = 30 * 24 * 3600 * 1000;
+export const IP_MAX = 20;
+
 // store: {query(collectionId, opts), count(collectionId), patch(docPath, fields), remove(docPath)}
 // ttlMs: how long one Firestore read of the lines is reused (keeps reads cheap: the page may be reloaded often; a
 // decision made here updates the cache at once). The decisions are read once (they are written here) and again only
@@ -199,6 +234,28 @@ export function createAdmin({ store, now = () => Date.now(), ttlMs = 10 * 60000,
       const doc = await store.doc(IDEAS + '/' + d.id);
       return doc ? ideaRows([doc])[0] : Object.assign({ id: d.id }, ch);
     },
+    // the addresses a banned account was seen on (merged into its ban doc, newest kept, at most IP_MAX)
+    async banIps(fb, ips, had = []) {
+      const all = [...new Set([...ips, ...had])].slice(0, IP_MAX);
+      await store.patch(BANS + '/' + fb, { ips: { stringValue: all.join(',') }, ipAt: { stringValue: new Date(now()).toISOString() } });
+      return all;
+    },
+    // Banlar: one list query
+    async bans() { return { items: banRows(await store.query(BANS)) }; },
+    // d: a cleanBan result -> {fb, name, reason, at} | {fb, unbanned: true}. A ban by name looks the account up in names/.
+    async ban(d) {
+      if (d.op === 'unban') { await store.remove(BANS + '/' + d.fb); return { fb: d.fb, unbanned: true }; }
+      let fb = d.fb, name = d.name || '';
+      if (!fb) {
+        const doc = await store.doc('names/' + banNameKey(name));
+        const u = doc && doc.fields ? val(doc.fields.uid) : null;
+        if (typeof u !== 'string' || !BAN_FB_RE.test(u)) { const e = new Error('Bu isimde bir hesap bulunamadı: ' + name); e.status = 404; throw e; }
+        fb = u;
+      }
+      const o = { fb, name, reason: d.reason || '', at: new Date(now()).toISOString() };
+      await store.patch(BANS + '/' + fb, { fb: { stringValue: fb }, name: { stringValue: o.name }, reason: { stringValue: o.reason }, at: { stringValue: o.at } });
+      return o;
+    },
     // the number of accounts (profiles), counted at most every countTtlMs
     async accounts() {
       if (accounts != null && now() - accountsT < countTtlMs) return accounts;
@@ -219,6 +276,8 @@ export function createMemoryAdminStore(seed = {}) {
   const ideas = new Map();   // id -> fields
   for (const d of Array.isArray(seed.ideas) ? seed.ideas : []) ideas.set(String(d.name).split('/').pop(), d.fields || {});
   calls.remove = 0;
+  const bans = new Map();   // fb -> fields
+  const names = new Map(Object.entries(seed.names || {}));   // name key -> fb
   const ideaDoc = (id) => ({ name: 'projects/x/databases/(default)/documents/' + IDEAS + '/' + id, fields: ideas.get(id) });
   return {
     calls,
@@ -226,17 +285,19 @@ export function createMemoryAdminStore(seed = {}) {
       calls.query++;
       if (collectionId === FEEDBACK_COLLECTION || collectionId === 'chatlog') return chat;
       if (collectionId === IDEAS) return [...ideas.keys()].map(ideaDoc);
+      if (collectionId === BANS) return [...bans].map(([fb, fields]) => ({ name: 'projects/x/databases/(default)/documents/' + BANS + '/' + fb, fields }));
       if (collectionId === COLLECTION) return [...dec].map(([id, fields]) => ({ name: 'projects/x/databases/(default)/documents/' + COLLECTION + '/' + id, fields }));
       return [];
     },
-    async doc(docPath) { calls.doc++; if (docPath.startsWith(IDEAS + '/')) { const id = docPath.split('/').pop(); return ideas.has(id) ? ideaDoc(id) : null; } return shots.has(docPath) ? { name: docPath, fields: { img: { stringValue: shots.get(docPath) } } } : null; },
+    async doc(docPath) { calls.doc++; if (docPath.startsWith('names/')) { const fb = names.get(docPath.slice(6)); return fb ? { name: docPath, fields: { uid: { stringValue: fb } } } : null; } if (docPath.startsWith(IDEAS + '/')) { const id = docPath.split('/').pop(); return ideas.has(id) ? ideaDoc(id) : null; } return shots.has(docPath) ? { name: docPath, fields: { img: { stringValue: shots.get(docPath) } } } : null; },
     async count() { calls.count++; return Number(seed.accounts) || 0; },
     async patch(docPath, fields) {
       calls.patch++;
       const id = docPath.split('/').pop();
       if (docPath.startsWith(IDEAS + '/')) { ideas.set(id, Object.assign({}, ideas.get(id) || {}, fields)); return; }
+      if (docPath.startsWith(BANS + '/')) { bans.set(id, Object.assign({}, bans.get(id) || {}, fields)); return; }
       dec.set(id, Object.assign({}, dec.get(id) || {}, fields));
     },
-    async remove(docPath) { calls.remove++; ideas.delete(docPath.split('/').pop()); },
+    async remove(docPath) { calls.remove++; const id = docPath.split('/').pop(); if (docPath.startsWith(BANS + '/')) bans.delete(id); else ideas.delete(id); },
   };
 }

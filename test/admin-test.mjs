@@ -156,7 +156,7 @@ function startServer(port, env) {
 }
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aevum-admin-'));
 const seedFile = path.join(tmp, 'seed.json');
-fs.writeFileSync(seedFile, JSON.stringify({ chat: CHAT, decisions: [], accounts: 42 }));
+fs.writeFileSync(seedFile, JSON.stringify({ chat: CHAT, decisions: [], accounts: 42, names: { apollon: 'bannedplayer1' } }));
 const port = 6600 + Math.floor(Math.random() * 300);
 const base = 'http://127.0.0.1:' + port;
 const srv = await startServer(port, { AEVUM_NO_AUTH: '1', AEVUM_SA: '', AEVUM_OWNERS: 'devowner1', AEVUM_ADMIN_FAKE: seedFile });
@@ -230,6 +230,25 @@ try {
   ok((await post('/mp/admin/ideas', OWN, { op: 'delete', id: il[0].id })).status === 200 && (await (await get('/mp/admin/ideas', OWN)).json()).items.length === 1, 'ideas: delete over POST');
   ok((await fetch(base + '/mp/admin/ideas', { method: 'PUT', headers: { 'X-Aevum-Ticket': OWN } })).status === 405, 'ideas: other methods -> 405');
   ok(html.includes('Fikirler') && html.includes('Fikre al'), 'page: has the Fikirler block and the Fikre al button');
+  // Banlar (last: a ban also bans the address, and every local test client shares 127.0.0.1)
+  const BP = (await auth('bannedplayer1', 'c'.repeat(32), 'Apollon')).ticket;
+  ok(!!BP, 'bans: the player has a ticket before the ban');
+  ok((await get('/mp/admin/bans', PL)).status === 403 && (await post('/mp/admin/bans', PL, { op: 'ban', name: 'x' })).status === 403 && (await get('/mp/admin/bans')).status === 401, 'bans: owner only');
+  ok((await post('/mp/admin/bans', OWN, { op: 'ban', fb: 'devowner1' })).status === 400, 'bans: the owner cannot ban himself');
+  ok((await post('/mp/admin/bans', OWN, { op: 'ban', name: 'nobodyhere' })).status === 404, 'bans: an unknown name -> 404');
+  r = await post('/mp/admin/bans', OWN, { op: 'ban', name: 'APOLLON', reason: 'test' });
+  j = await r.json();
+  ok(r.status === 200 && j.fb === 'bannedplayer1' && j.reason === 'test', 'bans: ban by user name (any case) finds the account');
+  ok((await (await get('/mp/admin/bans', OWN)).json()).items.some((x) => x.fb === 'bannedplayer1'), 'bans: GET lists it');
+  ok((await fetch(base + '/mp/auth', { method: 'POST', body: JSON.stringify({ dev: { fb: 'bannedplayer1', uid: 'c'.repeat(32), name: 'Apollon', av: 'crown' } }) })).status === 403, 'bans: /mp/auth refuses the banned account');
+  ok((await post('/mp/tp/start', BP, { mode: 'sp' })).status === 401, 'bans: his old ticket no longer works (any route that needs one)');
+  ok((await fetch(base + '/mp/auth', { method: 'POST', body: JSON.stringify({ dev: { fb: 'freshaccount9', uid: 'd'.repeat(32), name: 'Yeni', av: 'crown' } }) })).status === 403, 'bans: a new account from his address is refused too (IP ban)');
+  ok((await get('/mp/admin/bans', OWN)).status === 200, 'bans: the owner is never IP banned');
+  ok((await (await get('/mp/admin/bans', OWN)).json()).items.find((x) => x.fb === 'bannedplayer1').ips.length >= 1, 'bans: the address is kept on the ban');
+  r = await post('/mp/admin/bans', OWN, { op: 'unban', fb: 'bannedplayer1' });
+  ok(r.status === 200 && (await r.json()).unbanned, 'bans: unban');
+  ok((await fetch(base + '/mp/auth', { method: 'POST', body: JSON.stringify({ dev: { fb: 'bannedplayer1', uid: 'c'.repeat(32), name: 'Apollon', av: 'crown' } }) })).status === 200, 'bans: after the unban he (and his address) can play again');
+  ok(html.includes('Banlar') && html.includes('Banla'), 'page: has the Banlar block');
   ok((await get('/mp/admin/other', OWN)).status === 404, 'admin: unknown path -> 404');
   ok((await fetch(base + '/mp/admin/feedback', { method: 'DELETE', headers: { 'X-Aevum-Ticket': OWN } })).status === 405, 'admin: other methods -> 405');
 } finally {

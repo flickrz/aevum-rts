@@ -105,6 +105,15 @@ details.panel[open] > summary { margin-bottom: 12px; }
     </form>
     <div class="list" id="idlist"><div class="empty">Fikirler yükleniyor…</div></div>
   </details>
+  <details class="panel" id="bans" hidden>
+    <summary><h2>Banlar</h2><span class="sync" id="ban-n"></span></summary>
+    <form class="idform" id="banform">
+      <input id="ban-who" maxlength="128" placeholder="Kullanıcı adı ya da hesap kimliği" aria-label="Banlanacak oyuncu" required>
+      <button type="submit" class="no">Banla</button>
+      <input id="ban-why" maxlength="300" placeholder="Sebep (isteğe bağlı)" aria-label="Ban sebebi">
+    </form>
+    <div class="list" id="banlist"><div class="empty">Banlar yükleniyor…</div></div>
+  </details>
   <section class="panel" id="fb" aria-labelledby="fb-h" hidden>
     <h2 id="fb-h">@claude mesajları</h2>
     <div class="controls">
@@ -134,7 +143,7 @@ details.panel[open] > summary { margin-bottom: 12px; }
     var g = $('gate'); g.textContent = '';
     g.append(el('p', '', msg));
     var p = el('p'), a = el('a', '', 'Oyuna git ve giriş yap'); a.href = '/'; p.append(a); g.append(p);
-    g.hidden = false; $('stats').hidden = true; $('fb').hidden = true; $('ideas').hidden = true; $('sync').textContent = '';
+    g.hidden = false; $('stats').hidden = true; $('fb').hidden = true; $('ideas').hidden = true; $('bans').hidden = true; $('sync').textContent = '';
   }
   // the relay ticket: the game's stored Google session (localStorage 'aevum.auth', same origin) -> a fresh id token ->
   // POST /mp/auth. (A local test may hand one over in the address: #tk=...; the part after # never reaches a server.)
@@ -231,6 +240,11 @@ details.panel[open] > summary { margin-bottom: 12px; }
         else fk.disabled = false;
       };
       acts.append(fk);
+      if (r.uid) {
+        var bb = el('button', 'no', '🚫 Banla'); bb.type = 'button';
+        bb.onclick = async function () { if (!confirm(r.name + ' banlansın mı? Çok oyunculuya, sohbete ve lobilere giremez.')) return; bb.disabled = true; if (await banOp({ op: 'ban', fb: r.uid, reason: 'geri bildirimden: ' + (r.text || '').slice(0, 120) }, r.name)) bb.textContent = 'Banlandı'; else bb.disabled = false; };
+        acts.append(bb);
+      }
       if (r.shot) {
         // the screenshot is read only on this click (one Firestore read), then kept in r.img
         var sb = el('button', '', 'görüntü'); sb.type = 'button';
@@ -290,6 +304,42 @@ details.panel[open] > summary { margin-bottom: 12px; }
     if (await addIdea({ title: t, body: $('id-b').value })) { $('id-t').value = ''; $('id-b').value = ''; }
   });
 
+  // ---- Banlar: read once per page load, written only on the owner's clicks ----
+  var bans = [];
+  function renderBans() {
+    var list = $('banlist'); list.textContent = '';
+    $('ban-n').textContent = bans.length ? bans.length + ' banlı' : '';
+    if (!bans.length) { list.append(el('div', 'empty', 'Banlı oyuncu yok.')); return; }
+    bans.forEach(function (x) {
+      var it = el('article', 'item rejected');
+      var meta = el('div', 'meta'); meta.append(el('b', '', x.name || '(isimsiz)'), el('span', '', fmtTime(x.at)), el('span', '', 'hesap ' + x.fb.slice(0, 10) + '…'));
+      if (x.ips && x.ips.length) meta.append(el('span', '', x.ips.length + ' IP de banlı'));
+      it.append(meta, el('span', 'badge rejected', 'Banlı'));
+      if (x.reason) it.append(el('div', 'text', x.reason));
+      var acts = el('div', 'acts'), b = el('button', '', 'Banı kaldır'); b.type = 'button';
+      b.onclick = async function () { if (!confirm((x.name || x.fb) + ' için ban kaldırılsın mı?')) return; b.disabled = true; var r = await banOp({ op: 'unban', fb: x.fb }); if (r) { bans = bans.filter(function (y) { return y !== x; }); renderBans(); } else b.disabled = false; };
+      acts.append(b); it.append(acts); list.append(it);
+    });
+  }
+  async function banOp(body, name) {
+    try {
+      var r = await api('/mp/admin/bans', body);
+      if (r && !r.unbanned) { delete r.ok; if (!r.name && name) r.name = name; bans = bans.filter(function (y) { return y.fb !== r.fb; }); bans.unshift(Object.assign({ ips: [] }, r)); $('bans').open = true; renderBans(); }
+      return r;
+    } catch (e) { $('sync').textContent = 'Ban kaydedilemedi: ' + e.message; alert('Ban kaydedilemedi: ' + e.message); return null; }
+  }
+  async function loadBans() {
+    try { bans = (await api('/mp/admin/bans')).items || []; renderBans(); } catch (e) { $('banlist').textContent = ''; $('banlist').append(el('div', 'empty', 'Banlar okunamadı: ' + e.message)); }
+  }
+  $('banform').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var w = $('ban-who').value.trim(); if (!w) return;
+    var body = /^[A-Za-z0-9]{20,128}$/.test(w) ? { op: 'ban', fb: w } : { op: 'ban', name: w };
+    body.reason = $('ban-why').value.trim();
+    if (!confirm(w + ' banlansın mı? Çok oyunculuya, sohbete ve lobilere giremez; bağlandığı IP adresleri de 30 gün banlanır.')) return;
+    if (await banOp(body)) { $('ban-who').value = ''; $('ban-why').value = ''; }
+  });
+
   async function loadAll(fresh) {
     $('list').textContent = ''; $('list').append(el('div', 'empty', 'Mesajlar yükleniyor…'));
     var st = api('/mp/admin/stats').then(renderStats, function (e) { $('sync').textContent = 'İstatistik okunamadı: ' + e.message; });
@@ -313,10 +363,11 @@ details.panel[open] > summary { margin-bottom: 12px; }
     if (!t || !t.ticket) { gate('Giriş yapılmamış. Önce oyunda Google hesabınla giriş yap, sonra bu sayfayı yenile.'); return; }
     if (!t.owner) { gate('Bu sayfa yalnızca oyunun sahibi içindir.'); return; }
     ticket = t.ticket;
-    $('stats').hidden = false; $('fb').hidden = false; $('ideas').hidden = false;
+    $('stats').hidden = false; $('fb').hidden = false; $('ideas').hidden = false; $('bans').hidden = false;
     try { $('ideas').open = localStorage.getItem('aevum.admin.ideas') !== '0'; } catch (e) { $('ideas').open = true; }
     $('ideas').addEventListener('toggle', function () { try { localStorage.setItem('aevum.admin.ideas', $('ideas').open ? '1' : '0'); } catch (e) { /* ignore */ } });
     loadIdeas();
+    loadBans();
     loadAll();
   })();
 })();
