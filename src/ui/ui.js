@@ -105,6 +105,8 @@ const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls)
 const safe = (fn, def) => { try { return fn(); } catch (err) { return def; } };
 const fmtTime = (s) => { s = Math.max(0, Math.floor(s)); const m = Math.floor(s / 60); return (m < 10 ? '0' : '') + m + ':' + String(s % 60).padStart(2, '0'); };
 const hex = (c) => '#' + (c >>> 0).toString(16).padStart(6, '0');
+const PLAYER_HEX = PLAYER_COLORS.map(hex);
+const pHex = (id) => PLAYER_HEX[id] || hex(PLAYER_COLORS[id] ?? 0xffffff);
 
 export class UI {
   constructor(app) {
@@ -158,6 +160,7 @@ export class UI {
     const top = el('div', 'tbrow');
     this.topPanel.append(top);
     this.ageEl = el('div', 'agebox', '<span class="n"></span><div class="agebar"><i></i></div>');
+    this._ageNameEl = this.ageEl.querySelector('.n'); this._ageBarEl = this.ageEl.querySelector('i');
     this.clockEl = el('div', 'clock', '00:00');
     top.append(this.ageEl, el('div', 'sep'), this.clockEl, el('div', 'sep'));
     const tb = (icon, name, desc, fn) => {
@@ -189,6 +192,8 @@ export class UI {
     this.blEl = el('div', 'hudbl');
     // next age: objective steps (Stone Age only), cost, missing requirements and the age-up button on the right
     this.objEl = el('div', 'agepanel panel hidden', '<div class="ainfo"><div class="osteps"></div><div class="ahead"><span class="ot"></span><span class="acost"></span></div><div class="obar"><i></i></div><span class="om"></span></div>');
+    this._objBarEl = this.objEl.querySelector('.obar i');
+    this._clearDirty = true; this._chatPosDirty = true; this._mmE = []; this._mmRails = new Map();
     this.ageBtn = el('button', 'agebtn', ico('x-ageup'));
     this.ageBtn.onclick = () => { this._press({ spec: this._ageSpec() }); this.slowT = -99; };
     this._tip(this.ageBtn, () => this._ageSpec());
@@ -207,15 +212,18 @@ export class UI {
     this.resPanel = el('div', 'respanel panel');
     const rtop = el('div', 'rtop');
     this.idleEl = el('button', 'tbtn idlebtn', ico('u-villager') + '<b>0</b>');
+    this._idleBEl = this.idleEl.querySelector('b');
     this.idleEl.onclick = (ev) => { this._click(); safe(() => this.app.input?.nextIdleVillager(!!ev?.shiftKey)); };
     this._tip(this.idleEl, () => ({ name: tr('Boşta köylüler'), desc: tr('Sıradaki boşta köylüyü seç ve ona git. Kısayol: Tab veya nokta (.). Shift ile: tüm boştaki köylüleri seç.') }));
     this.popEl = el('div', 'res pop', `<span class="i">${ico('x-pop')}</span><b>0/0</b>`);
+    this._popBEl = this.popEl.querySelector('b');
     this._tip(this.popEl, () => ({ name: tr('Nüfus'), desc: tr('Mevcut / azami nüfus. Sınır sabit: 1000.') }));
     rtop.append(this.idleEl, this.popEl);
     this.resPanel.append(rtop);
     this.resEls = {};
     for (const r of RES_LIST) {
       const d = el('div', 'res', `<span class="i">${RES_ICON[r]}</span><b>0</b><small class="rate"></small><small class="wk"></small>`);
+      d._b = d.querySelector('b'); d._rate = d.querySelector('.rate'); d._wk = d.querySelector('.wk');
       this._tip(d, () => ({ name: RES_NAME[r], desc: tr('Mevcut ') + RES_NAME[r].toLowerCase() + tr(' stoğu. Yeşil sayı: son 30 saniyeye göre dakikalık gelir. ') + ico('u-villager') + tr(' sayısı: bu kaynağı toplayan işçin.') }));
       this.resEls[r] = d; this.resPanel.append(d);
     }
@@ -350,6 +358,7 @@ export class UI {
     this.menuEl.classList.add('hidden');
     this.hudEl.classList.remove('hidden');
     this.cardSig = null; this.selSig = null; this.questSig = null;
+    this._clearDirty = true; this._chatPosDirty = true;
   }
   _menuBox(html) {
     this.menuEl.innerHTML = ''; this.menuEl.classList.remove('with-hud', 'm-left');
@@ -858,7 +867,7 @@ export class UI {
     while (S.length > 2 && t - S[1].t >= 30) S.shift();
     const a = S[0], span = t - a.t;
     for (const r of RES_LIST) {
-      const n = this.resEls[r].querySelector('.rate'); if (!n) continue;
+      const n = this.resEls[r]._rate || this.resEls[r].querySelector('.rate'); if (!n) continue;
       const v = span >= 3 ? Math.round(((ga[r] || 0) - a[r]) / span * 60) : 0;
       const s = v > 0 ? '+' + v : '';
       if (n.textContent !== s) n.textContent = s;
@@ -878,7 +887,7 @@ export class UI {
       if (u.order && u.order.type === 'build') building.add(u.order.targetId);
       if (u.state === 'build' && u.order && u.order.targetId != null) building.add(u.order.targetId);
     }
-    const ib = this.idleEl.querySelector('b'); if (ib.textContent !== String(idle)) ib.textContent = idle;
+    const ib = this._idleBEl || this.idleEl.querySelector('b'); if (ib.textContent !== String(idle)) ib.textContent = idle;
     // (players 2026-11-22) how many workers gather each resource (villagers and fishing boats; one walking a load home counts too)
     const wk = { food: 0, wood: 0, stone: 0, gold: 0 };
     for (const u of units) {
@@ -888,7 +897,7 @@ export class UI {
       else if (u.type === 'fishboat' && o && o.type === 'fish') wk.food++;
     }
     for (const r of RES_LIST) {
-      const n = this.resEls[r].querySelector('.wk'); if (!n) continue;
+      const n = this.resEls[r]._wk || this.resEls[r].querySelector('.wk'); if (!n) continue;
       const h = wk[r] ? ico('u-villager') + wk[r] : '';
       if (n._h !== h) { n._h = h; n.innerHTML = h; }
     }
@@ -909,10 +918,17 @@ export class UI {
       for (const id of this.orphanSince.keys()) if (!seen.has(id)) this.orphanSince.delete(id);
     }
     // objective line (tutorial: the chapter's objective)
-    if (this.tut && !demo) { this.stepsEl.classList.add('hidden'); this.tut.objective(this.objEl); return; }
+    if (this.tut && !demo) {
+      if (!this.stepsEl.classList.contains('hidden')) { this.stepsEl.classList.add('hidden'); this._clearDirty = true; }
+      this.tut.objective(this.objEl); return;
+    }
     const next = AGES[p.age + 1];
-    if (demo || !next) { this.objEl.classList.add('hidden'); this.stepsEl.classList.add('hidden'); return; }
-    this.objEl.classList.remove('hidden');
+    if (demo || !next) {
+      if (!this.objEl.classList.contains('hidden')) { this.objEl.classList.add('hidden'); this._clearDirty = true; }
+      if (!this.stepsEl.classList.contains('hidden')) { this.stepsEl.classList.add('hidden'); this._clearDirty = true; }
+      return;
+    }
+    if (this.objEl.classList.contains('hidden')) { this.objEl.classList.remove('hidden'); this._clearDirty = true; }
     const has = (t) => blds.some((b) => b.type === t && !b.dead);
     const ga = p.stats?.gathered || {};
     // (players 2026-11-22: it asked for a farm in the Stone Age, the farm opens in the Bronze Age) a step that names a
@@ -953,9 +969,10 @@ export class UI {
     const hasTc = blds.some((b) => b.type === 'towncenter' && b.done && !b.dead);
     const mtxt = aging ? tr('Çağ atlanıyor…') : miss.length ? tr('Eksik: ') + miss.join(' · ') : !hasTc ? tr('Çağ atlamak için bir Şehir Merkezi gerekli') : tr('Hazır! Sağdaki düğmeyle çağ atla');
     const sig = steps.map((s) => (s[1] ? 1 : 0)).join('') + '|' + p.age + '|' + mtxt + '|' + cost;
-    this.objEl.querySelector('.obar i').style.width = (frac * 100).toFixed(1) + '%';
+    const ob = this._objBarEl || this.objEl.querySelector('.obar i'), ow = (frac * 100).toFixed(1) + '%';
+    if (this._objBarW !== ow) { this._objBarW = ow; ob.style.width = ow; }
     if (sig === this.objSig) return;
-    this.objSig = sig;
+    this.objSig = sig; this._clearDirty = true;
     this.objEl.querySelector('.osteps').innerHTML = '';
     this.stepsEl.innerHTML = steps.map((s, i) => `<span class="${s[1] ? 'done' : i === cur ? 'cur' : ''}">${s[1] ? '✔ ' : ''}${esc(s[0])}</span>`).join('<em>→</em>');
     this.stepsEl.classList.toggle('hidden', !steps.length);
@@ -1039,14 +1056,15 @@ export class UI {
       const b = this._grpBtns[i], d = UNITS[s.top] || BUILDINGS[s.top];
       const html = `<i>${s.n}</i>` + (s.count ? `<span class="gic">${d?.icon || ico('x-unknown')}</span><b>${s.count}</b>` : '<span class="gplus">+</span>');
       if (b._h !== html) { b._h = html; b.innerHTML = html; }
-      b.className = 'grp' + (s.count ? ' on' : '') + (s.active ? ' act' : '');
+      const cls = 'grp' + (s.count ? ' on' : '') + (s.active ? ' act' : '');
+      if (b.className !== cls) b.className = cls;
     });
   }
 
   // developer mode panel: jump between ages (only in a dev game)
   _devPanel() {
     const g = this.game, on = !!(g && g.cfg && g.cfg.dev && this.mode === 'hud');
-    if (!on) { if (this.devEl) this.devEl.classList.add('hidden'); return; }
+    if (!on) { if (this.devEl && !this.devEl.classList.contains('hidden')) { this.devEl.classList.add('hidden'); this._clearDirty = true; } return; }
     if (!this.devEl) {
       this.devEl = el('div', 'devpanel', tr('<b>Geliştirici</b>'));
       for (let i = 0; i < AGES.length; i++) {
@@ -1055,8 +1073,9 @@ export class UI {
         this.devEl.append(b);
       }
       (this.hudTop || this.hudEl).append(this.devEl);
+      this._clearDirty = true;
     }
-    this.devEl.classList.remove('hidden');
+    if (this.devEl.classList.contains('hidden')) { this.devEl.classList.remove('hidden'); this._clearDirty = true; }
     const age = g.players[this._me()]?.age | 0;
     this.devEl.querySelectorAll('button').forEach((b) => b.classList.toggle('on', +b.dataset.age === age));
   }
@@ -1073,12 +1092,14 @@ export class UI {
     if (sig === this._clearSig) return;
     this._clearSig = sig;
     this.hudEl.style.setProperty('--quests-top', q + 'px'); this.hudEl.style.setProperty('--toasts-top', t + 'px'); this.hudEl.style.setProperty('--bl-top', b + 'px');
+    this._chatPosDirty = true;
     safe(() => this._chatTick());   // the chat dock starts below the quests: follow them at once
   }
   update(dt) {
     this.frames++; this.fpsT += dt;
-    if (this.fpsT + dt >= 0.5) { this._devPanel(); this._clearTop(); }
     if (this.fpsT >= 0.5) {
+      this._devPanel();
+      if (this._clearDirty) { this._clearDirty = false; this._clearTop(); }
       // multiplayer: the worst peer's round trip next to the FPS (is a hitch the network or the screen?)
       const ni = this.app.net && typeof this.app.net.netInfo === 'function' ? safe(() => this.app.net.netInfo(), null) : null;
       let more = '';
@@ -1126,13 +1147,13 @@ export class UI {
     for (const r of RES_LIST) {
       const v = Math.floor(p.res[r] || 0), d = this.resEls[r];
       if (this.lastRes[r] !== v) {
-        d.querySelector('b').textContent = v;
+        (d._b || d.querySelector('b')).textContent = v;
         /* (owner 2026-11-22: the rows 'göz kırpıyor') no flash when a resource comes in: the number moving is enough */
         this.lastRes[r] = v;
       }
     }
     const ps = `${p.pop | 0}/${p.popCap | 0}`;
-    if (this.lastPop !== ps) { this.lastPop = ps; this.popEl.querySelector('b').textContent = ps; this.popEl.classList.toggle('capped', p.pop >= p.popCap); }
+    if (this.lastPop !== ps) { this.lastPop = ps; (this._popBEl || this.popEl.querySelector('b')).textContent = ps; this.popEl.classList.toggle('capped', p.pop >= p.popCap); }
     if (this._ageCls !== p.age) {
       const had = this._ageCls != null;
       for (const n of [this.hudEl, this.tipEl]) { for (let i = 0; i < AGES.length; i++) n.classList.remove('age-' + i); n.classList.add('age-' + (p.age | 0)); }
@@ -1140,11 +1161,13 @@ export class UI {
       if (had) { const tbEl = this.hudEl.querySelector('.topbar'); if (tbEl) { tbEl.classList.remove('ageflash'); void tbEl.offsetWidth; tbEl.classList.add('ageflash'); } }
     }
     const an = tr(AGES[p.age]?.name) || '';
-    const n = this.ageEl.querySelector('.n'); if (n.textContent !== an) n.textContent = an;
+    const n = this._ageNameEl || this.ageEl.querySelector('.n'); if (n.textContent !== an) n.textContent = an;
     let prog = 0;
     for (const b of safe(() => g.buildingsOf(this._me()), [])) { const q = b.queue?.[0]; if (q && q.kind === 'age') { prog = this._qprog(q); break; } }
-    this.ageEl.querySelector('i').style.width = (prog * 100).toFixed(1) + '%';
-    this.clockEl.textContent = fmtTime(g.time || 0);
+    const aw = (prog * 100).toFixed(1) + '%';
+    if (this._ageBarW !== aw) { this._ageBarW = aw; (this._ageBarEl || this.ageEl.querySelector('i')).style.width = aw; }
+    const ct = fmtTime(g.time || 0);
+    if (this._clockTxt !== ct) { this._clockTxt = ct; this.clockEl.textContent = ct; }
     safe(() => this._refreshAgeBtn(g, p));
     safe(() => this._refreshRates(g, p));
     safe(() => this._refreshSlow(g, p));
@@ -1168,24 +1191,33 @@ export class UI {
     if (!ents.length) return;
     if (ents.length === 1) {
       const e = ents[0], fog = e.kind === 'building' && this._fogged(e), f = fog ? 1 : Math.max(0, Math.min(1, e.kind === 'resource' ? (e.amount / (e.maxAmount || 1)) : e.hp / (e.maxHp || 1)));
-      const bar = this.selEl.querySelector('.hpbar');
-      if (bar) { bar.firstChild.style.width = f * 100 + '%'; bar.className = 'hpbar' + (fog ? ' fog' : e.kind !== 'resource' && f < 0.3 ? ' low' : e.kind !== 'resource' && f < 0.6 ? ' mid' : ''); }
-      const ht = this.selEl.querySelector('.hptxt');
+      const bar = this._selBar;
+      if (bar) {
+        const w = f * 100 + '%', cls = 'hpbar' + (fog ? ' fog' : e.kind !== 'resource' && f < 0.3 ? ' low' : e.kind !== 'resource' && f < 0.6 ? ' mid' : '');
+        if (bar._w !== w) { bar._w = w; bar.firstChild.style.width = w; }
+        if (bar.className !== cls) bar.className = cls;
+      }
+      const ht = this._selHt;
       // stone and gold mines never run out (src/sim/game.js): no misleading "350 / 350"
       const endless = e.kind === 'resource' && (e.type === 'stone' || e.type === 'gold');
-      if (ht) ht.textContent = fog ? tr('Sisin içinde') : endless ? `∞ ${tr('Sınırsız {0}', RES_NAME[NATURE[e.type]?.res] || '')}` : e.kind === 'resource' ? `${Math.ceil(e.amount)} /${Math.ceil(e.maxAmount || e.amount)} ${RES_NAME[NATURE[e.type]?.res] || ''}` : tr('{0} / {1} can', Math.ceil(e.hp), Math.ceil(e.maxHp));
-      const st = this.selEl.querySelector('.stats');
+      if (ht) {
+        const txt = fog ? tr('Sisin içinde') : endless ? `∞ ${tr('Sınırsız {0}', RES_NAME[NATURE[e.type]?.res] || '')}` : e.kind === 'resource' ? `${Math.ceil(e.amount)} /${Math.ceil(e.maxAmount || e.amount)} ${RES_NAME[NATURE[e.type]?.res] || ''}` : tr('{0} / {1} can', Math.ceil(e.hp), Math.ceil(e.maxHp));
+        if (ht.textContent !== txt) ht.textContent = txt;
+      }
+      const st = this._selStats;
       if (st) { const h = this._statsHtml(e); if (st._h !== h) { st._h = h; st.innerHTML = h; } }
-      const qs = this.selEl.querySelectorAll('.qi i');
-      qs.forEach((bar2, i) => { const q = e.queue?.[i]; bar2.style.width = (i === 0 && q ? this._qprog(q) * 100 : 0) + '%'; });
+      const qs = this._selQs;
+      if (qs) for (let i = 0; i < qs.length; i++) { const bar2 = qs[i], q = e.queue?.[i], w = (i === 0 && q ? this._qprog(q) * 100 : 0) + '%'; if (bar2._w !== w) { bar2._w = w; bar2.style.width = w; } }
     } else {
-      const bars = this.selEl.querySelectorAll('.mu i');
-      bars.forEach((b, i) => { const e = ents[i]; if (e) b.style.transform = `scaleX(${Math.max(0, e.hp / (e.maxHp || 1))})`; });
-      const qb = this.selEl.querySelector('.mbqbar');
+      const bars = this._selMu;
+      if (bars) for (let i = 0; i < bars.length; i++) { const b = bars[i], e = ents[i]; if (!e) continue; const trf = `scaleX(${Math.max(0, e.hp / (e.maxHp || 1))})`; if (b._tr !== trf) { b._tr = trf; b.style.transform = trf; } }
+      const qb = this._selQb;
       if (qb) { // multi-building: progress of the nearest completion
         let best = 0; for (const e of ents) { const q = e.queue?.[0]; if (q) best = Math.max(best, this._qprog(q)); }
-        qb.firstChild.style.width = (best * 100).toFixed(1) + '%';
-        const t = this.selEl.querySelector('.mbq b'); if (t) t.textContent = '%' + Math.floor(best * 100);
+        const w = (best * 100).toFixed(1) + '%';
+        if (qb._w !== w) { qb._w = w; qb.firstChild.style.width = w; }
+        const t = this._selQbT, tx = '%' + Math.floor(best * 100);
+        if (t && t.textContent !== tx) t.textContent = tx;
       }
     }
   }
@@ -1226,10 +1258,17 @@ export class UI {
   _extraStats(e) {
     const g = this.game, out = [];
     if (!g?.entities) return out;
-    const all = [...g.entities.values()];
+    const units = Array.isArray(g.units) ? g.units : [...g.entities.values()];
     // assigned: villagers whose work order is this building (also the ones still walking there); working: the ones
     // the sim counted on it this tick (Game._updateBuilding, b.wk). Only the working ones make food.
-    const assigned = () => all.filter((u) => u.kind === 'unit' && !u.dead && u.owner === e.owner && u.order && u.order.type === 'gather' && u.order.targetId === e.id).length;
+    const assigned = () => {
+      let c = 0;
+      for (let i = 0; i < units.length; i++) {
+        const u = units[i];
+        if (u.kind === 'unit' && !u.dead && u.owner === e.owner && u.order && u.order.type === 'gather' && u.order.targetId === e.id) c++;
+      }
+      return c;
+    };
     const workers = (cap) => { const a = Math.min(cap, assigned()), n = Math.min(a, e.wk | 0); return { n, way: a - n }; };
     const way = (k) => k > 0 ? ` · <b>${k}</b> yolda` : '';
     // (players 2026-11-22: "how much food a minute do the pasture and the farm give") the sim's own rates, see
@@ -1246,21 +1285,27 @@ export class UI {
       out.push(`<span>${ico('b-pasture')} ${tr('<b>{0}</b> koyun · <b>{1}/6</b> işçi', sh, n)}${way(k)}</span>`, `<span>${RES_ICON.food} ${tr('<b>~{0}</b>/dk', Math.round(idle + herd))}${n ? tr(' · işçisiz ~{0}/dk', Math.round(idle)) : ''}</span>`);
     }
     if (e.type === 'station') {
-      const trn = all.find((t) => t.train && !t.dead && (t.train.a === e.id || t.train.b === e.id));
+      let trn = null;
+      for (let i = 0; i < units.length; i++) { const t = units[i]; if (t.train && !t.dead && (t.train.a === e.id || t.train.b === e.id)) { trn = t; break; } }
       if (trn) out.push(`<span style="color:var(--good,#9be37a)">${tr('Bağlı: tren çalışıyor (+{0} altın/sefer)', Math.round(25 + (trn.train.path?.length || 0) * 1.2))}</span>`);
       else out.push(`<span style="color:var(--dim)">${tr('Bağlı değil: başka bir istasyona ray döşe')}</span>`);
     }
-    if (e.type === 'dock') out.push(`<span>${ico('u-fishboat')} <b>${all.filter((u) => u.kind === 'unit' && !u.dead && u.owner === e.owner && u.type === 'fishboat').length}</b> ${tr('balıkçı teknesi')}</span>`);
+    if (e.type === 'dock') {
+      let fb = 0;
+      for (let i = 0; i < units.length; i++) { const u = units[i]; if (u.kind === 'unit' && !u.dead && u.owner === e.owner && u.type === 'fishboat') fb++; }
+      out.push(`<span>${ico('u-fishboat')} <b>${fb}</b> ${tr('balıkçı teknesi')}</span>`);
+    }
     return out;
   }
   _buildSel(ents) {
     const p = this.selEl;
     p.innerHTML = '';
+    this._selBar = this._selHt = this._selStats = this._selQs = this._selMu = this._selQb = this._selQbT = null;
     p.classList.toggle('empty', !ents.length);
     if (!ents.length) return;
     if (ents.length === 1) {
       const e = ents[0], d = this._def(e);
-      const owner = e.owner === this._me() ? '' : e.owner >= 0 && this._ally(this._me(), e.owner) ? `<small class="allytag" style="color:${hex(PLAYER_COLORS[e.owner] ?? 0xffffff)}">${tr('Müttefik: {0}', esc(this._pname(e.owner)))}</small>` : e.owner >= 0 ? `<small style="color:${hex(PLAYER_COLORS[e.owner] ?? 0xffffff)}">${tr('Düşman')}${this.game?.mp ? ': ' + esc(this._pname(e.owner)) : ''}</small>` : tr('<small>Doğa</small>');
+      const owner = e.owner === this._me() ? '' : e.owner >= 0 && this._ally(this._me(), e.owner) ? `<small class="allytag" style="color:${pHex(e.owner)}">${tr('Müttefik: {0}', esc(this._pname(e.owner)))}</small>` : e.owner >= 0 ? `<small style="color:${pHex(e.owner)}">${tr('Düşman')}${this.game?.mp ? ': ' + esc(this._pname(e.owner)) : ''}</small>` : tr('<small>Doğa</small>');
       const sub = e.kind === 'unit' ? CLS_TR[d.cls] || '' : e.kind === 'building' ? tr('Bina') : tr('Kaynak');
       p.append(el('div', 'portrait', d.icon || ico('x-unknown')));
       const info = el('div', 'selinfo', `<div class="selname">${esc(tr(d.name))}<small>${sub}</small>${owner}</div><div class="hpbar"><i></i></div><div class="hptxt"></div><div class="stats"></div><div class="seldesc${e.kind === 'building' && tr(d.desc) ? ' bfx' : ''}">${esc(tr(d.desc) || '')}</div>`);
@@ -1289,6 +1334,10 @@ export class UI {
         info.append(q);
       }
       p.append(info);
+      this._selBar = p.querySelector('.hpbar');
+      this._selHt = p.querySelector('.hptxt');
+      this._selStats = p.querySelector('.stats');
+      this._selQs = p.querySelectorAll('.qi i');
     } else {
       let host = p;
       if (ents.every((x) => x.kind === 'building')) {
@@ -1337,6 +1386,9 @@ export class UI {
         grid.append(m);
       });
       host.append(grid);
+      this._selMu = p.querySelectorAll('.mu i');
+      this._selQb = p.querySelector('.mbqbar');
+      this._selQbT = p.querySelector('.mbq b');
     }
   }
 
@@ -1617,6 +1669,7 @@ export class UI {
       h += `<div class="quest${q.done ? ' done' : ''}"><div class="qt">${esc(tr(q.title))}</div><div class="qd">${esc(tr(q.desc || ''))}</div>${q.progress ? `<div class="qp">${esc(tr(q.progress))}</div>` : ''}${q.reward ? `<div class="qr">${tr('Ödül: {0}', this._rewardText(q.reward))}</div>` : ''}</div>`;
     }
     this.questsEl.innerHTML = h;
+    this._chatPosDirty = true;
   }
 
   // ------------------------------------------------------------------ minimap
@@ -1689,70 +1742,102 @@ export class UI {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.mmTerrain, 0, 0, MM, MM);
     // resources (drawn under fog so unexplored ones stay hidden)
-    if (!this._mmRes || this._mmResG !== g || g.time - this._mmResT > 2 || g.time < this._mmResT) { this._mmResG = g; this._mmResT = g.time; this._mmRes = []; for (const e of g.entities.values()) if (e.kind === 'resource' && e.type !== 'tree' && e.type !== 'deer' && e.type !== 'wolf' && e.type !== 'bear') this._mmRes.push(e); }
-    for (const e of this._mmRes) {
-      if (e.dead || e.kind !== 'resource' || e.type === 'tree' || e.type === 'deer' || e.type === 'wolf' || e.type === 'bear') continue;
-      if (e.type === 'fish') { ctx.fillStyle = '#9fe4ff'; ctx.beginPath(); ctx.arc(e.x * k, e.z * k, 1.6, 0, Math.PI * 2); ctx.fill(); continue; }
-      ctx.fillStyle = e.type === 'gold' ? '#ffd84a' : e.type === 'stone' ? '#c9cdd4' : '#d86aa0';
-      ctx.fillRect(e.x * k - 1.5, e.z * k - 1.5, 3, 3);
+    if (!this._mmRes || this._mmResG !== g) {
+      this._mmResG = g; this._mmRes = [];
+      for (const e of g.entities.values()) if (e.kind === 'resource' && e.type !== 'tree' && e.type !== 'deer' && e.type !== 'wolf' && e.type !== 'bear') this._mmRes.push(e);
+    }
+    {
+      const res = this._mmRes;
+      let w = 0;
+      for (let i = 0; i < res.length; i++) {
+        const e = res[i];
+        if (e.dead || e.kind !== 'resource' || e.type === 'tree' || e.type === 'deer' || e.type === 'wolf' || e.type === 'bear') continue;
+        res[w++] = e;
+        if (e.type === 'fish') { ctx.fillStyle = '#9fe4ff'; ctx.beginPath(); ctx.arc(e.x * k, e.z * k, 1.6, 0, Math.PI * 2); ctx.fill(); continue; }
+        ctx.fillStyle = e.type === 'gold' ? '#ffd84a' : e.type === 'stone' ? '#c9cdd4' : '#d86aa0';
+        ctx.fillRect(e.x * k - 1.5, e.z * k - 1.5, 3, 3);
+      }
+      res.length = w;
     }
     if (g.fog) { ctx.imageSmoothingEnabled = true; ctx.drawImage(this.mmFog, 0, 0, MM, MM); }
+    const me = this._me(), hasVis = typeof g.isEntityVisible === 'function';
     // rail: thin dark lines between neighbouring rail tiles
-    const rails = new Map();
-    for (const e of g.buildings) if (!e.dead && e.kind === 'building' && e.type === 'rail' && (e.owner === this._me() || safe(() => g.isEntityVisible(e), true))) rails.set(Math.floor(e.x) + ',' + Math.floor(e.z), e);
+    const rails = this._mmRails || (this._mmRails = new Map()); rails.clear();
+    for (let i = 0; i < g.buildings.length; i++) {
+      const e = g.buildings[i];
+      if (!e.dead && e.kind === 'building' && e.type === 'rail' && (e.owner === me || !hasVis || g.isEntityVisible(e))) rails.set((e.z | 0) * N + (e.x | 0), e);
+    }
     if (rails.size) {
       ctx.strokeStyle = 'rgba(30,24,20,.95)'; ctx.lineWidth = 1.2; ctx.beginPath();
       for (const e of rails.values()) {
-        const tx = Math.floor(e.x), tz = Math.floor(e.z), cx = (tx + 0.5) * k, cz = (tz + 0.5) * k;
+        const tx = e.x | 0, tz = e.z | 0, cx = (tx + 0.5) * k, cz = (tz + 0.5) * k;
         let lone = true;
-        if (rails.has((tx + 1) + ',' + tz)) { ctx.moveTo(cx, cz); ctx.lineTo(cx + k, cz); lone = false; }
-        if (rails.has(tx + ',' + (tz + 1))) { ctx.moveTo(cx, cz); ctx.lineTo(cx, cz + k); lone = false; }
-        if (lone && !rails.has((tx - 1) + ',' + tz) && !rails.has(tx + ',' + (tz - 1))) { ctx.moveTo(cx - 0.8, cz); ctx.lineTo(cx + 0.8, cz); }
+        if (tx + 1 < N && rails.has(tz * N + tx + 1)) { ctx.moveTo(cx, cz); ctx.lineTo(cx + k, cz); lone = false; }
+        if (tz + 1 < N && rails.has((tz + 1) * N + tx)) { ctx.moveTo(cx, cz); ctx.lineTo(cx, cz + k); lone = false; }
+        if (lone && !(tx > 0 && rails.has(tz * N + tx - 1)) && !(tz > 0 && rails.has((tz - 1) * N + tx))) { ctx.moveTo(cx - 0.8, cz); ctx.lineTo(cx + 0.8, cz); }
       }
       ctx.stroke();
     }
     // units and buildings in the same (id) order the entity map gives, without walking the map's trees
-    const mmE = g.units.concat(g.buildings).sort((x, y) => x.id - y.id);
+    const mmE = this._mmE || (this._mmE = []); mmE.length = 0;
+    for (let i = 0; i < g.units.length; i++) mmE.push(g.units[i]);
+    for (let i = 0; i < g.buildings.length; i++) mmE.push(g.buildings[i]);
+    mmE.sort((x, y) => x.id - y.id);
     // a rival's known town center that fell in the fog stays on the map until someone sees the spot
     const known = this._mmKnown && this._mmKnown.g === g ? this._mmKnown : (this._mmKnown = { g, m: new Map() });
     for (const [id, e] of known.m) {
       if (!e.dead && g.entities.get(id) === e) continue;
-      if (!safe(() => this._fogged(e), false)) { known.m.delete(id); continue; }
-      const s = Math.max(3, (e.size || 1) * k); ctx.fillStyle = hex(PLAYER_COLORS[e.owner] ?? 0xffffff); ctx.fillRect(e.x * k - s / 2, e.z * k - s / 2, s, s);
+      if (!this._fogged(e)) { known.m.delete(id); continue; }
+      const s = Math.max(3, (e.size || 1) * k); ctx.fillStyle = pHex(e.owner); ctx.fillRect(e.x * k - s / 2, e.z * k - s / 2, s, s);
     }
-    for (const e of mmE) {
-      if (e.known && e.owner !== this._me() && !e.dead) known.m.set(e.id, e);
+    for (let i = 0; i < mmE.length; i++) {
+      const e = mmE[i];
+      if (e.known && e.owner !== me && !e.dead) known.m.set(e.id, e);
       if (e.dead || e.kind === 'resource' || e.aboard != null || (e.kind === 'building' && e.type === 'rail')) continue;
-      if (e.owner !== this._me() && !safe(() => g.isEntityVisible(e), true)) continue;
-      ctx.fillStyle = hex(PLAYER_COLORS[e.owner] ?? 0xffffff);
+      if (e.owner !== me && hasVis && !g.isEntityVisible(e)) continue;
+      ctx.fillStyle = pHex(e.owner);
       if (e.train) { ctx.fillStyle = '#fff6a8'; ctx.beginPath(); ctx.arc(e.x * k, e.z * k, 2.2, 0, Math.PI * 2); ctx.fill(); continue; }
       if (e.naval || UNITS[e.type]?.naval) { const r = 2.4; ctx.beginPath(); ctx.moveTo(e.x * k, e.z * k - r); ctx.lineTo(e.x * k + r, e.z * k); ctx.lineTo(e.x * k, e.z * k + r); ctx.lineTo(e.x * k - r, e.z * k); ctx.closePath(); ctx.fill(); continue; }
-      if (e.kind === 'building') { const s = Math.max(3, (e.size || 1) * k); ctx.fillRect(e.x * k - s / 2, e.z * k - s / 2, s, s); if (g.mp && e.owner !== this._me() && this._ally(this._me(), e.owner)) { ctx.strokeStyle = 'rgba(140,200,255,.95)'; ctx.lineWidth = 1; ctx.strokeRect(e.x * k - s / 2 - 0.5, e.z * k - s / 2 - 0.5, s + 1, s + 1); } }
+      if (e.kind === 'building') { const s = Math.max(3, (e.size || 1) * k); ctx.fillRect(e.x * k - s / 2, e.z * k - s / 2, s, s); if (g.mp && e.owner !== me && this._ally(me, e.owner)) { ctx.strokeStyle = 'rgba(140,200,255,.95)'; ctx.lineWidth = 1; ctx.strokeRect(e.x * k - s / 2 - 0.5, e.z * k - s / 2 - 0.5, s + 1, s + 1); } }
       else ctx.fillRect(e.x * k - 1.25, e.z * k - 1.25, 2.5, 2.5);
     }
     // (owner 2026-11-20) a rival down to its last one or two buildings that train units: they blink on the minimap, also
     // in the fog, so the match does not drag on with a building nobody can find
     {
       const blink = 0.5 + 0.5 * Math.sin(performance.now() / 260);
+      if (!this._prodPeak || this._prodPeak.g !== g) this._prodPeak = { g, m: new Map() };
+      const byOwner = this._mmProd || (this._mmProd = new Map());
+      for (const a of byOwner.values()) a.length = 0;
+      for (let i = 0; i < g.buildings.length; i++) {
+        const b = g.buildings[i];
+        if (b.dead || !PROD_B.has(b.type) || !(b.done || b.progress > 0)) continue;
+        let a = byOwner.get(b.owner); if (!a) byOwner.set(b.owner, a = []);
+        a.push(b);
+      }
       for (const p of g.players || []) {
-        if (p.defeated || p.id === this._me() || this._ally(this._me(), p.id)) continue;
-        const last = g.buildings.filter((b) => b.owner === p.id && !b.dead && PROD_B.has(b.type) && (b.done || b.progress > 0));   // (same set as the victory rule: no temple)
+        if (p.defeated || p.id === me || this._ally(me, p.id)) continue;
+        const last = byOwner.get(p.id);
+        const cnt = last ? last.length : 0;
         /* (owner 2026-11-22) only a rival that once had 3+ of them and lost them: at the start every rival has one town
            center, and the blink gave its place away from the first second */
-        if (!this._prodPeak || this._prodPeak.g !== g) this._prodPeak = { g, m: new Map() };
-        const peak = Math.max(this._prodPeak.m.get(p.id) || 0, last.length); this._prodPeak.m.set(p.id, peak);
-        if (!last.length || last.length > 2 || peak < 3) continue;
-        for (const b of last) {
+        const peak = Math.max(this._prodPeak.m.get(p.id) || 0, cnt); this._prodPeak.m.set(p.id, peak);
+        if (!cnt || cnt > 2 || peak < 3) continue;
+        const col = pHex(p.id);
+        for (let j = 0; j < cnt; j++) {
+          const b = last[j];
           const r = Math.max(5, (b.size || 3) * k * 0.9) + blink * 3;
           ctx.strokeStyle = 'rgba(255,90,70,' + (0.45 + 0.5 * blink).toFixed(2) + ')'; ctx.lineWidth = 2;
           ctx.beginPath(); ctx.arc(b.x * k, b.z * k, r, 0, Math.PI * 2); ctx.stroke();
-          ctx.fillStyle = hex(PLAYER_COLORS[p.id] ?? 0xffffff); const s = Math.max(3, (b.size || 1) * k); ctx.fillRect(b.x * k - s / 2, b.z * k - s / 2, s, s);
+          ctx.fillStyle = col; const s = Math.max(3, (b.size || 1) * k); ctx.fillRect(b.x * k - s / 2, b.z * k - s / 2, s, s);
         }
       }
     }
     // selection highlight
     ctx.fillStyle = '#fff';
-    for (const e of this._ents()) if (e.owner === this._me() && e.kind === 'unit') ctx.fillRect(e.x * k - 1, e.z * k - 1, 2, 2);
+    for (let i = 0; i < this.sel.length; i++) {
+      const e = g.entities.get(this.sel[i]);
+      if (e && !e.dead && e.owner === me && e.kind === 'unit') ctx.fillRect(e.x * k - 1, e.z * k - 1, 2, 2);
+    }
     // camera marker: the ground the screen really shows (a trapezoid under the tilted camera), the canvas clips it to the map
     const cam = this.app.renderer?.cam, quad = safe(() => this._camQuad(N), null);
     if (quad) {
@@ -2385,7 +2470,7 @@ export class UI {
       const d = el('div', 'chatdock hidden');
       // (owner 2026-11-25: on a small window the dock sat over the bottom-left block) place it at once and on every resize,
       // not only on the next half-second HUD tick
-      if (!this._clearRz) { this._clearRz = () => { this._clearSig = null; safe(() => this._clearTop()); }; window.addEventListener('resize', this._clearRz); }
+      if (!this._clearRz) { this._clearRz = () => { this._clearSig = null; this._clearDirty = false; this._chatPosDirty = true; safe(() => this._clearTop()); }; window.addEventListener('resize', this._clearRz); }
       requestAnimationFrame(() => this._clearRz());
       const head = el('div', 'chathead');
       const tg = el('button', 'chattoggle', '💬<span class="chatbadge hidden"></span>');
@@ -2520,10 +2605,16 @@ export class UI {
     if (!on) { if (this.chatOpen) this.closeChat(); return; }
     if (this._chatSess !== this._chatKey()) this._chatReset();
     // start right below the multiplayer scoreboard (top-left), never under it
-    const sb = this.scoreEl && !this.scoreEl.classList.contains('hidden') ? this.scoreEl.getBoundingClientRect() : null;
-    const qb = this.questsEl && !this.questsEl.classList.contains('hidden') ? this.questsEl.getBoundingClientRect() : null;
-    const top = Math.round(Math.max(sb && sb.height ? sb.bottom : 48, qb && qb.height ? qb.bottom : 0) + 10);
-    if (top !== this._chatTop) { this._chatTop = top; d.style.setProperty('--chat-top', top + 'px'); }
+    const sh = !!(this.scoreEl && !this.scoreEl.classList.contains('hidden'));
+    const qh = !!(this.questsEl && !this.questsEl.classList.contains('hidden'));
+    if (sh !== this._chatScoreVis || qh !== this._chatQuestVis) { this._chatScoreVis = sh; this._chatQuestVis = qh; this._chatPosDirty = true; }
+    if (this._chatPosDirty || this._chatTop == null) {
+      this._chatPosDirty = false;
+      const sb = sh ? this.scoreEl.getBoundingClientRect() : null;
+      const qb = qh ? this.questsEl.getBoundingClientRect() : null;
+      const top = Math.round(Math.max(sb && sb.height ? sb.bottom : 48, qb && qb.height ? qb.bottom : 0) + 10);
+      if (top !== this._chatTop) { this._chatTop = top; d.style.setProperty('--chat-top', top + 'px'); }
+    }
     const now = performance.now(), L = this.chatLog || [];
     let shown = 0;
     for (let k = L.length - 1; k >= 0; k--) {
@@ -2554,17 +2645,17 @@ export class UI {
   }
   _refreshScore() {
     const g = this.game;
-    if (!this.app.net || !g?.mp) { if (this.scoreEl) this.scoreEl.classList.add('hidden'); return; }
-    if (!this.scoreEl) { this.scoreEl = el('div', 'scoreboard panel'); this.hudEl.append(this.scoreEl); }
-    this.scoreEl.classList.remove('hidden');
+    if (!this.app.net || !g?.mp) { if (this.scoreEl && !this.scoreEl.classList.contains('hidden')) { this.scoreEl.classList.add('hidden'); this._chatPosDirty = true; } return; }
+    if (!this.scoreEl) { this.scoreEl = el('div', 'scoreboard panel'); this.hudEl.append(this.scoreEl); this._chatPosDirty = true; }
+    if (this.scoreEl.classList.contains('hidden')) { this.scoreEl.classList.remove('hidden'); this._chatPosDirty = true; }
     const me = this._me();
     const rows = (g.players || []).map((p, i) => ({ p, id: p.id ?? i })).sort((a, b) => this._teamOf(a.id) - this._teamOf(b.id) || a.id - b.id);
     let h = '';
     for (const { p, id } of rows) {
       const ally = this._ally(me, id), you = id === me;
       const res = ally && !you ? `<span class="sbres">${RES_LIST.map((r) => `${RES_ICON[r]}${Math.floor(p.res?.[r] || 0)}`).join(' ')}</span>` : '';
-      h += `<div class="sbrow${you ? ' you' : ally ? ' ally' : ''}${p.defeated || p.left ? ' out' : ''}"><span class="dot" style="background:${hex(PLAYER_COLORS[id] ?? 0xffffff)}"></span><span class="sbn">${esc(this._pname(id))}${p.kind === 'ai' ? ' 🤖' : ''}${p.defeated ? ' ☠' : p.left ? ' ⏏' : ''}</span><span class="sbt team${this._teamOf(id)}">T${this._teamOf(id)}</span><span class="sba">${esc((tr(AGES[p.age]?.name) || '').split(' ')[0])}</span>${res}</div>`;
+      h += `<div class="sbrow${you ? ' you' : ally ? ' ally' : ''}${p.defeated || p.left ? ' out' : ''}"><span class="dot" style="background:${pHex(id)}"></span><span class="sbn">${esc(this._pname(id))}${p.kind === 'ai' ? ' 🤖' : ''}${p.defeated ? ' ☠' : p.left ? ' ⏏' : ''}</span><span class="sbt team${this._teamOf(id)}">T${this._teamOf(id)}</span><span class="sba">${esc((tr(AGES[p.age]?.name) || '').split(' ')[0])}</span>${res}</div>`;
     }
-    if (h !== this.scoreSig) { this.scoreSig = h; this.scoreEl.innerHTML = h; }
+    if (h !== this.scoreSig) { this.scoreSig = h; this.scoreEl.innerHTML = h; this._chatPosDirty = true; }
   }
 }
