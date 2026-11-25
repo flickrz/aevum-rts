@@ -9,6 +9,7 @@ import { logChat, clipChat, FB_MAX } from '../chatlog.js';
 import { withMention } from './mention.js';
 import { menuUpdates, hasUnseen } from './updates-ui.js';
 import { newsBox } from './news-ui.js';
+import { gchatPanel } from './gchat-ui.js';
 import { mapPreview, previewClimate } from './map-preview.js';
 import { TutorialUI } from './tutorial-ui.js';
 import { TUT_CFG } from '../sim/tutorial.js';
@@ -420,7 +421,7 @@ export class UI {
       fb.classList.add('menu-fb-click'); fb.setAttribute('role', 'button'); fb.tabIndex = 0;
       fb.addEventListener('click', () => { safe(() => this._click()); this._fbBox(); });
       this.menuEl.append(fb); }
-    safe(() => { const nb = newsBox(this); if (nb) this.menuEl.append(nb); });   // "Duyurular" on the right (src/ui/news-ui.js)
+    safe(() => { const nb = newsBox(this); if (nb) { if (this._signedIn()) { nb.classList.add('has-chat'); nb.append(gchatPanel(this)); } this.menuEl.append(nb); } });   // "Duyurular" and under it "Genel Sohbet" on the right (news-ui.js, gchat-ui.js)
     safe(() => menuHud(this));   // the player plate (avatar, name, level, TP) and account chips around the menu
     // (owner 2026-11-20, drawn on a screenshot) the account unit (player plate, and the status pill and Profil / Çıkış
     // right under it) at the top left over the menu's column; the menu, and the feedback note right under it
@@ -2326,7 +2327,7 @@ export class UI {
     // (owner 2026-11-20: one block, not two panels far apart) the box and the list side by side, same height
     import('./online-ui.js').then((m) => {
       if (!box.isConnected || this.menuEl.querySelector('.online-panel')) return;
-      const wrap = el('div', 'mp-wrap'); box.replaceWith(wrap); wrap.append(box, m.onlinePanel(this));
+      const wrap = el('div', 'mp-wrap'); box.replaceWith(wrap); wrap.append(box, m.onlinePanel(this)); safe(() => wrap.append(gchatPanel(this)));   // (owner 2026-11-26) the general chat here too
     }).catch((e) => console.warn(e));
   }
   showLobby(session) {

@@ -798,6 +798,29 @@ export class CloudSync {
     const r = await this._withTicket((t) => this._relay('/mp/invite-all', { code, skip }, t.ticket));
     return { sent: r.sent | 0 };
   }
+  // ---------- the general chat of the menus (server.js /mp/gchat) ----------
+  // the lines after id `after` -> [{id, t, fb, uid, name, av, tp, text, own}]
+  async gchatLines(after = 0) {
+    if (!this.loggedIn) return [];
+    const t = await this.relayTicket();
+    let r;
+    try { r = await this.relayFetch(this.relayBase + '/mp/gchat?after=' + (after | 0), { cache: 'no-store', headers: { 'X-Aevum-Ticket': t.ticket } }); } catch (e) { throw new CloudError('network', 'NETWORK', tr('Oyun sunucusuna ulaşılamadı.')); }
+    if (r.status === 401) this._dropTicket();
+    if (!r.ok) throw new CloudError('server', 'GCHAT_' + r.status, tr('Sohbet alınamadı ({0}).', r.status), r.status);
+    const j = await r.json();
+    return Array.isArray(j.lines) ? j.lines : [];
+  }
+  // send one line -> the line as the server keeps it
+  async gchatSend(text) {
+    const r = await this._withTicket((t) => this._relay('/mp/gchat', { text }, t.ticket));
+    return r.m || null;
+  }
+  // a player's public card (name, avatar, games, wins) by account id, or null
+  async playerCard(fb) {
+    if (!/^[A-Za-z0-9]{1,128}$/.test(String(fb))) return null;
+    const c = await this.fs.get('profiles/' + fb);
+    return c ? this._cardOf(c) : null;
+  }
   // my inbox on the game server (long-poll while signed in): it also marks me online. onMsg({type:'invite', code, from})
   startInbox(onMsg) {
     if (onMsg !== undefined) this._inboxFn = onMsg;

@@ -82,13 +82,21 @@ export function newsBox(ui) {
   if (unread) btn.append(dot());
   btn.onclick = () => open(top);
   wrap.append(card, btn);
-  // (owner 2026-11-25: "yerleşim aevum menüsüyle aynı olsa") the card's top lines up with the main menu box's top
+  // (owner 2026-11-26) the card in the top right corner; the general chat under it (ui.js adds it, .has-chat) as long as
+  // the menu on the left: its top in line with the AEVUM box, its bottom with the feedback note
   const align = () => {
     if (!wrap.isConnected) { removeEventListener('resize', align); return; }
-    const box = wrap.parentElement && wrap.parentElement.querySelector('.menu-box.main');
-    if (!box || getComputedStyle(card).display === 'none') { wrap.style.top = ''; return; }
-    if (!box.offsetHeight) return;   // (a hidden page lays nothing out: try again when shown)
-    wrap.style.top = Math.max(10, box.offsetTop) + 'px';   // (offsetTop: not moved by the menu's rise-in transform)
+    const par = wrap.parentElement, chat = wrap.querySelector('.gchat');
+    if (!par || getComputedStyle(card).display === 'none') { wrap.style.top = ''; wrap.style.height = ''; if (chat) { chat.style.height = ''; chat.style.marginTop = ''; } return; }
+    const pr = par.getBoundingClientRect(); if (!pr.height) return;   // (a hidden page lays nothing out: try again when shown)
+    const box = par.querySelector('.menu-box.main'), low = par.querySelector('.menu-fb') || box;
+    const top = 16;
+    wrap.style.top = top + 'px';
+    if (!chat || !box || !low) { wrap.style.height = ''; return; }
+    const bTop = box.offsetTop, bot = low.getBoundingClientRect().bottom - pr.top;   // (offsetTop: not moved by the rise-in transform)
+    const cTop = Math.max(bTop, top + card.offsetHeight + 12);
+    wrap.style.height = Math.max(0, bot - top) + 'px';
+    chat.style.marginTop = 'auto'; chat.style.height = Math.max(260, bot - cTop) + 'px';
   };
   addEventListener('resize', align); document.addEventListener('visibilitychange', align); requestAnimationFrame(() => { if (typeof ResizeObserver !== 'undefined' && wrap.parentElement) new ResizeObserver(align).observe(wrap.parentElement); requestAnimationFrame(align); }); setTimeout(align, 700); setTimeout(align, 1600); addEventListener('animationend', align, { capture: true });   // (again once the menu's fonts / rise-in settled)
   return wrap;

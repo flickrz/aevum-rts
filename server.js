@@ -231,6 +231,14 @@
     for (const [fb, b] of inboxes) if (fb !== exceptFb && b.card && isOnline(fb)) out.push(Object.assign({ s: st.get(fb) || 'menu' }, b.card));
     return out;
   }
+  // the general chat (/mp/gchat): the last lines, the next id, each account's recent send times
+  const GCHAT = [], GCHAT_MAX = 80, GCHAT_LEN = 200, gchatRate = new Map();
+  let gchatSeq = 0;
+  // one line: no control or invisible characters, spaces squeezed, at most GCHAT_LEN characters
+  function gchatClean(s) {
+    return String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁯﻿]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, GCHAT_LEN);
+  }
+  setInterval(() => { const t = Date.now(); for (const [fb, a] of gchatRate) if (!a.length || t - a[a.length - 1] > 60000) gchatRate.delete(fb); }, 5 * 60000).unref();
   const inviteAllRate = new Map();   // fb -> time of the last "invite everyone"
   setInterval(() => {
     const t = Date.now();
@@ -714,6 +722,40 @@
         const online = isOnline(to);
         if (online) deliver(to, { type: 'invite', code, from: { fb: me.fb, uid: me.uid, name: me.name, av: me.av, tp: me.tp }, t: now });
         reply(res, 200, J, JSON.stringify({ online }));
+      });
+      return;
+    }
+    // ---- the general chat of the menus (owner 2026-11-26): one room for everyone signed in, kept in memory only
+    // (the last GCHAT_MAX lines; a restart clears it). A line goes out through the inbox long-poll every client already
+    // keeps, and only to players in the menus, so a match never gets the traffic. Banned accounts have no ticket here.
+    if (url.pathname === '/mp/gchat' && req.method === 'GET') {
+      const me = identOf(req, url);
+      if (!me) { reply(res, 401, J, '{"error":"ticket"}'); return; }
+      inboxOf(me.fb).seen = Date.now();
+      const after = +url.searchParams.get('after') || 0;
+      reply(res, 200, J, JSON.stringify({ lines: GCHAT.filter(m => m.id > after) }));
+      return;
+    }
+    if (url.pathname === '/mp/gchat' && req.method === 'POST') {
+      readBody(req, 4096, (err, buf) => {
+        if (err) { reply(res, 400, J, '{"error":"bad body"}'); return; }
+        const me = identOf(req, url);
+        if (!me) { reply(res, 401, J, '{"error":"ticket"}'); return; }
+        let body; try { body = JSON.parse(buf.toString('utf8') || '{}'); } catch { reply(res, 400, J, '{"error":"bad json"}'); return; }
+        const text = gchatClean(body && body.text);
+        if (!text) { reply(res, 400, J, '{"error":"Boş mesaj."}'); return; }
+        const now = Date.now(), rl = (gchatRate.get(me.fb) || []).filter(t => now - t < 30000);
+        if (rl.length && now - rl[rl.length - 1] < 2000) { reply(res, 429, J, JSON.stringify({ error: 'Biraz yavaş yaz.' })); return; }
+        if (rl.length >= 8) { reply(res, 429, J, JSON.stringify({ error: 'Çok hızlı yazıyorsun; birkaç saniye bekle.' })); return; }
+        const last = GCHAT.filter(m => m.fb === me.fb).pop();
+        if (last && last.text === text && now - last.t < 60000) { reply(res, 429, J, JSON.stringify({ error: 'Aynı mesajı tekrar gönderme.' })); return; }
+        rl.push(now); gchatRate.set(me.fb, rl);
+        const m = { id: ++gchatSeq, t: now, fb: me.fb, uid: me.uid, name: me.name, av: me.av, tp: me.tp | 0, text };
+        if (OWNERS.has(me.fb)) m.own = 1;
+        GCHAT.push(m); if (GCHAT.length > GCHAT_MAX) GCHAT.splice(0, GCHAT.length - GCHAT_MAX);
+        const st = STATS.fbStates();
+        for (const [fb, b] of inboxes) if (fb !== me.fb && isOnline(fb) && (st.get(fb) || 'menu') === 'menu') deliver(fb, { type: 'gchat', m });
+        reply(res, 200, J, JSON.stringify({ m }));
       });
       return;
     }

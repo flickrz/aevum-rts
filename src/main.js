@@ -712,7 +712,7 @@ function boot() {
   try { mountNoticeBanner(app.ui, notice); } catch (err) { console.warn('[notice]', err); }
   if (cloud) {
     // invites from friends (and being shown online to them) while signed in
-    cloud.startInbox(m => { if (m && m.type === 'invite') app.ui.showInvite(m); });
+    cloud.startInbox(m => { if (m && m.type === 'invite') app.ui.showInvite(m); else if (m && m.type === 'gchat') import('./ui/gchat-ui.js').then(g => g.gchatIn(m.m)).catch(() => {}); });
     // sync runs by itself: every 4 minutes too (new matches from other PCs, renames, TP), never by a button
     // (2026-11-23) 'lazy': a pull (3+ reads) at most every 20 minutes per browser; the kicks still send what is queued
     setInterval(() => { if (!document.hidden) cloudSafe(c => c.kick({ pull: 'lazy' })); }, 4 * 60 * 1000);

@@ -1116,3 +1116,44 @@ html.touch .news-wrap .news-btn { display: block; }
 .fbbox { width: min(460px, 92vw); }
 .fbta { width: 100%; box-sizing: border-box; resize: vertical; min-height: 96px; margin: 10px 0 6px; font: inherit; font-size: 13px; line-height: 1.45; }
 .fbnote { min-height: 18px; font-size: 12px; color: var(--gold); }
+/* ---- "Genel Sohbet" (src/ui/gchat-ui.js): under "Duyurular" on the main menu, a third column on the multiplayer screen ---- */
+.news-wrap.has-chat { display: flex; flex-direction: column; gap: 12px; width: min(400px, 30vw); }
+.news-wrap.has-chat > .news-box { width: 100%; flex: none; }
+.news-wrap.has-chat > .news-btn { flex: none; }
+.gchat { display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 12px 12px 10px; box-sizing: border-box; text-align: left; }
+.news-wrap > .gchat { flex: none; }
+.gc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; }
+.gc-title { color: var(--gold); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; font-weight: 600; }
+.gc-rbtn { background: none; border: 0; padding: 2px 4px; font-size: 12px; color: var(--dim); text-decoration: underline; text-underline-offset: 3px; }
+.gc-rbtn:hover { color: var(--gold); }
+.gc-list { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 3px; padding-right: 3px; font-size: 13px; line-height: 1.4; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(232,194,106,.45) transparent; }
+.gc-line { padding: 3px 4px; border-radius: 6px; overflow-wrap: anywhere; color: var(--ink); }
+.gc-line:hover { background: rgba(255,255,255,.035); }
+.gc-time { font-size: 11px; color: var(--dim); opacity: .7; margin-right: 6px; font-variant-numeric: tabular-nums; }
+.gc-name { background: none; border: 0; padding: 0; margin-right: 6px; font: inherit; font-weight: 600; color: #e0b858; cursor: pointer; }
+.gc-name:hover { text-decoration: underline; text-underline-offset: 2px; }
+.gc-name::after { content: ':'; color: var(--dim); }
+.gc-own { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; line-height: 16px; background: rgba(232,194,106,.16); color: var(--gold); vertical-align: 1px; }
+.gc-text { color: var(--ink); }
+.gc-empty { padding: 10px 4px; font-size: 13px; }
+.gc-form { display: flex; gap: 6px; flex: none; margin: 0; }
+.gc-form .gc-inp { flex: 1 1 auto; min-width: 0; margin: 0; padding: 8px 10px; font-size: 13px; }
+.gc-form .mbtn.gc-go { flex: none; width: auto; margin: 0; padding: 7px 12px; font-size: 12.5px; }
+.gc-msg { flex: none; font-size: 12px; color: #ff9a8a; padding: 0 2px; }
+.gc-ov { position: absolute; inset: 0; z-index: 25; display: flex; align-items: center; justify-content: center; background: rgba(5,7,11,.55); pointer-events: auto; }
+.gc-modal { position: relative; width: min(420px, 92vw); max-height: 86vh; overflow: auto; padding: 20px 22px 18px; box-sizing: border-box; text-align: left; }
+.gc-modal h2 { margin: 0 0 12px; font-weight: 400; letter-spacing: 3px; color: var(--gold); text-transform: uppercase; font-size: 15px; }
+.gc-rlist { margin: 0 0 10px; padding-left: 20px; font-size: 14px; line-height: 1.5; }
+.gc-rlist li { margin: 0 0 6px; }
+.gc-rnote { font-size: 12.5px; color: var(--dim); margin: 0 0 12px; }
+.gc-ptop { display: flex; align-items: center; gap: 14px; margin: 4px 0 10px; }
+.gc-pname { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.gc-pname b { font-size: 18px; color: var(--ink); }
+.gc-pstats { font-size: 13px; margin-bottom: 8px; }
+.gc-pacts { display: flex; gap: 8px; margin-top: 10px; }
+.gc-pacts .mbtn { flex: 1; margin: 0; }
+.mp-wrap > .gchat { flex: none; width: 300px; contain: size; min-height: 340px; }
+html.touch .news-wrap > .gchat { display: none; }
+@media (max-width: 1100px) { .news-wrap.has-chat { width: 270px; } }
+@media (max-height: 560px), (max-width: 760px) { .news-wrap > .gchat { display: none; } .news-wrap.has-chat { width: auto; height: auto !important; } }
+@media (max-width: 1100px) { .mp-wrap > .gchat { width: auto; contain: none; min-height: 0; height: 360px; } }
