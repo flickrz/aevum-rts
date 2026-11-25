@@ -525,6 +525,7 @@ export default {
   "Profil okunamadı.": "Could not read the profile.",
   "dev kimliği geçersiz.": "Invalid dev identity.",
   "Bu kullanıcı adı başka bir hesaba ait.": "This user name belongs to another account.",
+  "Bu hesap oyundan uzaklaştırıldı.": "This account has been banned from the game.",
   "Hesap profili henüz hazır değil.": "The account profile is not ready yet.",
   "Maç bileti geçersiz.": "Invalid match ticket.",
   "Maç bileti eskidi.": "The match ticket has expired.",
