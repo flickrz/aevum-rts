@@ -21,7 +21,7 @@ export class Input {
     this.keys = new Set();
     this.mouse = { x: 0, y: 0, inside: false };
     this.drag = null;      // left button box select {x0,y0,active}
-    this.rot = null;       // camera rotate {x,y} (Space / Shift+middle / Alt+middle)
+    this.rot = null;       // middle button rotate {x,y}
     this.mpan = null;      // middle button drag pan {x,y}
     this.wallStart = null; // {tx,tz}
     this.groups = {};
@@ -282,8 +282,7 @@ export class Input {
     this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.inside = true;
     if (e.button === 1) {
       e.preventDefault();
-      if (e.shiftKey || e.altKey) this.rot = { x: e.clientX, y: e.clientY };
-      else this.mpan = { x: e.clientX, y: e.clientY };
+      this.rot = { x: e.clientX, y: e.clientY };
       return;
     }
     if (!this.active) return;

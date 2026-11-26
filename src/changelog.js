@@ -13,7 +13,7 @@ export const CHANGELOG = [
       'Zil düğmesi geldi: basınca köylüler şehir merkezine sığınıyor, tekrar basınca kaldıkları işe dönüyorlar.',
       'Lobide oda sahibi oyuncuları odadan atabiliyor.',
       'Lobide oyuncuların yanında Arkadaş Ekle düğmesi var.',
-      'Harita fare orta tuşuyla sürüklenerek kaydırılabiliyor; ekran kenarı kaydırma ayarlardan açılıp kapatılabiliyor.',
+      'Ekran kenarı kaydırma ayarlardan açılıp kapatılabiliyor.',
       'Uzun Yaylı Okçu ve bazı geç çağ araştırmalarının eksik simgeleri eklendi.',
       'Zor yapay zeka kalabalık üslerde Orta Çağda takılı kalmıyor.',
       'Mobilde sur ve bina yerleştirme modundan çıkmak için İptal düğmesi geldi.',

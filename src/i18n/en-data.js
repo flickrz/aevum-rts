@@ -277,7 +277,7 @@ export default {
   'Zil düğmesi geldi: basınca köylüler şehir merkezine sığınıyor, tekrar basınca kaldıkları işe dönüyorlar.': 'New town bell button: press it and villagers take shelter in the town center, press again and they go back to their work.',
   'Lobide oda sahibi oyuncuları odadan atabiliyor.': 'The room host can kick players from the lobby.',
   'Lobide oyuncuların yanında Arkadaş Ekle düğmesi var.': 'The lobby has an Add Friend button next to players.',
-  'Harita fare orta tuşuyla sürüklenerek kaydırılabiliyor; ekran kenarı kaydırma ayarlardan açılıp kapatılabiliyor.': 'The map can be dragged with the middle mouse button; edge scrolling can be turned on or off in the settings.',
+  'Ekran kenarı kaydırma ayarlardan açılıp kapatılabiliyor.': 'Edge scrolling can be turned on or off in the settings.',
   'Uzun Yaylı Okçu ve bazı geç çağ araştırmalarının eksik simgeleri eklendi.': 'Added the missing icons of the Longbowman and some late age techs.',
   'Zor yapay zeka kalabalık üslerde Orta Çağda takılı kalmıyor.': 'The hard AI no longer gets stuck in the Medieval Age on crowded bases.',
   'Mobilde sur ve bina yerleştirme modundan çıkmak için İptal düğmesi geldi.': 'On mobile, a Cancel button now exits wall and building placement.',
