@@ -1363,24 +1363,88 @@ export class Game {
     else if (q.kind === 'age') { this._refund(owner, AGES[q.id].cost); p.ageProgress = 0; }
   }
   setRally(buildingId, x, z, targetId = null) { const b = this.entities.get(buildingId); if (!b || b.kind !== 'building' || !(BUILDINGS[b.type] && (BUILDINGS[b.type].trains || []).length)) return false; /* (only buildings that train units take a flag, owner 2026-11-15) */ const t = targetId != null ? this.entities.get(targetId) : null; b.rally = { x, z, tid: t ? t.id : null, rtype: t && t.kind === 'resource' ? t.type : null }; return true; }
-  // Where a freshly trained villager should work when the rally flag sits on a resource / farm / pasture.
+  // live villagers of owner currently assigned to gather entity id (working, walking, or carrying back)
+  _resWorkers(id, owner) {
+    let n = 0;
+    for (const u of this.units) {
+      if (u.dead || u.owner !== owner || u.type !== 'villager') continue;
+      let o = u.order; if (o && o.type === 'return') o = o.resume;
+      if (o && o.type === 'gather' && o.targetId === id) n++;
+    }
+    return n;
+  }
+  // true when a resource tile (or its mine deposit) has no free work slots left for owner
+  _resFull(e, owner, mineFull) {
+    if (!e || e.dead || !(e.amount > 0)) return true;
+    if (e.type === 'stone' || e.type === 'gold') {
+      const dep = this._depOf(e);
+      if (mineFull && mineFull.has(dep)) return mineFull.get(dep);
+      let n = 0;
+      for (const u of this.units) {
+        if (u.dead || u.owner !== owner || u.type !== 'villager') continue;
+        let o = u.order; if (o && o.type === 'return') o = o.resume;
+        if (!o || o.type !== 'gather') continue;
+        if (o.dadm === dep) { n++; continue; }
+        if (!o.dadm && (o.rt === 'stone' || o.rt === 'gold')) {
+          const te = this.entities.get(o.targetId);
+          if (te && !te.dead && this._depOf(te) === dep) n++;
+        }
+      }
+      const full = n >= MINE_CAP;
+      if (mineFull) mineFull.set(dep, full);
+      return full;
+    }
+    const K = SPOTS[e.type];
+    if (K) {
+      const cap = Math.min(K, this._spotCands(e, owner).length >> 1);
+      if (cap <= 0) return true;
+      return this._resWorkers(e.id, owner) >= cap;
+    }
+    return false;
+  }
+  // Where a freshly trained villager (or fishboat) should work when the rally flag sits on a resource / farm / pasture.
+  // If that target's slots are full, redirects to the nearest same-type resource with room instead of idling.
   _rallyWork(b) {
     const ra = b.rally; if (!ra) return null;
     const t = ra.tid != null ? this.entities.get(ra.tid) : null;
     if (t && !t.dead && t.kind === 'building') {
-      if (t.type === 'farm' || t.type === 'pasture') return t;
-      // flag on a drop-off camp (lumber camp, mining camp, mill): work the nearest matching resource around it
+      if (t.type === 'farm' || t.type === 'pasture') {
+        const cap = t.type === 'farm' ? FARM_SLOTS : 6;
+        if (this._resWorkers(t.id, b.owner) < cap) return t;
+        let best = null, bd = 1e9;
+        for (const o of this.buildings) {
+          if (o === t || o.dead || !o.done || o.owner !== b.owner || o.type !== t.type) continue;
+          if (this._resWorkers(o.id, b.owner) >= cap) continue;
+          const d = dhypot(o.x - t.x, o.z - t.z); if (d < bd) { bd = d; best = o; }
+        }
+        return best;
+      }
+      // flag on a drop-off camp (lumber camp, mining camp, mill): work the nearest matching free resource around it
       const bd0 = BUILDINGS[t.type], drop = bd0 && t.owner === b.owner && !(bd0.trains || []).length ? bd0.dropoff : null; if (!drop) return null;
-      let best = null, bd = 1e9;
-      for (const e of this.entities.values()) { if (e.kind !== 'resource' || e.dead || !(e.amount > 0) || e.type === 'fish' || !drop.includes(RES_OF[e.type])) continue; const d = dhypot(e.x - t.x, e.z - t.z); if (d < 16 && d < bd) { bd = d; best = e; } }
-      return best;
+      const mf = new Map();
+      let best = null, bd = 1e9, far = null, fd = 1e9;
+      for (const e of this.entities.values()) {
+        if (e.kind !== 'resource' || e.dead || !(e.amount > 0) || e.type === 'fish' || !drop.includes(RES_OF[e.type])) continue;
+        if (this._resFull(e, b.owner, mf)) continue;
+        const d = dhypot(e.x - t.x, e.z - t.z);
+        if (d < 16 && d < bd) { bd = d; best = e; }
+        if (d < fd) { fd = d; far = e; }
+      }
+      return best || far;
     }
-    if (t && !t.dead && t.amount > 0) return t;
-    const want = ra.rtype; if (!want) return null; // flag on plain ground: villager just walks there
+    const aliveRes = t && !t.dead && t.kind === 'resource' && t.amount > 0;
+    if (aliveRes && (t.type === 'fish' || !this._resFull(t, b.owner))) return t;
+    const want = aliveRes ? t.type : ra.rtype; if (!want) return null; // flag on plain ground: villager just walks there
+    const mf = new Map();
     let best = null, bd = 1e9;
-    const maxD = want === 'fish' ? 20 : 10;
-    for (const e of this.entities.values()) { if (e.kind !== 'resource' || e.dead || !(e.amount > 0)) continue; if (want && e.type !== want) continue; const d = dhypot(e.x - ra.x, e.z - ra.z); if (d < maxD && d < bd) { bd = d; best = e; } }
-    if (best && want) ra.tid = best.id;
+    const maxD = want === 'fish' ? 20 : 1e9;
+    for (const e of this.entities.values()) {
+      if (e.kind !== 'resource' || e.dead || !(e.amount > 0) || e.type !== want) continue;
+      if (want !== 'fish' && this._resFull(e, b.owner, mf)) continue;
+      const d = dhypot(e.x - ra.x, e.z - ra.z);
+      if (d < maxD && d < bd) { bd = d; best = e; }
+    }
+    if (best && !aliveRes) ra.tid = best.id;
     return best;
   }
   deleteEntity(id) { const e = this.entities.get(id); if (!e || e.dead || e.owner < 0) return false; if (e.kind === 'building') for (const q of e.queue.slice()) this._refundQ(e.owner, q); this._kill(e, null); return true; }
@@ -2160,10 +2224,10 @@ export class Game {
     return n;
   }
   // a villager starting on a mine takes a place at its deposit; when it is full he goes to the nearest other deposit
-  // of that kind with room (within 30 tiles), else he stops and his owner is told
+  // of that kind with room, else he stops and his owner is told
   _admitMine(u, o, t, dep) {
     if (this.mineLoad(dep, u.owner) < MINE_CAP) { o.dadm = dep; return true; }
-    let best = null, bd = 30 * 30;
+    let best = null, bd = 1e9;
     const full = new Map();
     for (const e of this.entities.values()) {
       if (e.kind !== 'resource' || e.type !== t.type || e.dead) continue;
