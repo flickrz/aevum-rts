@@ -27,6 +27,7 @@ export class Input {
     this.groups = {};
     this.lastGroupTap = { n: -1, t: 0 };
     this.idleIdx = 0;
+    this.tcIdx = 0;
     this.shift = false;
 
     this.box = document.createElement('div');
@@ -77,7 +78,7 @@ export class Input {
   isEnemyOwner(o) { const g = this.app.game, me = this.me(); if (o == null || o < 0 || o === me) return false; try { const r = g?.isEnemy?.(me, o); if (r !== undefined) return !!r; } catch (err) { /* ignore */ } return !this.isAllyOwner(o); }
 
   reset() {
-    this.placing = null; this.wallStart = null; this.placeDown = false; this.groups = {}; this.keys.clear(); this.placeRot = 0;
+    this.placing = null; this.wallStart = null; this.placeDown = false; this.groups = {}; this.keys.clear(); this.placeRot = 0; this.tcIdx = 0;
     this.endDrag(); this.rot = null; this.mpan = null; this.setLineLabel(null);
     try { this.app.renderer.setGhost(null); } catch (err) { /* ignore */ }
   }
@@ -713,15 +714,21 @@ export class Input {
         try { handled = !!(app.ui.hotkey && app.ui.hotkey(k.toLowerCase())); } catch (err) { console.warn(err); }
         if (handled) return;
         if (code === 'KeyQ' && !app.selection.length && !this.placing && !this.targeting) { this.selectAllMilitary(); return; }
+        if (code === 'KeyH' && !this.placing && !this.targeting) { this.goHome(); return; }
       }
     }
   }
 
   goHome() {
     const game = this.game;
-    const tc = game.buildingsOf(this.me()).find(b => b.type === 'towncenter');
-    if (tc) this.app.focus(tc.x, tc.z);
-    else { const p = game.players[this.me()]; this.app.focus(p.startX, p.startZ); }
+    const tcs = game.buildingsOf(this.me()).filter(b => b.type === 'towncenter' && !b.dead).sort((a, b) => a.id - b.id);
+    if (tcs.length) {
+      const tc = tcs[this.tcIdx++ % tcs.length];
+      this.app.focus(tc.x, tc.z);
+    } else {
+      const p = game.players[this.me()];
+      this.app.focus(p.startX, p.startZ);
+    }
   }
 
   // ---- map flare (the 📍 button): the next left click on the map or the minimap places it
