@@ -667,6 +667,11 @@ export class Input {
         return;
       }
     }
+    if (e.ctrlKey && !e.altKey && !e.metaKey && code === 'KeyA') {
+      e.preventDefault();
+      if (!e.repeat) this.selectAllUnits();
+      return;
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
 
     // W/A/S/D are camera-only: never routed to the command card or any other shortcut
@@ -693,6 +698,7 @@ export class Input {
         let handled = false;
         try { handled = !!(app.ui.hotkey && app.ui.hotkey(k.toLowerCase())); } catch (err) { console.warn(err); }
         if (handled) return;
+        if (code === 'KeyQ' && !app.selection.length && !this.placing && !this.targeting) { this.selectAllMilitary(); return; }
       }
     }
   }
@@ -751,6 +757,25 @@ export class Input {
       this.app.focus(sx / ids.length, sz / ids.length);
     }
     return true;
+  }
+
+  // Ctrl+A: all own commandable units on the map
+  selectAllUnits() {
+    const ids = this.game.unitsOf(this.me()).filter(u => !u.dead && !u.aboard && u.type !== 'train').map(u => u.id);
+    if (ids.length) this.app.select(ids);
+  }
+  // Q (with nothing selected): all own military units (land soldiers, support, siege, and warships)
+  selectAllMilitary() {
+    const ids = this.game.unitsOf(this.me()).filter(u => {
+      if (u.dead || u.aboard) return false;
+      const d = UNITS[u.type];
+      return !!d && d.cls !== 'civil' && d.cls !== 'train' && u.type !== 'fishboat' && u.type !== 'transport';
+    }).map(u => u.id);
+    if (!ids.length) {
+      this.game.events.emit('notify', { text: tr('Askerî birlik yok.'), type: 'info' });
+      return;
+    }
+    this.app.select(ids);
   }
 
   // the next idle villager; all: every idle villager at once (Shift), the camera on the one nearest the middle of them
