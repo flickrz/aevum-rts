@@ -1421,7 +1421,7 @@ function makeHuman(g, color, k, P, age) {
   const cloth = mat(color, .85, 0);
   const legM = A <= 1 ? MT.skin : A === 2 ? XM.hose : mat(k.legs || (A === 4 ? 0x2f3540 : 0x5a4632), .9);
   let torsoM, armM;
-  if (V) { torsoM = A === 0 ? XM.fur : A === 1 ? XM.linen : A === 4 ? MT.white : cloth; armM = A <= 1 ? MT.skin : A === 4 ? MT.white : cloth; }
+  if (V) { torsoM = A === 0 ? XM.fur : (A === 1 || A === 3) ? XM.linen : A === 4 ? MT.white : cloth; armM = A <= 1 ? MT.skin : A === 3 ? XM.linen : A === 4 ? MT.white : cloth; }
   else if (A === 0) { torsoM = XM.hide; armM = MT.skin; }
   else if (A === 1) { torsoM = k.armor ? MT.bronze : cloth; armM = MT.skin; }
   else if (A === 2) { torsoM = k.armor ? MT.steel : XM.mail; armM = torsoM; }
@@ -1438,7 +1438,7 @@ function makeHuman(g, color, k, P, age) {
   if (A === 0) { const sh = bx(P.torso, cloth, .08, .4, .195, .13, .0, 0); sh.rotation.z = .6; }
   else if (A === 1) { if (V || k.armor) bx(P.torso, cloth, .31, .06, .195, 0, .13, 0); }
   else if (A === 2) { if (!V) bx(P.torso, cloth, .15, .3, .195, 0, .03, 0); }
-  else if (A === 3) { if (V) bx(P.torso, MT.white, .2, .04, .2, 0, .33, 0); else { bx(P.torso, cloth, .33, .09, .205, 0, -.02, 0); if (k.armor) bx(P.torso, MT.gold, .04, .2, .19, 0, .12, 0); } }
+  else if (A === 3) { if (V) { bx(P.torso, cloth, .22, .24, .195, 0, .03, 0); bx(P.torso, MT.white, .2, .04, .2, 0, .33, 0); } else { bx(P.torso, cloth, .33, .09, .205, 0, -.02, 0); if (k.armor) bx(P.torso, MT.gold, .04, .2, .19, 0, .12, 0); } }
   else if (V) { bx(P.torso, cloth, .1, .3, .195, .105, .03, 0); bx(P.torso, cloth, .1, .3, .195, -.105, .03, 0); bx(P.torso, cloth, .31, .3, .05, 0, .03, -.07); }
   else { const b1 = bx(P.torso, MT.white, .045, .4, .195, .13, .0, 0); b1.rotation.z = .6; bx(P.torso, MT.gold, .03, .22, .19, 0, .08, 0); bx(P.torso, MT.leather, .2, .18, .07, 0, .12, -.12); }
   P.head = piv(P.torso, 0, .37, 0); bx(P.head, MT.skin, .17, .17, .17, 0, 0, 0);
@@ -1452,7 +1452,7 @@ function makeHuman(g, color, k, P, age) {
   if (hs === 'v0') bx(P.head, XM.hair, .18, .05, .18, 0, .15, 0);
   else if (hs === 'v1') { bx(P.head, XM.hair, .18, .04, .18, 0, .15, 0); bx(P.head, cloth, .185, .035, .185, 0, .1, 0); }
   else if (hs === 'v2' || hs === 'hood') { bx(P.head, cloth, .19, .09, .19, 0, .12, -.01); bx(P.head, cloth, .19, .16, .04, 0, 0, -.09); }
-  else if (hs === 'v3') { cy(P.head, MT.leather, .17, .02, 0, .16, 0); cy(P.head, MT.leather, .085, .07, 0, .17, 0); bx(P.head, cloth, .175, .02, .175, 0, .18, 0); }
+  else if (hs === 'v3') { cy(P.head, MT.hay, .17, .02, 0, .16, 0); cy(P.head, MT.hay, .085, .07, 0, .17, 0); bx(P.head, cloth, .175, .02, .175, 0, .18, 0); }
   else if (hs === 'v4') { bx(P.head, XM.capg, .19, .045, .2, 0, .16, .01); bx(P.head, XM.capg, .14, .015, .06, 0, .16, .12); }
   else if (hs === 'hide') { bx(P.head, MT.leather, .18, .06, .18, 0, .14, 0); bx(P.head, XM.bone, .03, .08, .03, .08, .18, 0); bx(P.head, XM.bone, .03, .08, .03, -.08, .18, 0); }
   else if (hs === 'bronze') { mk(G.dome, P.head, MT.bronze, .21, .2, .21, 0, .1, 0); bx(P.head, cloth, .03, .1, .17, 0, .27, -.01); bx(P.head, MT.bronze, .03, .1, .02, 0, .03, .09); }
