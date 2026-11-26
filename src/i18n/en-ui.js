@@ -486,4 +486,13 @@ export default {
   "Yeni Oyun Başlat": "Start New Game",
   "Oyun sizlerle hızla gelişiyor.": "The game is growing fast with you.",
   "Hata mı buldun, önerin mi var? <b>Buraya tıkla ve yaz</b>, ya da oyunda <kbd>Enter</kbd> ile sohbeti açıp <b class=\"cmention\">@claude</b> yaz; doğrudan geliştiriciye gider.": "Found a bug or have an idea? <b>Click here and write</b>, or in game open chat with <kbd>Enter</kbd> and write <b class=\"cmention\">@claude</b>; it goes straight to the developer.",
+  // ui/menu3.js
+  "Oyna": "Play",
+  "Bildirimler": "Notifications",
+  "Harita ve ayarlar": "Map and settings",
+  "Davet et, birlikte oyna": "Invite, play together",
+  "Serbest kur": "Build freely",
+  "Son kayıttan": "From last save",
+  "Kayıt yok": "No saves",
+  "<b>İpucu:</b> Önerin mi var? <b>Buraya tıkla ve yaz</b>, ya da oyunda <kbd>Enter</kbd> ile sohbeti açıp <b class=\"cmention\">@claude</b> yaz; doğrudan geliştiriciye gider.": "<b>Tip:</b> Have an idea? <b>Click here and write</b>, or in game open chat with <kbd>Enter</kbd> and write <b class=\"cmention\">@claude</b>; it goes straight to the developer.",
 };
