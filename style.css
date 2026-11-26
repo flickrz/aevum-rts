@@ -991,6 +991,9 @@ button.gbtn, button.gbtn .gbtn-t { color: #1f1f1f !important; text-shadow: none 
 .respanel { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; padding: 6px 8px; }
 .respanel .rtop { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 0 6px; margin-bottom: 2px; border-bottom: 1px solid var(--line); }
 .respanel .tbtn.idlebtn { height: 30px; flex: none; }
+.respanel .tbtn.bellbtn { height: 30px; width: 30px; flex: none; margin-right: auto; display: flex; align-items: center; justify-content: center; }
+.respanel .tbtn.bellbtn .gi { width: 16px; height: 16px; }
+.respanel .tbtn.bellbtn.on { border-color: var(--gold); background: rgba(232,194,106,.22); animation: idlePulse 1.4s ease-in-out infinite; }
 .respanel .tbtn .gi { fill: #e9dfc8; }
 .respanel .rtop .res.pop { min-width: 0; width: auto; padding: 0 4px; gap: 5px; font-size: 14px; white-space: nowrap; }
 .respanel > .res { flex: 1 1 0; min-height: 0; min-width: 0; width: auto; display: grid; grid-template-columns: 22px minmax(0, 1fr) 38px 32px; align-items: center; column-gap: 6px; padding: 0 4px; border-radius: 6px; }

@@ -129,7 +129,7 @@ export const TREE_WOOD = 800;
 export const TOWER_AGE_RANGE = 1;
 export const towerAgeBonus = (type, age) => (type === 'tower' ? Math.max(0, (age | 0) - 1) * TOWER_AGE_RANGE : 0);
 // commands a client may send over the network (Game.execCommand); the app may wrap these on the instance
-export const CMD_METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload', 'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol', 'cmdRotateBuilding'];
+export const CMD_METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload', 'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol', 'cmdRotateBuilding', 'cmdTownBell'];
 const CMD_SET = new Set(CMD_METHODS);
 // buildings turn in quarter turns (b.rot 0..3, view only: footprints are square), except these
 export const NO_ROTATE = new Set(['wall', 'gate', 'farm', 'rail', 'tower', 'dock']);   // (the renderer never turns a tower or a dock)
@@ -343,6 +343,7 @@ export class Game {
       case 'trade': a[0] = pid; if (!key(TRADE_VAL, a[1]) || !key(TRADE_VAL, a[2])) return false; break;
       case 'cmdTribute': case 'cmdGroup': a[0] = pid; break;
       case 'cmdRotateBuilding': a[0] = pid; if (!own(a[1])) return false; a.length = 2; break;
+      case 'cmdTownBell': a[0] = pid; a.length = 1; break;
     }
     try { return this._sim(() => Game.prototype[method].apply(this, a)); } catch (err) { console.error('[execCommand ' + method + ']', err); return false; }
   }
@@ -1150,7 +1151,7 @@ export class Game {
   // Shift-queue (playtest 2026-11-14): an open-ended order (gathering: trees, farms, endless mines...; trade runs;
   // fishing; patrols) never finishes on its own, so nothing queued behind it would ever run. Queuing behind one ends it now
   // (queued open-ended orders are dropped the same way); a villager walking to drop off a load delivers it first.
-  _setOrder(u, o, queue) { u.explore = false; if (u.hsId) u.hsId = 0; if (queue && u.order && !u.order.auto) { const open = q => !!q && (q.type === 'gather' || q.type === 'trade' || q.type === 'fish' || (q.type === 'move' && !!q.pat)); for (let i = u.queue.length - 1; i >= 0; i--) if (open(u.queue[i])) u.queue.splice(i, 1); u.queue.push(o); if (open(u.order)) this._next(u); else if (u.order.type === 'return') u.order.resume = null; return; } if (u.order && u.order.type === 'gather') this._unhunt(u.order); u.queue.length = 0; u.order = o; u.targetId = o.targetId || null; u.path = null; u.pk = null; u.rpT = 0; }
+  _setOrder(u, o, queue) { u.explore = false; if (u.hsId) u.hsId = 0; if (u.sheltered && !(o && o.bell)) { u.sheltered = 0; delete u.bellTask; } if (queue && u.order && !u.order.auto) { const open = q => !!q && (q.type === 'gather' || q.type === 'trade' || q.type === 'fish' || (q.type === 'move' && !!q.pat)); for (let i = u.queue.length - 1; i >= 0; i--) if (open(u.queue[i])) u.queue.splice(i, 1); u.queue.push(o); if (open(u.order)) this._next(u); else if (u.order.type === 'return') u.order.resume = null; return; } if (u.order && u.order.type === 'gather') this._unhunt(u.order); u.queue.length = 0; u.order = o; u.targetId = o.targetId || null; u.path = null; u.pk = null; u.rpT = 0; }
   _unhunt(o) { const t = this.entities.get(o.targetId); if (t && PREY[t.type] && !t.live && t.anim !== 'die') t.hunted = false; }
   // mode 'am' (attack-move) / 'pat' (patrol): only units that can fight get the marks (see the move case); villagers,
   // carts, healers and unarmed ships of the selection walk there as on a plain move, in the same formation
@@ -1284,7 +1285,58 @@ export class Game {
     let n = 0; for (const u of this._live(ids)) { const d = UNITS[u.type]; if (d.cls === 'civil' || !(d.atk > 0)) continue; u.stance = stance === 'aggressive' ? undefined : stance; n++; }
     return n > 0;
   }
-  cmdStop(ids) { for (const u of this._live(ids)) { if (u.order && u.order.type === 'gather') this._unhunt(u.order); u.order = null; u.queue.length = 0; u.path = null; u.pk = null; u.targetId = null; u.state = 'idle'; u.anim = 'idle'; } return true; }
+  cmdStop(ids) { for (const u of this._live(ids)) { if (u.order && u.order.type === 'gather') this._unhunt(u.order); if (u.sheltered) { u.sheltered = 0; delete u.bellTask; } u.order = null; u.queue.length = 0; u.path = null; u.pk = null; u.targetId = null; u.state = 'idle'; u.anim = 'idle'; } return true; }
+  _cloneOrder(o) {
+    if (!o || typeof o !== 'object') return null;
+    const c = {};
+    for (const k in o) {
+      if (k === 'grp' || k === 'path') continue;
+      c[k] = k === 'resume' ? this._cloneOrder(o[k]) : o[k];
+    }
+    c.fail = 0; c.sp = 0; c.so = 0; c.dadm = 0;
+    return c;
+  }
+  // Town bell (2026-11-26): first press recalls all villagers to shelter at the nearest own Town Center and saves
+  // their tasks; second press returns each sheltered villager to its previous task. MP-safe (owner forced in execCommand).
+  cmdTownBell(owner) {
+    const p = this.players[owner]; if (!p || p.defeated) return false;
+    const tcs = this.buildings.filter(b => b.owner === owner && !b.dead && b.done && b.type === 'towncenter');
+    if (!p.bell) {
+      if (!tcs.length) return false;
+      p.bell = true;
+      for (const u of this.units) {
+        if (u.dead || u.aboard || u.owner !== owner || u.type !== 'villager') continue;
+        const prev = u.order && !u.order.bell ? { order: this._cloneOrder(u.order), queue: (u.queue || []).map(q => this._cloneOrder(q)).filter(Boolean) } : null;
+        let tc = tcs[0], bd = sq(tc.x - u.x) + sq(tc.z - u.z);
+        for (let i = 1; i < tcs.length; i++) {
+          const d = sq(tcs[i].x - u.x) + sq(tcs[i].z - u.z);
+          if (d < bd || (d === bd && tcs[i].id < tc.id)) { bd = d; tc = tcs[i]; }
+        }
+        const sl = this._slotNear(tc.x, tc.z + tc.size / 2 + 1.2, u);
+        this._setOrder(u, { type: 'move', x: sl.x, z: sl.z, bell: 1 }, false);
+        u.sheltered = tc.id;
+        if (prev) u.bellTask = prev; else delete u.bellTask;
+      }
+      this.events.emit('townBell', { owner, active: true });
+      return true;
+    }
+    p.bell = false;
+    for (const u of this.units) {
+      if (u.dead || u.aboard || u.owner !== owner || u.type !== 'villager' || !u.sheltered) continue;
+      const still = !u.order || !!u.order.bell;
+      const task = u.bellTask;
+      u.sheltered = 0; delete u.bellTask;
+      if (!still) continue;
+      if (task && task.order) {
+        u.order = task.order; u.queue = Array.isArray(task.queue) ? task.queue : [];
+        u.targetId = u.order.targetId || null; u.path = null; u.pk = null; u.rpT = 0;
+      } else {
+        u.order = null; u.queue.length = 0; u.targetId = null; u.path = null; u.pk = null; u.state = 'idle'; u.anim = 'idle';
+      }
+    }
+    this.events.emit('townBell', { owner, active: false });
+    return true;
+  }
 
   train(buildingId, unitType) {
     const b = this.entities.get(buildingId), d = UNITS[unitType];
@@ -1756,7 +1808,7 @@ export class Game {
     }
     if (target.kind === 'unit' && killer && !killer.dead && (!target.order || target.order.auto)) {
       const d = UNITS[target.type];
-      if (d.cls === 'civil') { if (!target.order && !target.naval) { const tc = this._nearestB(target, b => b.type === 'towncenter'); if (tc && dhypot(tc.x - target.x, tc.z - target.z) > tc.size / 2 + 1) this.cmdMove([target.id], tc.x, tc.z + tc.size / 2 + 1); } }
+      if (d.cls === 'civil') { if (!target.order && !target.naval && !target.sheltered) { const tc = this._nearestB(target, b => b.type === 'towncenter'); if (tc && dhypot(tc.x - target.x, tc.z - target.z) > tc.size / 2 + 1) this.cmdMove([target.id], tc.x, tc.z + tc.size / 2 + 1); } }
       else if (d.atk > 0 && !(target.type === 'ram' && killer.kind !== 'building') && !(killer.naval && !(d.range > 0)) && !target.order) this._engage(target, killer);
     } else if (target.kind === 'unit' && killer && !killer.dead && killer.id && target.order && target.order.type === 'move' && this._movFights(target, target.order) && this._canEngage(target, killer)) this._engage(target, killer);
   }

@@ -463,4 +463,13 @@ export default {
   "Genel Skor": "Overall Score",
   "Eldeki Kaynak": "Resources on Hand",
   "Göster / gizle": "Show / hide",
+  "Şehir Zili": "Town Bell",
+  "Şehir Zili (Aktif)": "Town Bell (Active)",
+  "Zil": "Bell",
+  "İşe Dön": "Back to Work",
+  "İşçileri Gönder": "Return Workers",
+  "Tüm köylüleri en yakın Şehir Merkezi'ne çağırır. Tekrar basınca herkes son kaldığı işe geri döner.": "Calls all villagers to shelter at the nearest Town Center. Press again to return each to their previous task.",
+  "Tekrar bas: tüm köylüler son kaldıkları işe geri döner.": "Press again: all villagers return to their previous tasks.",
+  "Şehir zili çaldı: köylüler Şehir Merkezi'ne sığınıyor": "Town bell rung: villagers are sheltering at the Town Center",
+  "Köylüler işlerine geri dönüyor": "Villagers are returning to work",
 };

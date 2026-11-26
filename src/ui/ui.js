@@ -33,6 +33,7 @@ function devModeOffered() {
   } catch { return false; }
 }
 applyIcons();
+const BELL_ICO = '<svg class="gi" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a2 2 0 0 0-2 2v.3A6 6 0 0 0 6 10v4.3l-1.7 2.2A1 1 0 0 0 5 18h14a1 1 0 0 0 .7-1.5L18 14.3V10a6 6 0 0 0-4-5.7V4a2 2 0 0 0-2-2zm-2 17a2 2 0 0 0 4 0h-4z"/></svg>';
 
 const RES_LIST = ['food', 'wood', 'stone', 'gold'];
 const RES_ICON = RES_ICONS;
@@ -216,10 +217,16 @@ export class UI {
     this._idleBEl = this.idleEl.querySelector('b');
     this.idleEl.onclick = (ev) => { this._click(); safe(() => this.app.input?.nextIdleVillager(!!ev?.shiftKey)); };
     this._tip(this.idleEl, () => ({ name: tr('Boşta köylüler'), desc: tr('Sıradaki boşta köylüyü seç ve ona git. Kısayol: Tab veya nokta (.). Shift ile: tüm boştaki köylüleri seç.') }));
+    this.bellBtn = el('button', 'tbtn bellbtn', BELL_ICO);
+    this.bellBtn.onclick = () => { this._click(); safe(() => this.game?.cmdTownBell?.(this._me())); };
+    this._tip(this.bellBtn, () => {
+      const on = !!this.game?.players?.[this._me()]?.bell;
+      return { name: on ? tr('Şehir Zili (Aktif)') : tr('Şehir Zili'), desc: on ? tr('Tekrar bas: tüm köylüler son kaldıkları işe geri döner.') : tr('Tüm köylüleri en yakın Şehir Merkezi\'ne çağırır. Tekrar basınca herkes son kaldığı işe geri döner.') };
+    });
     this.popEl = el('div', 'res pop', `<span class="i">${ico('x-pop')}</span><b>0/0</b>`);
     this._popBEl = this.popEl.querySelector('b');
     this._tip(this.popEl, () => ({ name: tr('Nüfus'), desc: tr('Mevcut / azami nüfus. Sınır sabit: 1000.') }));
-    rtop.append(this.idleEl, this.popEl);
+    rtop.append(this.idleEl, this.bellBtn, this.popEl);
     this.resPanel.append(rtop);
     this.resEls = {};
     for (const r of RES_LIST) {
@@ -740,6 +747,13 @@ export class UI {
       else if (p.from === me) this.toast(`${ico('x-ally')} ${tr('{0} oyuncusuna {1} gönderildi', esc(this._pname(p.to)), t)}`, 'info');
       if (this._tribOpen && this.modalEl.querySelector('.tribute')) safe(() => this._renderTribute());
     });
+    on('townBell', (p) => {
+      if (p.owner !== this._me()) return;
+      safe(() => this.app.audio?.play?.('questBell'));
+      if (this.bellBtn) this.bellBtn.classList.toggle('on', !!p.active);
+      this.toast(p.active ? tr('Şehir zili çaldı: köylüler Şehir Merkezi\'ne sığınıyor') : tr('Köylüler işlerine geri dönüyor'), p.active ? 'warn' : 'good');
+      this.cardSig = null;
+    });
     if (this.tribBtn) this.tribBtn.style.display = this._allies().length ? '' : 'none';
     const mp = !!this.app.net;
     for (const b of [this.pauseBtn]) if (b) b.style.display = mp ? 'none' : '';
@@ -885,7 +899,7 @@ export class UI {
     let idle = 0; const building = new Set();
     for (const u of units) {
       if (u.dead || u.type !== 'villager') continue;
-      if (u.state === 'idle') idle++;
+      if (u.state === 'idle' && !u.sheltered) idle++;
       if (u.order && u.order.type === 'build') building.add(u.order.targetId);
       if (u.state === 'build' && u.order && u.order.targetId != null) building.add(u.order.targetId);
     }
@@ -904,6 +918,7 @@ export class UI {
       if (n._h !== h) { n._h = h; n.innerHTML = h; }
     }
     this.idleEl.classList.toggle('has', idle > 0);
+    if (this.bellBtn) this.bellBtn.classList.toggle('on', !!p.bell);
     const demo = !!this.app.demo;
     // hints
     if (!demo && !g.over) {
@@ -1569,14 +1584,22 @@ export class UI {
         run: () => pool.some((b) => safe(() => g.research(b.id, tid), false)),
       });
     }
-    if (e.type === 'towncenter' && p.age < AGES.length - 1 && !pool.some((b) => (b.queue || []).some((q) => q.kind === 'age'))) {
-      const na = AGES[p.age + 1];
+    if (e.type === 'towncenter') {
+      if (p.age < AGES.length - 1 && !pool.some((b) => (b.queue || []).some((q) => q.kind === 'age'))) {
+        const na = AGES[p.age + 1];
+        put({
+          icon: ico('x-ageup'), name: tr('Çağ Atla: ') + tr(na.name), cost: na.cost, time: na.time * QUEUE_TIME_MUL / sb / (g.cfg?.tutorial ? 4 : 1),
+          desc: (na.unlockText || []).map((x) => tr(x)).join(' · ') || tr('Sonraki çağa geç.'),
+          check: () => { const r = safe(() => g.canAgeUp(this._me()), { ok: false, reason: '' }) || { ok: false }; return { ok: !!r.ok, reason: r.reason }; },
+          run: () => pool.some((b) => safe(() => g.ageUp(b.id), false)),
+        }, 9);
+      }
       put({
-        icon: ico('x-ageup'), name: tr('Çağ Atla: ') + tr(na.name), cost: na.cost, time: na.time * QUEUE_TIME_MUL / sb / (g.cfg?.tutorial ? 4 : 1),
-        desc: (na.unlockText || []).map((x) => tr(x)).join(' · ') || tr('Sonraki çağa geç.'),
-        check: () => { const r = safe(() => g.canAgeUp(this._me()), { ok: false, reason: '' }) || { ok: false }; return { ok: !!r.ok, reason: r.reason }; },
-        run: () => pool.some((b) => safe(() => g.ageUp(b.id), false)),
-      }, 9);
+        icon: BELL_ICO, lbl: p.bell ? tr('İşe Dön') : tr('Zil'),
+        name: p.bell ? tr('İşçileri Gönder') : tr('Şehir Zili'),
+        desc: p.bell ? tr('Tekrar bas: tüm köylüler son kaldıkları işe geri döner.') : tr('Tüm köylüleri en yakın Şehir Merkezi\'ne çağırır. Tekrar basınca herkes son kaldığı işe geri döner.'),
+        run: () => safe(() => g.cmdTownBell?.(this._me()), false),
+      }, 10);
     }
     if (e.type === 'market') {
       for (const r of ['food', 'wood', 'stone']) {
