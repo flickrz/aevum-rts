@@ -6,6 +6,15 @@ import { fetchAsset } from './cdn.js';
 
 const SPRITE = 'icons/icons.svg';   // (under assets/: from jsDelivr on the live site, src/cdn.js)
 const OK = /^[a-z0-9-]+$/;
+// units / techs added after the sprite was built: reuse a matching existing silhouette from icons.svg
+export const ICON_ALIAS = {
+  'u-longbow': 'u-archer',
+  'u-sharpshooter': 'u-rifleman',
+  'u-bayonet': 'u-spearman',
+  'u-guardsman': 'u-heavyinf',
+  't-bayonetdrill': 't-drill',
+  't-guardregiment': 't-cuirass',
+};
 
 // The sprite is put into the page ONCE, before the UI is built, and icons point into it (#gi-key).
 // (A reference into the external file made the browser re-resolve it - and, with the server's no-store, fetch
@@ -27,6 +36,7 @@ if (typeof document !== 'undefined' && !document.getElementById('gi-sprite')) {
 
 // the markup of icon `key` (it is safe to put into innerHTML; toast() keeps exactly this markup)
 export function ico(key, cls = '') {
+  if (ICON_ALIAS[key]) key = ICON_ALIAS[key];
   if (!OK.test(key)) key = 'x-unknown';
   return `<svg class="gi${cls ? ' ' + cls : ''}" aria-hidden="true"><use href="#gi-${key}"></use></svg>`;
 }

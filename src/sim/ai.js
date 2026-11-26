@@ -741,8 +741,8 @@ export class AIController {
     // 4) minimum defence
     if (c.mil.length < c.minDef && (c.age > 0 || c.vills.length >= d.barracksAt)) this._trainMilitary(c, true, c.minDef);
     if (c.threatened && c.mil.length < c.armyTarget) this._trainMilitary(c, true);
-    // 5) age up
-    if (c.phase === 'save' && c.tcs.some(b => b.done)) {
+    // 5) age up (also click immediately if ready and already affordable even while threatened)
+    if ((c.phase === 'save' || c.ready) && c.tcs.some(b => b.done)) {
       const r = this.safe(() => g.canAgeUp(this.pid));
       c.ageReason = r ? (r.ok ? 'ok' : r.reason) : 'err';
       if (r && r.ok) {
@@ -752,8 +752,8 @@ export class AIController {
           // the town center with the shortest queue (a queued villager would delay the age)
           const tc = c.tcs.filter(b => b.done).sort((a, b) => (a.queue || []).length - (b.queue || []).length)[0];
           if (tc && g.ageUp(tc.id)) { this._ageClickT = g.time; this._affT = null; }
-        } else block(AGES[c.age + 1].cost, 'ageWait');
-      } else block(AGES[c.age + 1].cost, 'age');
+        } else if (c.phase === 'save') block(AGES[c.age + 1].cost, 'ageWait');
+      } else if (c.phase === 'save') block(AGES[c.age + 1].cost, 'age');
     }
     if (this._affAge !== c.age) { this._affAge = c.age; this._affT = null; } // the reaction clock runs once per age
     // 6) building types the next age requires
@@ -847,11 +847,14 @@ export class AIController {
       const front = !!at.front, nb = (def.size || 1) >= 3 ? 2 : 1;
       ok = this.tryBuild(c, type, 5, 36, at, nb, front ? { x: -ed.x, z: -ed.z, home: H, lim: dhypot(at.x - H.x, at.z - H.z) + 8 } : undefined);
       if (!ok && at !== H) ok = this.tryBuild(c, type, 5, 36, H, nb);
-      // (players 2026-11-19: the hard AI stayed in the Middle Ages - a crowded base had no room for the university
-      // within 30 tiles, so the age-up waited forever with thousands banked): a building the next age needs looks further out
-      // (2026-11-20, the 7x7 / 9x9 footprints: any essential building - the siege workshop, a stable - with no room left
-      // within 36 tiles does the same instead of blocking its cost for the rest of the game)
-      if (!ok && essential && (this.noSpot || (c.reqMissing && c.reqMissing.includes(type))) && c.can(def.cost)) ok = this.tryBuild(c, type, 24, 56, H, 2);
+      // (players 2026-11-19 & 2026-11-26: the hard AI stayed in the Middle Ages - a crowded/walled base or small island
+      // had valid 7x7 university spots, none aligned to the coarse 4-tile grid): fall back to fine (step 1) search, and
+      // for an age-required building relax the planned wall clash as a last resort so it never soft-locks the age-up
+      if (!ok && essential && (this.noSpot || (c.reqMissing && c.reqMissing.includes(type))) && c.can(def.cost)) {
+        ok = this.tryBuild(c, type, 24, 56, H, 2);
+        if (!ok && this.noSpot) ok = this.tryBuild(c, type, 5, 56, H, 2, undefined, 1);
+        if (!ok && this.noSpot && c.reqMissing && c.reqMissing.includes(type)) ok = this.tryBuild(c, type, 5, 56, H, 2, undefined, 2);
+      }
     }
     if (ok) c.pendingB++;
     return ok;
@@ -1432,13 +1435,14 @@ export class AIController {
   }
 
   // ---------- placement ----------
-  findSpot(type, cx, cz, minR, maxR, dir) {
+  // fine: 0 = coarse grid (default, fast), 1 = every tile (step 1), 2 = every tile and ignore planned wall clash
+  findSpot(type, cx, cz, minR, maxR, dir, fine = 0) {
     const g = this.game, def = BUILDINGS[type];
     if (!def) return null;
     // (big footprints - the 12x12 farm - on a finer grid: on a coarse one a free spot rarely lines up; an odd size from
     // 5 up on a grid of half its size plus one - 7 -> 4, 9 -> 5 - so two of a kind still keep a tile between them; a 4x4
     // camp searched close to its deposit on a 2-grid, as the 3x3 one was: on a 5-grid the few tiles there rarely line up)
-    const N = g.map.size, size = def.size || 1, step = size >= 12 ? 3 : size <= 3 || (size === 4 && maxR <= 8) ? 2 : size & 1 ? (size + 1) / 2 : size + 1;   // (3x3 towers too: a 4-grid round a camp has ~5 spots)
+    const N = g.map.size, size = def.size || 1, step = fine ? 1 : size >= 12 ? 3 : size <= 3 || (size === 4 && maxR <= 8) ? 2 : size & 1 ? (size + 1) / 2 : size + 1;   // (3x3 towers too: a 4-grid round a camp has ~5 spots)
     const bx = Math.floor(cx), bz = Math.floor(cz);
     for (let r = minR; r <= maxR; r++) {
       const cands = [];
@@ -1449,7 +1453,7 @@ export class AIController {
           if (tx < 2 || tz < 2 || tx + size > N - 2 || tz + size > N - 2) continue;
           // (dir.home / dir.lim: no further from home than that - a front building stays on the home side of its point)
           if (dir && dir.home && d2(tx + size / 2, tz + size / 2, dir.home.x, dir.home.z) > dir.lim * dir.lim) continue;
-          if (((tx % step) + step) % step !== 0 || ((tz % step) + step) % step !== 0) continue;
+          if (step > 1 && (((tx % step) + step) % step !== 0 || ((tz % step) + step) % step !== 0)) continue;
           const L = dhypot(dx, dz) || 1;
           cands.push([tx, tz, (dir ? -(dx * dir.x + dz * dir.z) / L : 0) + this.rand() * 0.8]);
         }
@@ -1460,24 +1464,24 @@ export class AIController {
         // (seen ground only - its centre, or for a big footprint one of its corners: a 12x12 farm's centre lies
         //  beyond the base's sight even when its near corner is right at the edge of it)
         const seen = this.explored(tx + size / 2, tz + size / 2) || (size >= 6 && [[0, 0], [size, 0], [0, size], [size, size]].some(([ox, oz]) => this.explored(tx + ox, tz + oz)));
-        if (seen && !(this.wall && this._wallClash(tx, tz, size, type)) && !this._lostNear(tx + size / 2, tz + size / 2, size / 2) && this.safe(() => g.canPlace(type, tx, tz, this.pid))) return { tx, tz };
+        if (seen && (fine >= 2 || !(this.wall && this._wallClash(tx, tz, size, type))) && !this._lostNear(tx + size / 2, tz + size / 2, size / 2) && this.safe(() => g.canPlace(type, tx, tz, this.pid))) return { tx, tz };
       }
     }
     return null;
   }
 
-  tryBuild(c, type, minR, maxR, at, nBuilders, dir) {
+  tryBuild(c, type, minR, maxR, at, nBuilders, dir, fine = 0) {
     const g = this.game, def = BUILDINGS[type];
     this.noSpot = false;
     if (!def || !this.unlocked('building', type) || !g.canAfford(this.pid, def.cost)) return false;
     const small = type === 'farm' || type === 'pasture';
     if (!small && type !== 'towncenter' && c.work && c.work.build >= Math.max(3, Math.ceil(c.vills.length * 0.16))) return false;
     const ctr = at || c.home;
-    const key = type + ':' + maxR + ':' + Math.round(ctr.x / 4) + ':' + Math.round(ctr.z / 4);
+    const key = type + ':' + maxR + ':' + fine + ':' + Math.round(ctr.x / 4) + ':' + Math.round(ctr.z / 4);
     // (noSpot: this call found no free spot - not a builder or resource shortfall - for callers that fall back further)
     if (this.failPlace[key] && g.time - this.failPlace[key] < 20) { this.noSpot = true; return false; }
     const size = def.size || 1;
-    const spot = this.findSpot(type, ctr.x - size / 2, ctr.z - size / 2, minR, maxR, dir);
+    const spot = this.findSpot(type, ctr.x - size / 2, ctr.z - size / 2, minR, maxR, dir, fine);
     if (!spot) { this.failPlace[key] = g.time; this.noSpot = true; return false; }
     const cx = spot.tx + size / 2, cz = spot.tz + size / 2;
     const work = c.work;

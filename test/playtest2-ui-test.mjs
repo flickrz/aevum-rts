@@ -85,5 +85,40 @@ ok(S.cmdGroup(0, 5, sv), 'single player: cmdGroup direct call');
 const S2 = Game.deserialize(JSON.parse(JSON.stringify(S.serialize())));
 ok(JSON.stringify(S2.controlGroups(0)[5]) === JSON.stringify(sv), 'single player: group 5 back after load');
 
+// ---- 4) town bell (MP-safe sim command, shelter + resume previous task)
+console.log('Town bell');
+{
+  ok(CMD_METHODS.includes('cmdTownBell'), 'cmdTownBell is a network command');
+  const A2 = new Game(cfg(0)), B2 = new Game(cfg(1));
+  const both2 = (pid, m, a) => { const ra = A2.execCommand(pid, m, JSON.parse(JSON.stringify(a))), rb = B2.execCommand(pid, m, JSON.parse(JSON.stringify(a))); if (ra !== rb) fails.push('clients disagree on ' + m); return ra; };
+  const tcA = A2.buildingsOf(0).find(b => b.type === 'towncenter');
+  const vils = A2.unitsOf(0).filter(u => u.type === 'villager');
+  const tree = A2.resourceNear(tcA.x, tcA.z, 30, 'tree');
+  const gold = A2.resourceNear(tcA.x, tcA.z, 30, 'gold');
+  both2(0, 'cmdGather', [vils.slice(0, 3).map(u => u.id), tree.id]);
+  both2(0, 'cmdGather', [vils.slice(3, 6).map(u => u.id), gold.id]);
+  run(A2, 8); run(B2, 8);
+  // forged owner: player 1 cannot ring player 0's bell
+  both2(1, 'cmdTownBell', [0]);
+  ok(!A2.players[0].bell && !!A2.players[1].bell, 'forged owner ignored (player 1 rang own bell, not player 0)');
+  // player 0 rings bell
+  ok(both2(0, 'cmdTownBell', [0]) === true && A2.players[0].bell === true, 'player 0 rings town bell');
+  ok(vils.slice(0, 6).every(u => u.sheltered === tcA.id && u.order && u.order.type === 'move' && u.order.bell === 1), 'all working villagers head to nearest Town Center');
+  // manually redirect villager 0 while bell is active: it should NOT be overwritten on resume
+  both2(0, 'cmdMove', [[vils[0].id], tcA.x + 12, tcA.z]);
+  ok(!vils[0].sheltered, 'manual order clears shelter flag on that villager');
+  run(A2, 6); run(B2, 6);
+  // save/load while bell is active preserves bell state and saved tasks
+  const snap = Game.deserialize(JSON.parse(JSON.stringify(A2.serialize())), { me: 0 });
+  ok(snap.players[0].bell === true && snap.hash() === A2.hash(), 'town bell state survives save/load with same hash');
+  // second press: sheltered villagers return to their previous tree/gold tasks
+  ok(both2(0, 'cmdTownBell', [0]) === true && A2.players[0].bell === false, 'second press turns town bell off');
+  ok(vils[1].order && (vils[1].order.type === 'gather' || vils[1].order.type === 'return'), 'tree villager resumed gathering');
+  ok(vils[3].order && (vils[3].order.type === 'gather' || vils[3].order.type === 'return'), 'gold villager resumed gathering');
+  ok(!vils[0].order || vils[0].order.type === 'move', 'manually redirected villager kept its manual order');
+  run(A2, 4); run(B2, 4);
+  ok(A2.hash() === B2.hash(), 'both clients stay in sync after town bell cycle');
+}
+
 console.log(fails.length ? `\n${fails.length} FAILED` : '\nALL OK');
 process.exit(fails.length ? 1 : 0);

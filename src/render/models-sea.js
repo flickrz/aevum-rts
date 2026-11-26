@@ -361,6 +361,13 @@ export function makeSeaUnit(type, color, A, root, inner, P) {
     const mh = seaHeight(type) * GL[0];
     m.position.y = -mh * GL[1];   // (the keel under the waterline)
     P.glb = true;
+    if (type === 'fishboat') {
+      const k = SEA_K * .65;
+      P.net = piv(hull, GL[0] * .24, mh * .36, .15 * k);
+      P.netGlb = true; P.net.visible = false;
+      bx(P.net, M.dwood, .05 * k, .05 * k, .9 * k, 0, 0, .4 * k);
+      bx(P.net, M.net, .55 * k, .04 * k, .45 * k, .22 * k, -.08 * k, .68 * k);
+    }
     if (type === 'galleon') P.guns = 'side';
     if (type === 'ironclad') { P.guns = 'turret'; P.funnel = piv(hull, 0, mh * .45, -.3); P.funTop = mh * .3; }
     if (type === 'transport') { P.figs = []; P.nfig = 0; for (let i = 0; i < 10; i++) { const f = sailor(hull, color, (i & 1 ? .2 : -.2), mh * (1 - GL[1]) * .35, -.6 + (i >> 1) * .3, .9); f.visible = false; P.figs.push(f); } }
@@ -423,6 +430,11 @@ export function makeSeaUnit(type, color, A, root, inner, P) {
   const wake = P.wake = piv(root, 0, .02, 0); wake.visible = false;
   P.wakeR = [];
   for (let i = 0; i < 3; i++) { const r = mk(G.ring, wake, FOAM, 1, 1, 1, 0, 0, -pd * .45); r.castShadow = false; r.receiveShadow = false; P.wakeR.push(r); }
+  if (type === 'fishboat') {
+    const fr = P.fishRing = piv(root, 0, .03, 0); fr.visible = false;
+    P.fishR = [];
+    for (let i = 0; i < 2; i++) { const r = mk(G.ring, fr, FOAM, 1, 1, 1, pw * .55, 0, pd * .18); r.castShadow = false; r.receiveShadow = false; P.fishR.push(r); }
+  }
   P.pd = pd;
   return { rig: 'ship', h: h / US, pw: pw / US, pd: pd / US };
 }
@@ -474,10 +486,14 @@ export function seaAnimUnit(view, v, e, dt, t, gt, y) {
     const d = Math.max(0, gt - (e.deathTime == null ? gt : e.deathTime)), p = Math.min(1, d / 4);
     P.hull.rotation.z = p * .7; P.hull.rotation.x = -p * .35; inner.position.y = -p * p * (v.h + .6);
     if (P.wake) P.wake.visible = false;
+    if (P.fishRing) P.fishRing.visible = false;
+    if (P.net && P.netGlb) P.net.visible = false;
     return y;
   }
-  inner.position.y = Math.sin(t * 1.6) * .03;
-  P.hull.rotation.z = Math.sin(t * 1.1) * .04; P.hull.rotation.x = Math.sin(t * 1.4 + 1) * .02;
+  const fishing = P.ship === 'fishboat' && (e.anim === 'fish' || e.state === 'gather');
+  inner.position.y = fishing ? Math.sin(t * 3.4) * .07 : Math.sin(t * 1.6) * .03;
+  P.hull.rotation.z = fishing ? .14 + Math.sin(t * 2.8) * .09 : Math.sin(t * 1.1) * .04;
+  P.hull.rotation.x = fishing ? Math.sin(t * 2.2 + 1) * .04 : Math.sin(t * 1.4 + 1) * .02;
   const moving = speed > .25 || e.anim === 'walk';
   if (P.wake) {
     P.wake.visible = moving && v.vis !== false;
@@ -488,7 +504,18 @@ export function seaAnimUnit(view, v, e, dt, t, gt, y) {
   }
   if (P.oars) { const a = moving || e.anim === 'attack' ? Math.sin(t * 4) : 0; for (const o of P.oars) { o.rotation.y = a * .45 * o.userData.sd; o.rotation.z = (Math.cos(t * 4) * .15 - .1) * o.userData.sd * (moving ? 1 : 0); } }
   if (P.flags) for (let i = 0; i < P.flags.length; i++) P.flags[i].rotation.y = Math.sin(t * 3 + i) * .25;
-  if (P.net) P.net.rotation.z = e.anim && e.anim !== 'walk' && e.anim !== 'idle' && e.anim !== 'attack' ? -.4 + Math.sin(t * 2) * .3 : 0;
+  if (P.net) {
+    if (P.netGlb) P.net.visible = fishing && v.vis !== false;
+    P.net.rotation.z = fishing ? -.45 + Math.sin(t * 3.0) * .35 : 0;
+    P.net.rotation.x = fishing ? .2 + Math.cos(t * 3.0) * .18 : 0;
+  }
+  if (P.fishRing) {
+    P.fishRing.visible = fishing && v.vis !== false;
+    if (P.fishRing.visible) for (let i = 0; i < P.fishR.length; i++) {
+      const k = (t * 1.1 + i * .5) % 1, s = .35 + k * 1.4;
+      P.fishR[i].scale.set(s, 1, s);
+    }
+  }
   if (P.figs) {
     const n = Math.min(10, e.cargo ? e.cargo.length : 0);
     if (n !== P.nfig) { P.nfig = n; for (let i = 0; i < P.figs.length; i++) P.figs[i].visible = i < n; }

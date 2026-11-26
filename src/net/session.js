@@ -71,6 +71,7 @@ const realClock = {
 // It is lobby / save metadata only: never part of the Game cfg built by cfgFrom (the simulation never sees it).
 const UID_RE = /^[0-9a-f]{32}$/;
 export const cleanUid = u => (typeof u === 'string' && UID_RE.test(u) ? u : null);
+const cleanFb = f => (typeof f === 'string' && /^[A-Za-z0-9]{1,128}$/.test(f) ? f : null);
 const cleanAv = a => (typeof a === 'string' && /^[a-z0-9-]{1,24}$/.test(a) ? a : null);
 const cleanTp = t => (Number.isInteger(t) && t >= 0 && t < 1e7 ? t : null);
 
@@ -101,6 +102,7 @@ function cleanLobby(st) {
     if (s.difficulty != null && !DIFFS.includes(s.difficulty)) delete s.difficulty;
     if (s.mode != null && !MODES.includes(s.mode)) delete s.mode;
     for (const k of ['uid', 'savedUid']) if (s[k] != null) s[k] = cleanUid(s[k]);
+    if (s.fb != null) s.fb = cleanFb(s.fb);
     if (s.av != null) s.av = cleanAv(s.av);
     if (s.tp != null) s.tp = cleanTp(s.tp);
   }
@@ -146,18 +148,18 @@ export class NetSession {
     if (this.verified) {
       const id = ident || (typeof this.t.identOf === 'function' ? this.t.identOf(from) : null);
       if (!id || !cleanUid(id.uid)) return null;
-      return { uid: cleanUid(id.uid), name: String(id.name || 'Oyuncu').slice(0, 20), av: cleanAv(id.av), tp: cleanTp(id.tp) };
+      return { fb: cleanFb(id.fb), uid: cleanUid(id.uid), name: String(id.name || 'Oyuncu').slice(0, 20), av: cleanAv(id.av), tp: cleanTp(id.tp) };
     }
-    return { uid: cleanUid(d && d.uid), name: String((d && d.name) || 'Oyuncu').slice(0, 20), av: null, tp: null };
+    return { fb: null, uid: cleanUid(d && d.uid), name: String((d && d.name) || 'Oyuncu').slice(0, 20), av: null, tp: null };
   }
-  // a client checks the host's slot list against what the relay verified (uid, avatar, TP of every connected human)
+  // a client checks the host's slot list against what the relay verified (fb, uid, avatar, TP of every connected human)
   _verifySlots(slots) {
     if (!this.verified || !Array.isArray(slots) || typeof this.t.identOf !== 'function') return;
     for (const s of slots) {
       if (!s || s.kind !== 'human' || !s.peer) continue;
       const id = s.peer === this.t.id ? this.ident : this.t.identOf(s.peer);
       if (!id) continue;
-      s.uid = cleanUid(id.uid); s.av = cleanAv(id.av); s.tp = cleanTp(id.tp);
+      s.fb = cleanFb(id.fb); s.uid = cleanUid(id.uid); s.av = cleanAv(id.av); s.tp = cleanTp(id.tp);
     }
   }
 
@@ -291,7 +293,7 @@ export class NetSession {
     this.state = {
       code, hostPeer: this.t.id, listed: true,   // listed: shown in the open rooms list (server.js /mp/rooms)
       settings: { mapSize: 320, mapType: 'random', climate: 'random', startRes: 'normal', startAge: 0, fog: 'explored', seed: null },
-      slots: [{ kind: 'human', peer: this.t.id, uid: this.uid, name: this.name, av: cleanAv(this.ident && this.ident.av), tp: cleanTp(this.ident && this.ident.tp), team: 1, ready: true }],
+      slots: [{ kind: 'human', peer: this.t.id, fb: cleanFb(this.ident && this.ident.fb), uid: this.uid, name: this.name, av: cleanAv(this.ident && this.ident.av), tp: cleanTp(this.ident && this.ident.tp), team: 1, ready: true }],
     };
     this._wire();
     this._lastLobbyBc = -1e9;
@@ -350,13 +352,16 @@ export class NetSession {
       if (d.k === 'hello' && this.phase === 'lobby' && this._verRefused(d, from)) return;
       if (this.state && this.state.resume && this.phase === 'lobby' && (d.k === 'hello' || d.k === 'req')) { this._onResumeLobby(d, from, who); return; }
       if (d.k === 'hello' && this.phase === 'lobby') {
+        if ((this._kickedPeers && this._kickedPeers.has(from)) || (who.uid && this._kickedUids && this._kickedUids.has(who.uid)) || (who.fb && this._kickedFbs && this._kickedFbs.has(who.fb))) {
+          this._send('lobby', { k: 'kick', to: from }); return;
+        }
         let s = this.state.slots.find(x => x.peer === from);
         if (!s) {
           if (this.state.slots.length >= MAX_PLAYERS) { this._send('lobby', { k: 'full', to: from }); return; }
           // one account = one slot (the relay already replaces a second connection of the same account)
           if (this.verified && who.uid && this.state.slots.some(x => x.kind === 'human' && x.uid === who.uid)) return;
-          this.state.slots.push({ kind: 'human', peer: from, uid: who.uid, name: who.name, av: who.av, tp: who.tp, team: 1, ready: false });
-        } else if (this.verified) Object.assign(s, { uid: who.uid, name: who.name, av: who.av, tp: who.tp });
+          this.state.slots.push({ kind: 'human', peer: from, fb: who.fb, uid: who.uid, name: who.name, av: who.av, tp: who.tp, team: 1, ready: false });
+        } else if (this.verified) Object.assign(s, { fb: who.fb, uid: who.uid, name: who.name, av: who.av, tp: who.tp });
         else if (!s.uid && who.uid) s.uid = who.uid;
         this._broadcastLobby();
       } else if (d.k === 'req' && this.phase === 'lobby') {
@@ -381,7 +386,8 @@ export class NetSession {
       this._verifySlots(d.state.slots);
       this.state = d.state; this.emit('lobby', this.state);
     } else if (d.k === 'kick' && d.to === this.t.id && this.phase === 'lobby') {
-      this.close('kicked');
+      if (!this._joined) this._rejected = tr('Oda kurucusu seni odadan çıkardı.');
+      else this.close('kicked');
     } else if (d.k === 'full' && d.to === this.t.id) {
       // (a joiner checked its own build against the server before joining: a different host build means the host is behind)
       this._rejected = d.why === 'ver' ? (this.ver && d.ver && cleanVer(d.ver) !== this.ver ? HOST_OLD_TEXT : VER_TEXT) : tr('Oda dolu (en fazla 8 oyuncu).');
@@ -613,7 +619,12 @@ export class NetSession {
     this._hostOnly(); this._notResume();
     const s = this.state.slots[i]; if (!s || i === 0) return false;
     this.state.slots.splice(i, 1);
-    if (s.kind === 'human') this._send('lobby', { k: 'kick', to: s.peer });
+    if (s.kind === 'human') {
+      (this._kickedPeers || (this._kickedPeers = new Set())).add(s.peer);
+      if (s.uid) (this._kickedUids || (this._kickedUids = new Set())).add(s.uid);
+      if (s.fb) (this._kickedFbs || (this._kickedFbs = new Set())).add(s.fb);
+      this._send('lobby', { k: 'kick', to: s.peer });
+    }
     this._broadcastLobby(); return true;
   }
   setSlot(i, patch = {}) {

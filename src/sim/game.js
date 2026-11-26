@@ -129,7 +129,7 @@ export const TREE_WOOD = 800;
 export const TOWER_AGE_RANGE = 1;
 export const towerAgeBonus = (type, age) => (type === 'tower' ? Math.max(0, (age | 0) - 1) * TOWER_AGE_RANGE : 0);
 // commands a client may send over the network (Game.execCommand); the app may wrap these on the instance
-export const CMD_METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload', 'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol', 'cmdRotateBuilding'];
+export const CMD_METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload', 'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol', 'cmdRotateBuilding', 'cmdTownBell'];
 const CMD_SET = new Set(CMD_METHODS);
 // buildings turn in quarter turns (b.rot 0..3, view only: footprints are square), except these
 export const NO_ROTATE = new Set(['wall', 'gate', 'farm', 'rail', 'tower', 'dock']);   // (the renderer never turns a tower or a dock)
@@ -343,6 +343,7 @@ export class Game {
       case 'trade': a[0] = pid; if (!key(TRADE_VAL, a[1]) || !key(TRADE_VAL, a[2])) return false; break;
       case 'cmdTribute': case 'cmdGroup': a[0] = pid; break;
       case 'cmdRotateBuilding': a[0] = pid; if (!own(a[1])) return false; a.length = 2; break;
+      case 'cmdTownBell': a[0] = pid; a.length = 1; break;
     }
     try { return this._sim(() => Game.prototype[method].apply(this, a)); } catch (err) { console.error('[execCommand ' + method + ']', err); return false; }
   }
@@ -391,6 +392,9 @@ export class Game {
     if (!MAP_P[mt]) mt = 'river';
     cfg.mapType = mt;
     const P = MAP_P[mt], riv = mt === 'river', SEA = -1.3, H = N / 2;
+    // (owner 2026-11-26) wider river/canal with only 2-3 strategic crossings instead of 10-15 narrow fords
+    const rivW = Math.max(4.5, Math.min(8.5, N * 0.022)), rivBank = 3.0;
+    const rivFords = N <= 320 ? [N * 0.3, N * 0.7] : [N * 0.24, N * 0.5, N * 0.76], rivFHalf = N <= 320 ? 3.5 : 4;
     const sstep = (a, b, x) => { let t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
     // non-river plateaus: per start, the inner radius stays clear of the map border (sea border must not cut it)
     // (the flat settling ground around a start: 1.7x since 2026-11-13, sized for the bigger buildings and a town around them)
@@ -422,8 +426,13 @@ export class Game {
         if (rr > 0.9) h += Math.min(3.6, (rr - 0.9) * 45) * sstep(0.42, 0.58, vn(vx / N * 8 + 800, vz / N * 8 + 800, seed + 8));
       }
       if (P.river) {
-        const dr = Math.abs(vx - rx(vz)), w = 2.2;
-        if (dr < w + 2.5) { const ford = (vz % 26) < 6; const dep = ford ? -0.15 : -0.9; const t = Math.max(0, (dr - w) / 2.5); h = dep + (Math.min(h, 1.2) - dep) * t; }
+        const dr = Math.abs(vx - rx(vz)), w = rivW;
+        if (dr < w + rivBank) {
+          let ford = false; for (let fi = 0; fi < rivFords.length; fi++) if (Math.abs(vz - rivFords[fi]) <= rivFHalf) { ford = true; break; }
+          const dep = ford ? -0.12 : -1.2;
+          const t = Math.max(0, (dr - w) / rivBank);
+          h = dep + (Math.min(h, 1.2) - dep) * t;
+        }
       }
       if (shape) h += (SEA - h) * shape(vx, vz);
       if (riv) {
@@ -1150,7 +1159,7 @@ export class Game {
   // Shift-queue (playtest 2026-11-14): an open-ended order (gathering: trees, farms, endless mines...; trade runs;
   // fishing; patrols) never finishes on its own, so nothing queued behind it would ever run. Queuing behind one ends it now
   // (queued open-ended orders are dropped the same way); a villager walking to drop off a load delivers it first.
-  _setOrder(u, o, queue) { u.explore = false; if (u.hsId) u.hsId = 0; if (queue && u.order && !u.order.auto) { const open = q => !!q && (q.type === 'gather' || q.type === 'trade' || q.type === 'fish' || (q.type === 'move' && !!q.pat)); for (let i = u.queue.length - 1; i >= 0; i--) if (open(u.queue[i])) u.queue.splice(i, 1); u.queue.push(o); if (open(u.order)) this._next(u); else if (u.order.type === 'return') u.order.resume = null; return; } if (u.order && u.order.type === 'gather') this._unhunt(u.order); u.queue.length = 0; u.order = o; u.targetId = o.targetId || null; u.path = null; u.pk = null; u.rpT = 0; }
+  _setOrder(u, o, queue) { u.explore = false; if (u.hsId) u.hsId = 0; if (u.sheltered && !(o && o.bell)) { u.sheltered = 0; delete u.bellTask; } if (queue && u.order && !u.order.auto) { const open = q => !!q && (q.type === 'gather' || q.type === 'trade' || q.type === 'fish' || (q.type === 'move' && !!q.pat)); for (let i = u.queue.length - 1; i >= 0; i--) if (open(u.queue[i])) u.queue.splice(i, 1); u.queue.push(o); if (open(u.order)) this._next(u); else if (u.order.type === 'return') u.order.resume = null; return; } if (u.order && u.order.type === 'gather') this._unhunt(u.order); u.queue.length = 0; u.order = o; u.targetId = o.targetId || null; u.path = null; u.pk = null; u.rpT = 0; }
   _unhunt(o) { const t = this.entities.get(o.targetId); if (t && PREY[t.type] && !t.live && t.anim !== 'die') t.hunted = false; }
   // mode 'am' (attack-move) / 'pat' (patrol): only units that can fight get the marks (see the move case); villagers,
   // carts, healers and unarmed ships of the selection walk there as on a plain move, in the same formation
@@ -1284,7 +1293,58 @@ export class Game {
     let n = 0; for (const u of this._live(ids)) { const d = UNITS[u.type]; if (d.cls === 'civil' || !(d.atk > 0)) continue; u.stance = stance === 'aggressive' ? undefined : stance; n++; }
     return n > 0;
   }
-  cmdStop(ids) { for (const u of this._live(ids)) { if (u.order && u.order.type === 'gather') this._unhunt(u.order); u.order = null; u.queue.length = 0; u.path = null; u.pk = null; u.targetId = null; u.state = 'idle'; u.anim = 'idle'; } return true; }
+  cmdStop(ids) { for (const u of this._live(ids)) { if (u.order && u.order.type === 'gather') this._unhunt(u.order); if (u.sheltered) { u.sheltered = 0; delete u.bellTask; } u.order = null; u.queue.length = 0; u.path = null; u.pk = null; u.targetId = null; u.state = 'idle'; u.anim = 'idle'; } return true; }
+  _cloneOrder(o) {
+    if (!o || typeof o !== 'object') return null;
+    const c = {};
+    for (const k in o) {
+      if (k === 'grp' || k === 'path') continue;
+      c[k] = k === 'resume' ? this._cloneOrder(o[k]) : o[k];
+    }
+    c.fail = 0; c.sp = 0; c.so = 0; c.dadm = 0;
+    return c;
+  }
+  // Town bell (2026-11-26): first press recalls all villagers to shelter at the nearest own Town Center and saves
+  // their tasks; second press returns each sheltered villager to its previous task. MP-safe (owner forced in execCommand).
+  cmdTownBell(owner) {
+    const p = this.players[owner]; if (!p || p.defeated) return false;
+    const tcs = this.buildings.filter(b => b.owner === owner && !b.dead && b.done && b.type === 'towncenter');
+    if (!p.bell) {
+      if (!tcs.length) return false;
+      p.bell = true;
+      for (const u of this.units) {
+        if (u.dead || u.aboard || u.owner !== owner || u.type !== 'villager') continue;
+        const prev = u.order && !u.order.bell ? { order: this._cloneOrder(u.order), queue: (u.queue || []).map(q => this._cloneOrder(q)).filter(Boolean) } : null;
+        let tc = tcs[0], bd = sq(tc.x - u.x) + sq(tc.z - u.z);
+        for (let i = 1; i < tcs.length; i++) {
+          const d = sq(tcs[i].x - u.x) + sq(tcs[i].z - u.z);
+          if (d < bd || (d === bd && tcs[i].id < tc.id)) { bd = d; tc = tcs[i]; }
+        }
+        const sl = this._slotNear(tc.x, tc.z + tc.size / 2 + 1.2, u);
+        this._setOrder(u, { type: 'move', x: sl.x, z: sl.z, bell: 1 }, false);
+        u.sheltered = tc.id;
+        if (prev) u.bellTask = prev; else delete u.bellTask;
+      }
+      this.events.emit('townBell', { owner, active: true });
+      return true;
+    }
+    p.bell = false;
+    for (const u of this.units) {
+      if (u.dead || u.aboard || u.owner !== owner || u.type !== 'villager' || !u.sheltered) continue;
+      const still = !u.order || !!u.order.bell;
+      const task = u.bellTask;
+      u.sheltered = 0; delete u.bellTask;
+      if (!still) continue;
+      if (task && task.order) {
+        u.order = task.order; u.queue = Array.isArray(task.queue) ? task.queue : [];
+        u.targetId = u.order.targetId || null; u.path = null; u.pk = null; u.rpT = 0;
+      } else {
+        u.order = null; u.queue.length = 0; u.targetId = null; u.path = null; u.pk = null; u.state = 'idle'; u.anim = 'idle';
+      }
+    }
+    this.events.emit('townBell', { owner, active: false });
+    return true;
+  }
 
   train(buildingId, unitType) {
     const b = this.entities.get(buildingId), d = UNITS[unitType];
@@ -1363,23 +1423,88 @@ export class Game {
     else if (q.kind === 'age') { this._refund(owner, AGES[q.id].cost); p.ageProgress = 0; }
   }
   setRally(buildingId, x, z, targetId = null) { const b = this.entities.get(buildingId); if (!b || b.kind !== 'building' || !(BUILDINGS[b.type] && (BUILDINGS[b.type].trains || []).length)) return false; /* (only buildings that train units take a flag, owner 2026-11-15) */ const t = targetId != null ? this.entities.get(targetId) : null; b.rally = { x, z, tid: t ? t.id : null, rtype: t && t.kind === 'resource' ? t.type : null }; return true; }
-  // Where a freshly trained villager should work when the rally flag sits on a resource / farm / pasture.
+  // live villagers of owner currently assigned to gather entity id (working, walking, or carrying back)
+  _resWorkers(id, owner) {
+    let n = 0;
+    for (const u of this.units) {
+      if (u.dead || u.owner !== owner || u.type !== 'villager') continue;
+      let o = u.order; if (o && o.type === 'return') o = o.resume;
+      if (o && o.type === 'gather' && o.targetId === id) n++;
+    }
+    return n;
+  }
+  // true when a resource tile (or its mine deposit) has no free work slots left for owner
+  _resFull(e, owner, mineFull) {
+    if (!e || e.dead || !(e.amount > 0)) return true;
+    if (e.type === 'stone' || e.type === 'gold') {
+      const dep = this._depOf(e);
+      if (mineFull && mineFull.has(dep)) return mineFull.get(dep);
+      let n = 0;
+      for (const u of this.units) {
+        if (u.dead || u.owner !== owner || u.type !== 'villager') continue;
+        let o = u.order; if (o && o.type === 'return') o = o.resume;
+        if (!o || o.type !== 'gather') continue;
+        if (o.dadm === dep) { n++; continue; }
+        if (!o.dadm && (o.rt === 'stone' || o.rt === 'gold')) {
+          const te = this.entities.get(o.targetId);
+          if (te && !te.dead && this._depOf(te) === dep) n++;
+        }
+      }
+      const full = n >= MINE_CAP;
+      if (mineFull) mineFull.set(dep, full);
+      return full;
+    }
+    const K = SPOTS[e.type];
+    if (K) {
+      const cap = Math.min(K, this._spotCands(e, owner).length >> 1);
+      if (cap <= 0) return true;
+      return this._resWorkers(e.id, owner) >= cap;
+    }
+    return false;
+  }
+  // Where a freshly trained villager (or fishboat) should work when the rally flag sits on a resource / farm / pasture.
+  // If that target's slots are full, redirects to the nearest same-type resource with room instead of idling.
   _rallyWork(b) {
     const ra = b.rally; if (!ra) return null;
     const t = ra.tid != null ? this.entities.get(ra.tid) : null;
     if (t && !t.dead && t.kind === 'building') {
-      if (t.type === 'farm' || t.type === 'pasture') return t;
-      // flag on a drop-off camp (lumber camp, mining camp, mill): work the nearest matching resource around it
+      if (t.type === 'farm' || t.type === 'pasture') {
+        const cap = t.type === 'farm' ? FARM_SLOTS : 6;
+        if (this._resWorkers(t.id, b.owner) < cap) return t;
+        let best = null, bd = 1e9;
+        for (const o of this.buildings) {
+          if (o === t || o.dead || !o.done || o.owner !== b.owner || o.type !== t.type) continue;
+          if (this._resWorkers(o.id, b.owner) >= cap) continue;
+          const d = dhypot(o.x - t.x, o.z - t.z); if (d < bd) { bd = d; best = o; }
+        }
+        return best;
+      }
+      // flag on a drop-off camp (lumber camp, mining camp, mill): work the nearest matching free resource around it
       const bd0 = BUILDINGS[t.type], drop = bd0 && t.owner === b.owner && !(bd0.trains || []).length ? bd0.dropoff : null; if (!drop) return null;
-      let best = null, bd = 1e9;
-      for (const e of this.entities.values()) { if (e.kind !== 'resource' || e.dead || !(e.amount > 0) || e.type === 'fish' || !drop.includes(RES_OF[e.type])) continue; const d = dhypot(e.x - t.x, e.z - t.z); if (d < 16 && d < bd) { bd = d; best = e; } }
-      return best;
+      const mf = new Map();
+      let best = null, bd = 1e9, far = null, fd = 1e9;
+      for (const e of this.entities.values()) {
+        if (e.kind !== 'resource' || e.dead || !(e.amount > 0) || e.type === 'fish' || !drop.includes(RES_OF[e.type])) continue;
+        if (this._resFull(e, b.owner, mf)) continue;
+        const d = dhypot(e.x - t.x, e.z - t.z);
+        if (d < 16 && d < bd) { bd = d; best = e; }
+        if (d < fd) { fd = d; far = e; }
+      }
+      return best || far;
     }
-    if (t && !t.dead && t.amount > 0) return t;
-    const want = ra.rtype; if (!want) return null; // flag on plain ground: villager just walks there
+    const aliveRes = t && !t.dead && t.kind === 'resource' && t.amount > 0;
+    if (aliveRes && (t.type === 'fish' || !this._resFull(t, b.owner))) return t;
+    const want = aliveRes ? t.type : ra.rtype; if (!want) return null; // flag on plain ground: villager just walks there
+    const mf = new Map();
     let best = null, bd = 1e9;
-    for (const e of this.entities.values()) { if (e.kind !== 'resource' || e.dead || !(e.amount > 0)) continue; if (want && e.type !== want) continue; const d = dhypot(e.x - ra.x, e.z - ra.z); if (d < (want ? 10 : 1.6) && d < bd) { bd = d; best = e; } }
-    if (best && want) ra.tid = best.id;
+    const maxD = want === 'fish' ? 20 : 1e9;
+    for (const e of this.entities.values()) {
+      if (e.kind !== 'resource' || e.dead || !(e.amount > 0) || e.type !== want) continue;
+      if (want !== 'fish' && this._resFull(e, b.owner, mf)) continue;
+      const d = dhypot(e.x - ra.x, e.z - ra.z);
+      if (d < maxD && d < bd) { bd = d; best = e; }
+    }
+    if (best && !aliveRes) ra.tid = best.id;
     return best;
   }
   deleteEntity(id) { const e = this.entities.get(id); if (!e || e.dead || e.owner < 0) return false; if (e.kind === 'building') for (const q of e.queue.slice()) this._refundQ(e.owner, q); this._kill(e, null); return true; }
@@ -1691,7 +1816,7 @@ export class Game {
     }
     if (target.kind === 'unit' && killer && !killer.dead && (!target.order || target.order.auto)) {
       const d = UNITS[target.type];
-      if (d.cls === 'civil') { if (!target.order && !target.naval) { const tc = this._nearestB(target, b => b.type === 'towncenter'); if (tc && dhypot(tc.x - target.x, tc.z - target.z) > tc.size / 2 + 1) this.cmdMove([target.id], tc.x, tc.z + tc.size / 2 + 1); } }
+      if (d.cls === 'civil') { if (!target.order && !target.naval && !target.sheltered) { const tc = this._nearestB(target, b => b.type === 'towncenter'); if (tc && dhypot(tc.x - target.x, tc.z - target.z) > tc.size / 2 + 1) this.cmdMove([target.id], tc.x, tc.z + tc.size / 2 + 1); } }
       else if (d.atk > 0 && !(target.type === 'ram' && killer.kind !== 'building') && !(killer.naval && !(d.range > 0)) && !target.order) this._engage(target, killer);
     } else if (target.kind === 'unit' && killer && !killer.dead && killer.id && target.order && target.order.type === 'move' && this._movFights(target, target.order) && this._canEngage(target, killer)) this._engage(target, killer);
   }
@@ -2159,10 +2284,10 @@ export class Game {
     return n;
   }
   // a villager starting on a mine takes a place at its deposit; when it is full he goes to the nearest other deposit
-  // of that kind with room (within 30 tiles), else he stops and his owner is told
+  // of that kind with room, else he stops and his owner is told
   _admitMine(u, o, t, dep) {
     if (this.mineLoad(dep, u.owner) < MINE_CAP) { o.dadm = dep; return true; }
-    let best = null, bd = 30 * 30;
+    let best = null, bd = 1e9;
     const full = new Map();
     for (const e of this.entities.values()) {
       if (e.kind !== 'resource' || e.type !== t.type || e.dead) continue;
@@ -2345,11 +2470,21 @@ export class Game {
       const up = ud.upgradedBy && p.techs.has(ud.upgradedBy) ? TECHS[ud.upgradedBy].upgrade.to : q.id;   // (queued before the line's upgrade)
       const u = this._addUnit(up, b.owner, f.x, f.z); p.stats.unitsTrained++;
       this.events.emit('trained', { e: u, building: b });
-      if (ud.naval && (!b.rally || !this._navPass(b.rally.x | 0, b.rally.z | 0))) { const w = b.rally && this._navNearPass(b.rally.x, b.rally.z, 8); if (w) this.cmdMove([u.id], w.x, w.z); else if (f.rx !== f.x || f.rz !== f.z) this.cmdMove([u.id], f.rx, f.rz); }
-      else if (b.rally) {
+      if (ud.naval && b.rally) {
+        const r = u.type === 'fishboat' ? this._rallyWork(b) : null;
+        if (r && r.type === 'fish') this.cmdGather([u.id], r.id);
+        else if (this._navPass(b.rally.x | 0, b.rally.z | 0)) { const w = this._navRallySlot(b.rally.x, b.rally.z, u); this.cmdMove([u.id], w.x, w.z); }
+        else { const w = this._navNearPass(b.rally.x, b.rally.z, 8); if (w) this.cmdMove([u.id], w.x, w.z); else if (f.rx !== f.x || f.rz !== f.z) this.cmdMove([u.id], f.rx, f.rz); }
+      } else if (ud.naval) {
+        if (u.type === 'fishboat') {
+          const s = this._navNearestFreeShoal(u.x, u.z, null, u);
+          if (s) this.cmdGather([u.id], s.id);
+          else if (f.rx !== f.x || f.rz !== f.z) this.cmdMove([u.id], f.rx, f.rz);
+        } else if (f.rx !== f.x || f.rz !== f.z) this.cmdMove([u.id], f.rx, f.rz);
+      } else if (b.rally) {
         const r = this._rallyWork(b);
-        if (r && u.type === 'villager') this.cmdGather([u.id], r.id); else if (ud.naval) { const w = this._navRallySlot(b.rally.x, b.rally.z, u); this.cmdMove([u.id], w.x, w.z); }   /* (2026-11-25: the land slot search sent ships off to a far corner) */ else if (u.type !== 'tradecart') { const sl = this._slotNear(b.rally.x, b.rally.z, u); this.cmdMove([u.id], sl.x, sl.z); }
-      } else if (!ud.naval && u.type !== 'villager' && u.type !== 'tradecart') { const sl = this._slotNear(b.x, b.z + b.size / 2 + 2.2, u); this._setOrder(u, { type: 'move', x: sl.x, z: sl.z }, false); }
+        if (r && u.type === 'villager') this.cmdGather([u.id], r.id); else if (u.type !== 'tradecart') { const sl = this._slotNear(b.rally.x, b.rally.z, u); this.cmdMove([u.id], sl.x, sl.z); }
+      } else if (u.type !== 'villager' && u.type !== 'tradecart') { const sl = this._slotNear(b.x, b.z + b.size / 2 + 2.2, u); this._setOrder(u, { type: 'move', x: sl.x, z: sl.z }, false); }
     } else if (q.kind === 'tech') {
       b.queue.shift(); p.techs.add(q.id); const i = p.pending.indexOf(q.id); if (i >= 0) p.pending.splice(i, 1);
       p.stats.techs++; this._mods(p); this._rescaleBuildings(p); if (TECHS[q.id].upgrade) this._upgradeLine(p, TECHS[q.id].upgrade); this._rescaleUnits(p);
@@ -2843,6 +2978,23 @@ export class Game {
   }
   _navShoals() { if (!this._navFishC) { this._navFishC = []; for (const e of this.entities.values()) if (e.kind === 'resource' && e.type === 'fish' && !e.dead) this._navFishC.push(e); } return this._navFishC; }
   _navNearestShoal(x, z, not) { let best = null, bd = 1e9; for (const s of this._navShoals()) { if (s === not || s.dead || s.amount < 5) continue; const d = sq(s.x - x) + sq(s.z - z); if (d < bd) { bd = d; best = s; } } return best; }
+  _navFishLoad(sid, self) {
+    let n = 0;
+    for (const u of this.units) if (u !== self && !u.dead && u.type === 'fishboat' && u.order && u.order.type === 'fish' && u.order.targetId === sid) n++;
+    return n;
+  }
+  // nearest free fish shoal (prefers shoals with no boat on them, else least crowded nearest)
+  _navNearestFreeShoal(x, z, not, self, skip) {
+    let bestFree = null, bdFree = 1e9, bestAny = null, bestLoad = 1e9, bdAny = 1e9;
+    for (const s of this._navShoals()) {
+      if (s === not || s.dead || s.amount < 5) continue;
+      if (skip && skip.includes(s.id)) continue;
+      const d = sq(s.x - x) + sq(s.z - z), ld = this._navFishLoad(s.id, self);
+      if (ld === 0) { if (d < bdFree) { bdFree = d; bestFree = s; } }
+      else if (ld < bestLoad || (ld === bestLoad && d < bdAny)) { bestLoad = ld; bdAny = d; bestAny = s; }
+    }
+    return bestFree || bestAny;
+  }
   _navCmdFish(ids, t) {
     const us = this._live(ids).filter(u => u.type === 'fishboat'); if (!us.length) return false;
     for (const u of us) this._setOrder(u, { type: 'fish', targetId: t.id, phase: 'go', acc: 0, tick: 0 });
@@ -2905,7 +3057,17 @@ export class Game {
     try {
       if (o && o.type === 'fish') { if (u.cd > 0) u.cd -= dt; this._navFish(u, o, dt); }
       else if (o && o.type === 'unload') { if (u.cd > 0) u.cd -= dt; this._navUnloadStep(u, o, dt); }
-      else this._updateUnit(u, dt);
+      else {
+        this._updateUnit(u, dt);
+        if (u.type === 'fishboat' && !u.dead && !u.order && !u.queue.length) {
+          u.idleFishT = (u.idleFishT || 0) + dt;
+          if (u.idleFishT >= 1.5) {
+            u.idleFishT = 0;
+            const s = this._navNearestFreeShoal(u.x, u.z, null, u);
+            if (s) this._setOrder(u, { type: 'fish', targetId: s.id, phase: 'go', acc: 0, tick: 0 });
+          }
+        } else if (u.idleFishT) u.idleFishT = 0;
+      }
     } finally { this._navMode = false; }
     if (u.cargo && u.cargo.length) {
       for (let i = u.cargo.length - 1; i >= 0; i--) { const e = this.entities.get(u.cargo[i]); if (!e || e.dead || e.aboard !== u.id) { u.cargo.splice(i, 1); continue; } e.x = u.x; e.z = u.z; }
@@ -2927,14 +3089,18 @@ export class Game {
     if (u.carry && u.carry.amount >= cap) { o.phase = 'ret'; o.fail = 0; u.path = null; u.pk = null; return; }
     let t = this.entities.get(o.targetId);
     if (!t || t.dead || t.amount < 1) {
-      const n = this._navNearestShoal(u.x, u.z, t);
-      if (n) { o.targetId = n.id; u.targetId = n.id; o.fail = 0; u.path = null; u.pk = null; return; }
+      const n = this._navNearestFreeShoal(u.x, u.z, t, u);
+      if (n) { o.targetId = n.id; u.targetId = n.id; o.fail = 0; o.bad = 0; u.path = null; u.pk = null; return; }
       if (u.carry && u.carry.amount > 0) { o.phase = 'ret'; return; }
       return this._next(u);
     }
-    if ((o.fail || 0) >= 5) { // unreachable shoal (other water body): try the next one
-      const n = this._navNearestShoal(u.x, u.z, t); o.bad = (o.bad || 0) + 1;
-      if (n && o.bad < 4) { o.targetId = n.id; u.targetId = n.id; o.fail = 0; u.path = null; u.pk = null; return; }
+    if ((o.fail || 0) >= 5) { // unreachable shoal (other water body): try the next free one
+      if (!o.skip) o.skip = [];
+      if (t && !o.skip.includes(t.id)) { o.skip.push(t.id); if (o.skip.length > 6) o.skip.shift(); }
+      const n = this._navNearestFreeShoal(u.x, u.z, t, u, o.skip); o.bad = (o.bad || 0) + 1;
+      if (n && o.bad < 6) { o.targetId = n.id; u.targetId = n.id; o.fail = 0; u.path = null; u.pk = null; return; }
+      u.idleFishT = -10;
+      return this._next(u);
     }
     if (!this._approach(u, t, dt, 0.5)) return; // edge distance: stop within ~1 tile of the shoal centre
     o.fail = 0; o.bad = 0;
@@ -2988,13 +3154,13 @@ export class Game {
   _navGenFish() {
     const m = this.map, N = m.size, T = m.tiles;
     const shoreNear = (tx, tz, r) => { for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) { const x = tx + i, z = tz + j; if (x < 0 || z < 0 || x >= N || z >= N) continue; const t = T[z * N + x]; if (t !== 3 && t !== 4) return true; } return false; };
-    const free = (tx, tz) => tx >= 2 && tz >= 2 && tx < N - 2 && tz < N - 2 && m.blocked[tz * N + tx] === 0 && !this.resAt[tz * N + tx];
+    const free = (tx, tz) => tx >= 3 && tz >= 3 && tx < N - 3 && tz < N - 3 && m.blocked[tz * N + tx] === 0 && !this.resAt[tz * N + tx];
     const deep = [], shallow = [];
-    for (let tz = 2; tz < N - 2; tz++) for (let tx = 2; tx < N - 2; tx++) {
-      // (owner 2026-11-25: "denizde balık yok") open sea counts too, not only water near a shore
+    for (let tz = 3; tz < N - 3; tz++) for (let tx = 3; tx < N - 3; tx++) {
+      // (owner 2026-11-25: "denizde balık yok"; 2026-11-26: keep a 2-tile water margin off the shore so fish never hug land)
       const t = T[tz * N + tx]; if ((t !== 3 && t !== 4) || !free(tx, tz)) continue;
-      // keep at least one water ring around so ships can circle it
-      if (t === 4) deep.push([tx, tz]); else if (!shoreNear(tx, tz, 1)) shallow.push([tx, tz]);
+      if (shoreNear(tx, tz, 2)) continue;
+      if (t === 4) deep.push([tx, tz]); else shallow.push([tx, tz]);
     }
     const placed = [];
     const ok = (c, sp) => placed.every(p => dhypot(p[0] - c[0], p[1] - c[1]) >= sp);

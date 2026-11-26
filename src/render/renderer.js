@@ -1080,6 +1080,13 @@ export class Renderer {
     });
     on('gatherTick', ({ unit, res }) => {
       if (!unit || !vis(unit.x, unit.z)) return;
+      if (unit.type === 'fishboat') {
+        let x = unit.x, z = unit.z;
+        const t = unit.targetId != null && g.getEntity ? g.getEntity(unit.targetId) : null;
+        if (t) { x = x + (t.x - x) * 0.55; z = z + (t.z - z) * 0.55; }
+        this.fx.burst('splash', x, 0.08, z);
+        return;
+      }
       const k = res === 'wood' ? 'wood' : res === 'stone' ? 'stone' : res === 'gold' ? 'gold' : null;
       if (!k) return;
       let x = unit.x, z = unit.z;

@@ -102,7 +102,7 @@
     notice = { id: 'r' + Date.now().toString(36), kind: 'restart', at: Date.now() + DRAIN_MS, msg: (notice && notice.msg) || '' };
     let flushed = false, drained = false;
     const end = () => { if (flushed && drained) process.exit(0); };
-    STATS.flush().then(() => { flushed = true; end(); }, () => { flushed = true; end(); });
+    Promise.all([STATS.flush(), gchatSave()]).then(() => { flushed = true; end(); }, () => { flushed = true; end(); });
     setTimeout(() => { drained = true; end(); setTimeout(() => process.exit(0), 4000).unref(); }, DRAIN_MS).unref();
   }
   for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, onStopSignal);
@@ -166,8 +166,13 @@
     if (!r.size) { rooms.delete(room); emptySince.set(room, Date.now()); }
   }
   // the public part of a verified identity, as the relay stamps it on messages
-  const pub = (id) => (id ? { uid: id.uid, name: id.name, av: id.av, tp: id.tp } : null);
+  const pub = (id) => (id ? { fb: id.fb, uid: id.uid, name: id.name, av: id.av, tp: id.tp } : null);
   const kicked = new Map();   // room + ' ' + peer -> time: replaced by a newer connection of the same account
+  function isRoomKicked(room, peer, ident) {
+    const r = rooms.get(room);
+    if (!r) return false;
+    return !!(r.kickedPeers && r.kickedPeers.has(peer)) || !!(ident && r.kickedFbs && r.kickedFbs.has(ident.fb));
+  }
   function addPeer(room, peer, pe, r) {
     const old = r.get(peer);
     if (old) { try { old.end(); } catch { /* ignore */ } }
@@ -238,6 +243,44 @@
   function gchatClean(s) {
     return String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁯﻿]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, GCHAT_LEN);
   }
+  // (owner 2026-11-26: "sıfırlanmasın") the lines survive a restart: one Firestore document serverState/gchat with the
+  // lines as JSON, written at most once a minute when something changed and when the server stops, read at start. A
+  // release starts the new server before the old one stops: it reads again a little later and merges by id (an id is
+  // a time in ms, so lines from both servers sort right).
+  const GCHAT_DOC = 'serverState/gchat';
+  let gchatStore = SA_STORE;
+  if (!gchatStore && NO_AUTH && process.env.AEVUM_GCHAT_FAKE) {
+    const f = process.env.AEVUM_GCHAT_FAKE;
+    gchatStore = {
+      async doc() { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } },
+      async patch(_p, fields) { fs.writeFileSync(f, JSON.stringify({ fields }), 'utf8'); },
+    };
+  }
+  let gchatDirty = false, gchatInFlight = Promise.resolve();
+  function gchatMerge(arr) {
+    const have = new Set(GCHAT.map(m => m.id));
+    for (const m of Array.isArray(arr) ? arr : []) {
+      if (m && typeof m.id === 'number' && Number.isFinite(m.id) && !have.has(m.id) && typeof m.text === 'string') {
+        have.add(m.id); GCHAT.push(m);
+      }
+    }
+    GCHAT.sort((a, b) => a.id - b.id); if (GCHAT.length > GCHAT_MAX) GCHAT.splice(0, GCHAT.length - GCHAT_MAX);
+    if (GCHAT.length) gchatSeq = Math.max(gchatSeq, GCHAT[GCHAT.length - 1].id);
+  }
+  function gchatLoad() {
+    if (!gchatStore) return Promise.resolve();
+    return gchatStore.doc(GCHAT_DOC).then((d) => { const j = d && d.fields && d.fields.lines && d.fields.lines.stringValue; if (j) gchatMerge(JSON.parse(j)); }).catch((e) => logErr('gchat load', e));
+  }
+  function gchatSave() {
+    if (!gchatStore) return Promise.resolve();
+    if (!gchatDirty) return gchatInFlight;
+    gchatDirty = false;
+    const p = gchatStore.patch(GCHAT_DOC, { lines: { stringValue: JSON.stringify(GCHAT) }, at: { timestampValue: new Date().toISOString() } }).catch((e) => { gchatDirty = true; logErr('gchat save', e); });
+    gchatInFlight = p;
+    return p;
+  }
+  gchatLoad(); setTimeout(gchatLoad, 25000).unref();
+  setInterval(gchatSave, 60000).unref();
   setInterval(() => { const t = Date.now(); for (const [fb, a] of gchatRate) if (!a.length || t - a[a.length - 1] > 60000) gchatRate.delete(fb); }, 5 * 60000).unref();
   const inviteAllRate = new Map();   // fb -> time of the last "invite everyone"
   setInterval(() => {
@@ -499,6 +542,21 @@
         tell(o, msg);
       }
     }
+    // host kicking a guest in the lobby: after delivering the kick message, drop them from the room and block rejoin
+    if (m.topic === 'lobby' && peer === r.host && !r.started && m.data && m.data.k === 'kick' && typeof m.data.to === 'string' && m.data.to !== peer) {
+      const targetPeer = m.data.to, target = r.get(targetPeer);
+      if (!r.kickedPeers) r.kickedPeers = new Set();
+      r.kickedPeers.add(targetPeer);
+      if (target && target.ident && target.ident.fb) {
+        if (!r.kickedFbs) r.kickedFbs = new Set();
+        r.kickedFbs.add(target.ident.fb);
+      }
+      if (target) {
+        r.delete(targetPeer);
+        for (const [p, o] of r) if (p !== targetPeer) tell(o, { type: 'left', peer: targetPeer });
+        setTimeout(() => { try { target.dead = true; target.end(); } catch { /* ignore */ } }, 60).unref();
+      }
+    }
   }
   function handleUpgrade(req, socket) {
     let url; try { url = new URL(req.url || '', 'http://x'); } catch { socket.destroy(); return; }
@@ -513,6 +571,7 @@
     const ident = identOf(req, url);
     if (!ident && !NO_AUTH) { bye({ type: 'err', code: 401 }); return; }
     if (kicked.has(room + ' ' + peer)) { bye({ type: 'dup' }); return; }
+    if (isRoomKicked(room, peer, ident)) { bye({ type: 'err', code: 403, reason: 'kicked' }); return; }
     const known = rooms.get(room) && rooms.get(room).get(peer);
     if (known && known.ident && (!ident || ident.fb !== known.ident.fb)) { bye({ type: 'err', code: 403 }); return; }
     if (roomRefused(room, peer, ident)) { bye({ type: 'err', code: 429 }); return; }
@@ -750,9 +809,10 @@
         const last = GCHAT.filter(m => m.fb === me.fb).pop();
         if (last && last.text === text && now - last.t < 60000) { reply(res, 429, J, JSON.stringify({ error: 'Aynı mesajı tekrar gönderme.' })); return; }
         rl.push(now); gchatRate.set(me.fb, rl);
-        const m = { id: ++gchatSeq, t: now, fb: me.fb, uid: me.uid, name: me.name, av: me.av, tp: me.tp | 0, text };
+        gchatSeq = Math.max(gchatSeq + 1, now);
+        const m = { id: gchatSeq, t: now, fb: me.fb, uid: me.uid, name: me.name, av: me.av, tp: me.tp | 0, text };
         if (OWNERS.has(me.fb)) m.own = 1;
-        GCHAT.push(m); if (GCHAT.length > GCHAT_MAX) GCHAT.splice(0, GCHAT.length - GCHAT_MAX);
+        GCHAT.push(m); gchatDirty = true; if (GCHAT.length > GCHAT_MAX) GCHAT.splice(0, GCHAT.length - GCHAT_MAX);
         const st = STATS.fbStates();
         for (const [fb, b] of inboxes) if (fb !== me.fb && isOnline(fb) && (st.get(fb) || 'menu') === 'menu') deliver(fb, { type: 'gchat', m });
         reply(res, 200, J, JSON.stringify({ m }));
@@ -843,6 +903,7 @@
     const ident = identOf(req, url);
     if (!ident && !NO_AUTH) { reply(res, 401, J, '{"error":"ticket"}'); return; }
     if (kicked.has(room + ' ' + peer)) { reply(res, 409, J, '{"error":"dup"}'); return; }
+    if (isRoomKicked(room, peer, ident)) { reply(res, 403, J, '{"error":"kicked"}'); return; }
     // a peer id belongs to the identity that registered it
     const known = rooms.get(room) && rooms.get(room).get(peer);
     if (known && known.ident && (!ident || ident.fb !== known.ident.fb)) { reply(res, 403, J, '{"error":"peer"}'); return; }
