@@ -1,5 +1,7 @@
 // Data integrity + new building/tech effects. Run from ROOT: node test/data-check.mjs
+import fs from 'node:fs';
 import { UNITS, BUILDINGS, TECHS } from '../src/data.js';
+import { applyIcons } from '../src/icons.js';
 import { Game } from '../src/sim/game.js';
 
 let bad = 0; const fail = m => { bad++; console.error('FAIL', m); };
@@ -18,6 +20,16 @@ for (const [tid, t] of Object.entries(TECHS)) {
 // a building's command card has 14 places (the 15th is the delete button)
 for (const [k, b] of Object.entries(BUILDINGS)) if ((b.trains || []).length + (b.researches || []).length > 14) fail('too many buttons on ' + k);
 for (const u of Object.keys(UNITS)) if (UNITS[u].cls !== 'train' && !UNITS[u].legacy && !Object.values(BUILDINGS).some(b => b.trains.includes(u))) fail('unit not trainable: ' + u);
+
+// every unit / building / tech icon must resolve to a symbol present in assets/icons/icons.svg
+applyIcons();
+const spriteIds = new Set([...fs.readFileSync(new URL('../assets/icons/icons.svg', import.meta.url), 'utf8').matchAll(/id="gi-([^"]+)"/g)].map(m => m[1]));
+for (const [kind, tbl] of [['unit', UNITS], ['building', BUILDINGS], ['tech', TECHS]]) {
+  for (const [k, d] of Object.entries(tbl)) {
+    const m = /href="#gi-([^"]+)"/.exec(d.icon || '');
+    if (!m || !spriteIds.has(m[1])) fail(`${kind} ${k} icon missing from icons.svg (${m ? m[1] : d.icon})`);
+  }
+}
 
 // every fx key must be a known mod of the right shape
 const g = new Game({ mapSize: 256, enemies: 0, seed: 7, startAge: 4, sandbox: true });   // (256: the smallest size since 2026-11-13, room for the 12x12 farm)
