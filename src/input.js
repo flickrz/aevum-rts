@@ -806,10 +806,17 @@ export class Input {
     const fake = (x, y, button) => ({ clientX: x, clientY: y, button, shiftKey: false, altKey: false, ctrlKey: false, preventDefault() {} });
     const mid = () => { const p = [...T.pts.values()]; return { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) }; };
     this.dropBtn = document.createElement('button');
+    this.dropBtn.type = 'button';
     this.dropBtn.textContent = tr('Bırak');
     this.dropBtn.className = 'mbtn small touch-drop';
     this.dropBtn.style.cssText = 'position:fixed;right:calc(12px + env(safe-area-inset-right));top:52px;z-index:40;display:none';
-    this.dropBtn.onclick = () => { this.app.select([]); };
+    this.dropBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (this.placing) this.cancelPlacement();
+      else if (this.targeting) this.cancelTargeting();
+      else if (this.flareArmed) this.disarmFlare();
+      else this.app.select([]);
+    };
     document.body.appendChild(this.dropBtn);
     // (owner 2026-11-23: "a gamepad analog stick") bottom-right stick pans the map: direction and speed follow the thumb;
     // with the stick for panning, a one-finger drag on the map is always the selection box
@@ -921,11 +928,17 @@ export class Input {
     this.drag = { x0: x, y0: y, active: false };
     this.onUp(fake(x, y, 0));
   }
-  // the touch "Bırak" button shows while something is selected (called by the UI loop)
+  // the touch "Bırak" / "İptal" button shows while a placement/target tool is active or something is selected
   touchTick() {
     if (!this.dropBtn) return;
-    const on = !!(this.touchMode && this.active && this.app.selection && this.app.selection.length);
+    const tool = !!(this.placing || this.targeting || this.flareArmed);
+    const on = !!(this.touchMode && this.active && (tool || (this.app.selection && this.app.selection.length)));
     if (on !== this._dropOn) { this._dropOn = on; this.dropBtn.style.display = on ? 'block' : 'none'; }
+    if (on && tool !== this._dropTool) {
+      this._dropTool = tool;
+      this.dropBtn.textContent = tool ? tr('İptal') : tr('Bırak');
+      this.dropBtn.classList.toggle('cancel', tool);
+    }
     const m = !!(this.touchMode && this.active);
     if (m !== this._modeOn) { this._modeOn = m; this.modeBtn.style.display = m ? 'block' : 'none'; }
   }

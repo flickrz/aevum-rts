@@ -136,6 +136,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0a0d13; col
 
 .placehint { position: absolute; left: max(50%, calc(var(--bl-x) + 240px)); bottom: 266px; transform: translateX(-50%); padding: 8px 16px; font-size: 13px; display: flex; gap: 12px; align-items: center; white-space: nowrap; }
 .placehint b { color: var(--gold); }
+.place-cancel { margin: 0 0 0 4px; padding: 4px 11px; font-size: 12px; letter-spacing: .4px; flex: none; }
+.touch-drop.cancel, .place-cancel { border-color: rgba(255,115,105,.55); color: #ffd4d0; }
 
 /* ---------- OVERLAYS ---------- */
 .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: auto; background: rgba(4,6,10,.62); animation: fadeIn .25s ease; z-index: 30; }
@@ -1047,6 +1049,8 @@ button.gbtn, button.gbtn .gbtn-t { color: #1f1f1f !important; text-shadow: none 
   html.touch .hudtop { zoom: .6; }
   html.touch .groupbar { display: none; }
   html.touch .selpanel { width: 330px !important; min-width: 330px; }
+  html.touch .placehint { left: 50%; bottom: 136px; max-width: 92vw; padding: 6px 10px; gap: 8px; font-size: 12px; }
+  html.touch .placehint .place-desc { display: none; }
 }
 
 /* phones: the page itself never zooms (no pinch / double-tap page zoom, and iOS zooms into any input under 16px) */

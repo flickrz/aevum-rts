@@ -476,4 +476,5 @@ export default {
   "Oda kurucusu seni odadan çıkardı.": "The host kicked you from the room.",
   "Kenar kaydırma": "Edge scrolling",
   "Açık: fare ekran kenarına gelince kamera kayar. Orta tuşla sürükleyerek de kaydırabilirsin.": "On: camera pans when the cursor reaches the screen edge. You can also drag with the middle mouse button.",
+  "İptal": "Cancel",
 };

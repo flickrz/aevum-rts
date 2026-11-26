@@ -853,7 +853,9 @@ export class UI {
     if (!type) { this.placeEl.classList.add('hidden'); return; }
     const b = BUILDINGS[type]; if (!b) return;
     const turn = !NO_ROTATE.has(type) && !['wall', 'gate', 'rail'].includes(type);   // (R turns it, src/input.js)
-    this.placeEl.innerHTML = `<span>${b.icon || ico('x-build')} ${tr('<b>{0}</b> yerleştir', esc(tr(b.name)))}</span><span class="tooltip-inline tc" style="display:flex;gap:8px">${this._costHtml(b.cost)}</span><span style="color:var(--dim)">${type === 'wall' ? tr('Basılı tutup sürükle: sur hattı · Bırak: yerleştir') : type === 'gate' ? tr('Bitmiş bir sur parçasına tıkla: kapı olur') : type === 'rail' ? tr('Basılı tutup sürükle: ray hattı · Bırak: yerleştir') : type === 'dock' ? tr('Kıyıya yerleştir: bir kısmı suda olmalı · Sol tık: yerleştir') : tr('Sol tık: yerleştir · Shift+tık: birden çok, köylüler sırayla yapar')}${turn ? tr(' · R: döndür') : ''}${tr(' · Sağ tık / Esc: iptal')}</span>`;
+    this.placeEl.innerHTML = `<span>${b.icon || ico('x-build')} ${tr('<b>{0}</b> yerleştir', esc(tr(b.name)))}</span><span class="tooltip-inline tc" style="display:flex;gap:8px">${this._costHtml(b.cost)}</span><span class="place-desc" style="color:var(--dim)">${type === 'wall' ? tr('Basılı tutup sürükle: sur hattı · Bırak: yerleştir') : type === 'gate' ? tr('Bitmiş bir sur parçasına tıkla: kapı olur') : type === 'rail' ? tr('Basılı tutup sürükle: ray hattı · Bırak: yerleştir') : type === 'dock' ? tr('Kıyıya yerleştir: bir kısmı suda olmalı · Sol tık: yerleştir') : tr('Sol tık: yerleştir · Shift+tık: birden çok, köylüler sırayla yapar')}${turn ? tr(' · R: döndür') : ''}${tr(' · Sağ tık / Esc: iptal')}</span><button type="button" class="mbtn small place-cancel">${tr('İptal')}</button>`;
+    const cancelBtn = this.placeEl.querySelector('.place-cancel');
+    if (cancelBtn) cancelBtn.onclick = (e) => { e.stopPropagation(); this._click(); this.app.input?.cancelPlacement(); };
     this.placeEl.classList.remove('hidden');
   }
 
