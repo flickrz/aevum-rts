@@ -27,6 +27,7 @@ export class Input {
     this.groups = {};
     this.lastGroupTap = { n: -1, t: 0 };
     this.idleIdx = 0;
+    this.tcIdx = 0;
     this.shift = false;
 
     this.box = document.createElement('div');
@@ -77,7 +78,7 @@ export class Input {
   isEnemyOwner(o) { const g = this.app.game, me = this.me(); if (o == null || o < 0 || o === me) return false; try { const r = g?.isEnemy?.(me, o); if (r !== undefined) return !!r; } catch (err) { /* ignore */ } return !this.isAllyOwner(o); }
 
   reset() {
-    this.placing = null; this.wallStart = null; this.placeDown = false; this.groups = {}; this.keys.clear(); this.placeRot = 0;
+    this.placing = null; this.wallStart = null; this.placeDown = false; this.groups = {}; this.keys.clear(); this.placeRot = 0; this.tcIdx = 0;
     this.endDrag(); this.rot = null; this.mpan = null; this.setLineLabel(null);
     try { this.app.renderer.setGhost(null); } catch (err) { /* ignore */ }
   }
@@ -530,6 +531,20 @@ export class Input {
           r.addMarker(target.x, target.z, C_GATHER, rad); this.flash(target.id, C_GATHER); this.sfx('command', 'gather:food');
           return;
         }
+        // carrying villagers right-clicking a matching finished drop-off building (TC, storage, lumber/mine camp, mill): drop load there
+        const drop = BUILDINGS[target.type]?.dropoff;
+        const carriers = drop ? villagers.filter(id => { const u = this.ent(id); return u && u.carry && u.carry.amount > 0 && drop.includes(u.carry.type); }) : [];
+        if (carriers.length && game.cmdReturn?.(carriers, target.id, queue)) {
+          const empty = villagers.filter(id => !carriers.includes(id));
+          if (empty.length && (target.type === 'lumbercamp' || target.type === 'minecamp')) {
+            const best = this._campRes(target, empty);
+            if (best) game.cmdGather(empty, best.id, queue);
+          }
+          const rest = units.filter(id => !villagers.includes(id));
+          if (rest.length) game.cmdMove(rest, target.x, target.z, queue);
+          r.addMarker(target.x, target.z, C_GATHER, rad); this.flash(target.id, C_GATHER); this.sfx('command', 'gather:' + (this.ent(carriers[0])?.carry?.type || 'wood'));
+          return;
+        }
         // a lumber camp / mine camp: work the nearest tree / stone or gold to it on explored tiles (a mine whose
         // deposit already has MINE_CAP of my villagers, not counting these, only when no other one has room)
         if (target.type === 'lumbercamp' || target.type === 'minecamp') {
@@ -667,6 +682,11 @@ export class Input {
         return;
       }
     }
+    if (e.ctrlKey && !e.altKey && !e.metaKey && code === 'KeyA') {
+      e.preventDefault();
+      if (!e.repeat) this.selectAllUnits();
+      return;
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
 
     // W/A/S/D are camera-only: never routed to the command card or any other shortcut
@@ -693,15 +713,22 @@ export class Input {
         let handled = false;
         try { handled = !!(app.ui.hotkey && app.ui.hotkey(k.toLowerCase())); } catch (err) { console.warn(err); }
         if (handled) return;
+        if (code === 'KeyQ' && !app.selection.length && !this.placing && !this.targeting) { this.selectAllMilitary(); return; }
+        if (code === 'KeyH' && !this.placing && !this.targeting) { this.goHome(); return; }
       }
     }
   }
 
   goHome() {
     const game = this.game;
-    const tc = game.buildingsOf(this.me()).find(b => b.type === 'towncenter');
-    if (tc) this.app.focus(tc.x, tc.z);
-    else { const p = game.players[this.me()]; this.app.focus(p.startX, p.startZ); }
+    const tcs = game.buildingsOf(this.me()).filter(b => b.type === 'towncenter' && !b.dead).sort((a, b) => a.id - b.id);
+    if (tcs.length) {
+      const tc = tcs[this.tcIdx++ % tcs.length];
+      this.app.focus(tc.x, tc.z);
+    } else {
+      const p = game.players[this.me()];
+      this.app.focus(p.startX, p.startZ);
+    }
   }
 
   // ---- map flare (the 📍 button): the next left click on the map or the minimap places it
@@ -751,6 +778,25 @@ export class Input {
       this.app.focus(sx / ids.length, sz / ids.length);
     }
     return true;
+  }
+
+  // Ctrl+A: all own commandable units on the map
+  selectAllUnits() {
+    const ids = this.game.unitsOf(this.me()).filter(u => !u.dead && !u.aboard && u.type !== 'train').map(u => u.id);
+    if (ids.length) this.app.select(ids);
+  }
+  // Q (with nothing selected): all own military units (land soldiers, support, siege, and warships)
+  selectAllMilitary() {
+    const ids = this.game.unitsOf(this.me()).filter(u => {
+      if (u.dead || u.aboard) return false;
+      const d = UNITS[u.type];
+      return !!d && d.cls !== 'civil' && d.cls !== 'train' && u.type !== 'fishboat' && u.type !== 'transport';
+    }).map(u => u.id);
+    if (!ids.length) {
+      this.game.events.emit('notify', { text: tr('Askerî birlik yok.'), type: 'info' });
+      return;
+    }
+    this.app.select(ids);
   }
 
   // the next idle villager; all: every idle villager at once (Shift), the camera on the one nearest the middle of them
@@ -806,10 +852,17 @@ export class Input {
     const fake = (x, y, button) => ({ clientX: x, clientY: y, button, shiftKey: false, altKey: false, ctrlKey: false, preventDefault() {} });
     const mid = () => { const p = [...T.pts.values()]; return { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) }; };
     this.dropBtn = document.createElement('button');
+    this.dropBtn.type = 'button';
     this.dropBtn.textContent = tr('Bırak');
     this.dropBtn.className = 'mbtn small touch-drop';
     this.dropBtn.style.cssText = 'position:fixed;right:calc(12px + env(safe-area-inset-right));top:52px;z-index:40;display:none';
-    this.dropBtn.onclick = () => { this.app.select([]); };
+    this.dropBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (this.placing) this.cancelPlacement();
+      else if (this.targeting) this.cancelTargeting();
+      else if (this.flareArmed) this.disarmFlare();
+      else this.app.select([]);
+    };
     document.body.appendChild(this.dropBtn);
     // (owner 2026-11-23: "a gamepad analog stick") bottom-right stick pans the map: direction and speed follow the thumb;
     // with the stick for panning, a one-finger drag on the map is always the selection box
@@ -921,11 +974,17 @@ export class Input {
     this.drag = { x0: x, y0: y, active: false };
     this.onUp(fake(x, y, 0));
   }
-  // the touch "Bırak" button shows while something is selected (called by the UI loop)
+  // the touch "Bırak" / "İptal" button shows while a placement/target tool is active or something is selected
   touchTick() {
     if (!this.dropBtn) return;
-    const on = !!(this.touchMode && this.active && this.app.selection && this.app.selection.length);
+    const tool = !!(this.placing || this.targeting || this.flareArmed);
+    const on = !!(this.touchMode && this.active && (tool || (this.app.selection && this.app.selection.length)));
     if (on !== this._dropOn) { this._dropOn = on; this.dropBtn.style.display = on ? 'block' : 'none'; }
+    if (on && tool !== this._dropTool) {
+      this._dropTool = tool;
+      this.dropBtn.textContent = tool ? tr('İptal') : tr('Bırak');
+      this.dropBtn.classList.toggle('cancel', tool);
+    }
     const m = !!(this.touchMode && this.active);
     if (m !== this._modeOn) { this._modeOn = m; this.modeBtn.style.display = m ? 'block' : 'none'; }
   }

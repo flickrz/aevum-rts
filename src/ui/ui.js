@@ -171,6 +171,7 @@ export class UI {
       this._tip(b, () => ({ name, desc }));
       top.append(b); return b;
     };
+    this.homeBtn = tb(ico('b-towncenter'), tr('Şehir Merkezine Git'), tr('Kamerayı Şehir Merkezine götür; tekrar basınca diğer Şehir Merkezleri arasında geçiş yapar. Kısayol: H / Home'), () => this.app.input?.goHome());
     tb(ico('x-tech'), tr('Teknoloji'), tr('Teknoloji ağacı: tüm çağların araştırmaları. Uygun olanı tıklayıp araştır.'), () => this.showTech());
     tb(ico('x-stats'), tr('İstatistik'), tr('Oyun istatistikleri ve skor.'), () => this.showStats());
     this.flareBtn = tb(ico('x-flare'), tr('İşaret Ver'), tr('Haritaya işaret bırak: takım arkadaşın mini haritada ve oyunda görür. Butona bas, sonra haritaya ya da mini haritaya tıkla. Kısayol: Alt + tık'), () => this.app.input?.armFlare());
@@ -624,9 +625,9 @@ export class UI {
   }
   _menuHowto() {
     const box = this._menuBox(`<h2>${tr('Nasıl Oynanır')}</h2><div class="howto">` + [
-      tr('<b>Seçim:</b> Sol tık ile seç, sürükleyerek çoklu seç. Çoklu seçimde alt paneldeki tür düğmeleri: tık = yalnızca o türü seç, <kbd>Shift</kbd>+tık = o türü çıkar, <kbd>Ctrl</kbd>+tık = ekrandaki o türün hepsini seç.'),
+      tr('<b>Seçim:</b> Sol tık ile seç, sürükleyerek çoklu seç. <kbd>Ctrl</kbd>+<kbd>A</kbd> tüm birliklerini, seçim boşken <kbd>Q</kbd> tüm askerî birliklerini seçer. Çoklu seçimde alt paneldeki tür düğmeleri: tık = yalnızca o türü seç, <kbd>Shift</kbd>+tık = o türü çıkar, <kbd>Ctrl</kbd>+tık = ekrandaki o türün hepsini seç.'),
       tr('<b>Komut:</b> Sağ tık — yürü, topla, saldır, inşa et / onar. <kbd>Shift</kbd> basılıyken verilen emirler sıraya eklenir (köylü önce mevcut işini bitirir). Düz sağ tıkla yürüyen birlikler yoldaki düşmanlara aldırmaz; yolda savaşmaları için <kbd>K</kbd> (Saldırarak Yürü) ya da <kbd>V</kbd> (Devriye) tuşuna basıp yere sol tıkla. Kendi oduncu ya da maden kampına sağ tık, köylüleri en yakın kaynağa gönderir.'),
-      tr('<b>Kamera:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / ok tuşları, ekran kenarı ya da orta tuş sürükleme ile kaydır (WASD yalnızca kamerayı oynatır), tekerlek ile yakınlaş, <kbd>Boşluk</kbd> ya da <kbd>Shift</kbd>+orta tuş basılıyken fareyle döndür, <kbd>Home</kbd> / <kbd>Backspace</kbd> Şehir Merkezine dön. Touchpad ile mi oynuyorsun? Ayarlar → <b>Touchpad modu</b>: iki parmakla kaydır, parmakları açıp kapatarak yakınlaş.'),
+      tr('<b>Kamera:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / ok tuşları, ekran kenarı ya da orta tuş sürükleme ile kaydır (WASD yalnızca kamerayı oynatır), tekerlek ile yakınlaş, <kbd>Boşluk</kbd> ya da <kbd>Shift</kbd>+orta tuş basılıyken fareyle döndür, <kbd>H</kbd> / <kbd>Home</kbd> / <kbd>Backspace</kbd> Şehir Merkezine dön (tekrar basınca diğerlerine geçer). Touchpad ile mi oynuyorsun? Ayarlar → <b>Touchpad modu</b>: iki parmakla kaydır, parmakları açıp kapatarak yakınlaş.'),
       tr('<b>Komut kartı:</b> Sağ alttaki düğmeler; kısayollar {0} ızgara sırasıyla.', '<kbd>Q</kbd><kbd>E</kbd><kbd>R</kbd><kbd>T</kbd><kbd>Y</kbd> / <kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd> / <kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd><kbd>B</kbd>'),
       tr('<b>Binalar:</b> <kbd>Shift</kbd>+tık ile aynı türden birden çok bina seç, çift tık ekrandaki tümünü seçer; üretim her binada aynı anda başlar. <kbd>Shift</kbd>+üret: 5 adet sıraya ekler. <kbd>Shift</kbd> basılıyken bina yerleştirmek araç açık kalır, birden çok temel atarsın. Yerleştirirken <kbd>R</kbd> binayı çevirir. Kendi binanı seçince <b>Döndür</b> düğmesi de çıkar.'),
       tr('<b>Sur kapısı:</b> Bitmiş bir sur parçasını seç, <b>Kapı Aç</b> (<kbd>Q</kbd>) ile 3 kare genişliğinde kapı yap. Kapıdan yalnızca sen ve müttefiklerin geçer.'),
@@ -853,7 +854,9 @@ export class UI {
     if (!type) { this.placeEl.classList.add('hidden'); return; }
     const b = BUILDINGS[type]; if (!b) return;
     const turn = !NO_ROTATE.has(type) && !['wall', 'gate', 'rail'].includes(type);   // (R turns it, src/input.js)
-    this.placeEl.innerHTML = `<span>${b.icon || ico('x-build')} ${tr('<b>{0}</b> yerleştir', esc(tr(b.name)))}</span><span class="tooltip-inline tc" style="display:flex;gap:8px">${this._costHtml(b.cost)}</span><span style="color:var(--dim)">${type === 'wall' ? tr('Basılı tutup sürükle: sur hattı · Bırak: yerleştir') : type === 'gate' ? tr('Bitmiş bir sur parçasına tıkla: kapı olur') : type === 'rail' ? tr('Basılı tutup sürükle: ray hattı · Bırak: yerleştir') : type === 'dock' ? tr('Kıyıya yerleştir: bir kısmı suda olmalı · Sol tık: yerleştir') : tr('Sol tık: yerleştir · Shift+tık: birden çok, köylüler sırayla yapar')}${turn ? tr(' · R: döndür') : ''}${tr(' · Sağ tık / Esc: iptal')}</span>`;
+    this.placeEl.innerHTML = `<span>${b.icon || ico('x-build')} ${tr('<b>{0}</b> yerleştir', esc(tr(b.name)))}</span><span class="tooltip-inline tc" style="display:flex;gap:8px">${this._costHtml(b.cost)}</span><span class="place-desc" style="color:var(--dim)">${type === 'wall' ? tr('Basılı tutup sürükle: sur hattı · Bırak: yerleştir') : type === 'gate' ? tr('Bitmiş bir sur parçasına tıkla: kapı olur') : type === 'rail' ? tr('Basılı tutup sürükle: ray hattı · Bırak: yerleştir') : type === 'dock' ? tr('Kıyıya yerleştir: bir kısmı suda olmalı · Sol tık: yerleştir') : tr('Sol tık: yerleştir · Shift+tık: birden çok, köylüler sırayla yapar')}${turn ? tr(' · R: döndür') : ''}${tr(' · Sağ tık / Esc: iptal')}</span><button type="button" class="mbtn small place-cancel">${tr('İptal')}</button>`;
+    const cancelBtn = this.placeEl.querySelector('.place-cancel');
+    if (cancelBtn) cancelBtn.onclick = (e) => { e.stopPropagation(); this._click(); this.app.input?.cancelPlacement(); };
     this.placeEl.classList.remove('hidden');
   }
 

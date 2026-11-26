@@ -120,5 +120,29 @@ console.log('Town bell');
   ok(A2.hash() === B2.hash(), 'both clients stay in sync after town bell cycle');
 }
 
+// ---- 5) drop-off return (right-click drop-off building with carrying villagers, MP-safe)
+console.log('Drop-off return');
+{
+  ok(CMD_METHODS.includes('cmdReturn'), 'cmdReturn is a network command');
+  const A3 = new Game(cfg(0)), B3 = new Game(cfg(1));
+  const both3 = (pid, m, a) => { const ra = A3.execCommand(pid, m, JSON.parse(JSON.stringify(a))), rb = B3.execCommand(pid, m, JSON.parse(JSON.stringify(a))); if (ra !== rb) fails.push('clients disagree on ' + m); return ra; };
+  const tc0 = A3.buildingsOf(0).find(b => b.type === 'towncenter');
+  const tc1 = A3.buildingsOf(1).find(b => b.type === 'towncenter');
+  const v0 = A3.unitsOf(0).filter(u => u.type === 'villager')[0];
+  const v0B = B3.entities.get(v0.id);
+  // empty villager refused
+  ok(!both3(0, 'cmdReturn', [[v0.id], tc0.id]), 'empty villager cannot cmdReturn');
+  // give villager a partial wood load on both clients (e.g. mid-gather) and right-click own TC
+  v0.carry = { type: 'wood', amount: 7 }; v0B.carry = { type: 'wood', amount: 7 };
+  // enemy TC refused
+  ok(!both3(0, 'cmdReturn', [[v0.id], tc1.id]), 'cannot drop off at another player building');
+  const woodBefore = A3.players[0].res.wood;
+  ok(both3(0, 'cmdReturn', [[v0.id], tc0.id]) === true, 'carrying villager accepts cmdReturn to own TC');
+  ok(v0.order && v0.order.type === 'return' && v0.order.dropId === tc0.id, 'villager has return order targeting TC');
+  run(A3, 15); run(B3, 15);
+  ok(A3.players[0].res.wood === woodBefore + 7 && !v0.carry, `villager deposited 7 wood at TC (${woodBefore} -> ${A3.players[0].res.wood})`);
+  ok(A3.hash() === B3.hash(), 'both clients stay in sync after villager drop-off');
+}
+
 console.log(fails.length ? `\n${fails.length} FAILED` : '\nALL OK');
 process.exit(fails.length ? 1 : 0);

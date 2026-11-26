@@ -1185,12 +1185,32 @@ export class Game {
       };
       for (const s of this._formation(land, grp.sx + 0.5, grp.sz + 0.5, face)) { const p = spot(s.x, s.z); this._setOrder(s.u, mv(s.u, { type: 'move', x: p.x, z: p.z, grp }), queue); }
     }
-    const cols = Math.ceil(Math.sqrt(sea.length));
-    sea.forEach((u, i) => {
-      const ox = ((i % cols) - (cols - 1) / 2) * 1.6, oz = (Math.floor(i / cols) - (Math.ceil(sea.length / cols) - 1) / 2) * 1.6;
-      this._navMode = true; const f = this._freeNear(x + ox, z + oz, u.owner); this._navMode = false;
-      this._setOrder(u, mv(u, { type: 'move', x: f.x, z: f.z }), queue);
-    });
+    if (sea.length) {
+      this._navMode = true;
+      try {
+        const needFF = sea.length >= 4 || sea.some(u => dhypot(u.x - x, u.z - z) > 20 && !this._los(u.x, u.z, x, z, u.owner));
+        const sgrp = needFF ? { path: null, tx: x, tz: z, nav: 1 } : null;
+        const sd = sgrp ? this._flowField(sgrp, sea[0].owner, sea[0], sea) : null;
+        const cols = Math.ceil(Math.sqrt(sea.length));
+        const used = sd ? new Set() : null;
+        const sspot = (sx, sz) => {
+          const cx = Math.min(N - 1, Math.max(0, sx | 0)), cz = Math.min(N - 1, Math.max(0, sz | 0));
+          for (let r = 0; r <= 12; r++) for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) {
+            if (Math.max(Math.abs(i), Math.abs(j)) !== r) continue;
+            const nx = cx + i, nz = cz + j; if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
+            const k = nz * N + nx; if (sd[k] < 0 || used.has(k)) continue;
+            used.add(k); return r === 0 ? { x: sx, z: sz } : { x: nx + 0.5, z: nz + 0.5 };
+          }
+          return this._freeNear(sx, sz, sea[0].owner);
+        };
+        const bx = sgrp ? sgrp.sx + 0.5 : x, bz = sgrp ? sgrp.sz + 0.5 : z;
+        sea.forEach((u, i) => {
+          const ox = ((i % cols) - (cols - 1) / 2) * 1.6, oz = (Math.floor(i / cols) - (Math.ceil(sea.length / cols) - 1) / 2) * 1.6;
+          const f = sd ? sspot(bx + ox, bz + oz) : this._freeNear(x + ox, z + oz, u.owner);
+          this._setOrder(u, mv(u, sgrp ? { type: 'move', x: f.x, z: f.z, grp: sgrp } : { type: 'move', x: f.x, z: f.z }), queue);
+        });
+      } finally { this._navMode = false; }
+    }
     return true;
   }
   // walk there and fight what comes into sight on the way (buildings too), then go on; patrol: back and forth between
@@ -1529,6 +1549,41 @@ export class Game {
         push(ni, ng + h);
       }
     }
+    if (this._navMode && found < 0 && hn.length > 0) {
+      // A* hit its node cap around a large island / continent: fall back to a full naval BFS so ships never stall on the near shore
+      const d = this._ffSweep(s0x, s0z, owner, null);
+      const P = this._passMap(owner);
+      let goalK = -1, goalD = 1e9, nearK = -1, nearH = 1e9, nearD = 1e9;
+      for (let k = 0; k < N * N; k++) {
+        const dk = d[k]; if (dk < 0) continue;
+        const x = k % N, z = (k / N) | 0;
+        if (isGoal(x, z)) { if (dk < goalD) { goalD = dk; goalK = k; } }
+        else if (goalK < 0) { const h = hh(x, z); if (h < nearH || (h === nearH && dk < nearD)) { nearH = h; nearD = dk; nearK = k; } }
+      }
+      const endK = goalK >= 0 ? goalK : nearK;
+      if (endK >= 0 && endK !== start) {
+        const rev = []; let c = endK;
+        while (c !== start && d[c] > 0) {
+          const cx = c % N, cz = (c / N) | 0, want = d[c] - 1;
+          rev.push(cz + 0.5, cx + 0.5);
+          let next = -1;
+          for (let dz = -1; dz <= 1 && next < 0; dz++) for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dz) continue; const nx = cx + dx, nz = cz + dz;
+            if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
+            const ni = nz * N + nx; if (d[ni] !== want) continue;
+            if (dx && dz && (!P[cz * N + nx] || !P[nz * N + cx])) continue;
+            next = ni; break;
+          }
+          if (next < 0) break;
+          c = next;
+        }
+        rev.reverse();
+        const path = []; for (let i = 0; i < rev.length; i += 2) path.push(rev[i], rev[i + 1]);
+        if (goalK >= 0 && half < 0) { if (path.length >= 2) { path[path.length - 2] = gx; path[path.length - 1] = gz; } else path.push(gx, gz); }
+        this._pn = (this._pn || 0) + count;
+        return path;
+      }
+    }
     let n = found >= 0 ? found : best; const out = [];
     while (n !== start && n >= 0) { out.push((n / N | 0) + 0.5, (n % N) + 0.5); n = par[n]; }
     out.reverse(); // now [x,z,...] reversed pairs -> fix order
@@ -1576,50 +1631,57 @@ export class Game {
   _flowField(grp, owner, from, units) {
     const V = this._blkV || 0;
     if (grp.ff && grp.fv === V) return grp.ff;
-    const N = this.map.size, cl = v => Math.min(N - 2, Math.max(1, v | 0));
-    if (grp.sx !== undefined && grp.fv !== V && this.tick - (grp.fb | 0) < FF_GAP) return null;
-    grp.fv = V; grp.fb = this.tick;
-    if (grp.sx === undefined) {   // first build: seed at the click, or, if the leader cannot get there, at the nearest point it can reach
-      const gx = grp.tx !== undefined ? grp.tx : from.x, gz = grp.tz !== undefined ? grp.tz : from.z, f = this._freeNear(gx, gz, owner);
-      grp.sx = cl(f.x); grp.sz = cl(f.z);
-      grp.fd = -1;
-      if (from) {
-        const P = this._passMap(owner), want = [];
-        for (const u of units && units.length ? units : [from]) { const k = cl(u.z) * N + cl(u.x); if (P[k]) want.push(k); }
-        let d0 = this._ffSweep(grp.sx, grp.sz, owner, null, Infinity, want); const fc = cl(from.z) * N + cl(from.x);
-        if (d0[fc] < 0) {   // the click is out of reach: sweep from the leader, take its reachable cell closest to the click
-          const dl = this._ffSweep(cl(from.x), cl(from.z), owner, null); let bk = -1, bd = 1e18;
-          for (let k = 0; k < N * N; k++) { if (dl[k] < 0) continue; const ddx = (k % N) + 0.5 - gx, ddz = ((k / N) | 0) + 0.5 - gz, dd = ddx * ddx + ddz * ddz; if (dd < bd) { bd = dd; bk = k; } }
-          if (bk >= 0) { grp.sx = bk % N; grp.sz = (bk / N) | 0; d0 = this._ffSweep(grp.sx, grp.sz, owner, d0, Infinity, want); }
+    const nm = this._navMode, nav = !!(grp.nav || nm);
+    this._navMode = nav;
+    try {
+      const N = this.map.size, cl = v => Math.min(N - (nav ? 1 : 2), Math.max(nav ? 0 : 1, v | 0));
+      if (grp.sx !== undefined && grp.fv !== V && this.tick - (grp.fb | 0) < FF_GAP) return null;
+      grp.fv = V; grp.fb = this.tick;
+      if (grp.sx === undefined) {   // first build: seed at the click, or, if the leader cannot get there, at the nearest point it can reach
+        const gx = grp.tx !== undefined ? grp.tx : from.x, gz = grp.tz !== undefined ? grp.tz : from.z, f = this._freeNear(gx, gz, owner);
+        grp.sx = cl(f.x); grp.sz = cl(f.z);
+        grp.fd = -1;
+        if (from) {
+          const P = this._passMap(owner), want = [];
+          for (const u of units && units.length ? units : [from]) { const k = cl(u.z) * N + cl(u.x); if (P[k]) want.push(k); }
+          let d0 = this._ffSweep(grp.sx, grp.sz, owner, null, Infinity, want); const fc = cl(from.z) * N + cl(from.x);
+          if (d0[fc] < 0) {   // the click is out of reach: sweep from the leader, take its reachable cell closest to the click
+            const dl = this._ffSweep(cl(from.x), cl(from.z), owner, null); let bk = -1, bd = 1e18;
+            for (let k = 0; k < N * N; k++) { if (dl[k] < 0) continue; const ddx = (k % N) + 0.5 - gx, ddz = ((k / N) | 0) + 0.5 - gz, dd = ddx * ddx + ddz * ddz; if (dd < bd) { bd = dd; bk = k; } }
+            if (bk >= 0) { grp.sx = bk % N; grp.sz = (bk / N) | 0; d0 = this._ffSweep(grp.sx, grp.sz, owner, d0, Infinity, want); }
+          }
+          if (this._ffLim !== Infinity) grp.fd = this._ffLim;
+          return this._ffKeep(grp, d0);
         }
-        if (this._ffLim !== Infinity) grp.fd = this._ffLim;
-        return this._ffKeep(grp, d0);
       }
-    }
-    return this._ffKeep(grp, this._ffSweep(grp.sx, grp.sz, owner, grp.ff && grp.ff.length === N * N ? grp.ff : null, grp.fd >= 0 ? grp.fd : Infinity));
+      return this._ffKeep(grp, this._ffSweep(grp.sx, grp.sz, owner, grp.ff && grp.ff.length === N * N ? grp.ff : null, grp.fd >= 0 ? grp.fd : Infinity));
+    } finally { this._navMode = nm; }
   }
   _ffKeep(grp, d) {
     Object.defineProperty(grp, 'ff', { value: d, writable: true, enumerable: false, configurable: true });
     return d;
   }
-  // where owner can walk, one byte per cell; kept up to date cell by cell (_blkMark), fully rebuilt when the teams change
+  // where owner can walk (or sail when _navMode is true), one byte per cell; kept up to date cell by cell (_blkMark)
   _passMap(owner) {
-    const N = this.map.size, c = this._pmc || (this._pmc = new Map()), key = this._tm ? this._tm.join(',') : '';
-    const e = c.get(owner);
+    const nav = !!this._navMode, mapKey = nav ? -2 : owner;
+    const N = this.map.size, c = this._pmc || (this._pmc = new Map()), key = nav ? 'nav' : (this._tm ? this._tm.join(',') : '');
+    const e = c.get(mapKey);
     if (e && e.k === key && e.P.length === N * N) return e.P;
-    const P = e && e.P.length === N * N ? e.P : new Uint8Array(N * N), nm = this._navMode; this._navMode = false;
+    const P = e && e.P.length === N * N ? e.P : new Uint8Array(N * N);
     for (let z = 0, k = 0; z < N; z++) for (let x = 0; x < N; x++, k++) P[k] = this._pass(x, z, owner) ? 1 : 0;
-    this._navMode = nm;
-    c.set(owner, { k: key, P }); return P;
+    c.set(mapKey, { k: key, P }); return P;
   }
   // something blocking changed in a w x h box: bump the version (flow fields go stale) and refresh the cached pass maps
   _blkMark(x0, z0, w, h) {
     this._blkV = (this._blkV || 0) + 1;
     if (!this._pmc || !this._pmc.size) return;
-    const N = this.map.size, nm = this._navMode; this._navMode = false;
-    for (const [owner, e] of this._pmc) for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
-      const x = x0 + i, z = z0 + j; if (x < 0 || z < 0 || x >= N || z >= N) continue;
-      e.P[z * N + x] = this._pass(x, z, owner) ? 1 : 0;
+    const N = this.map.size, nm = this._navMode;
+    for (const [owner, e] of this._pmc) {
+      this._navMode = owner === -2;
+      for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+        const x = x0 + i, z = z0 + j; if (x < 0 || z < 0 || x >= N || z >= N) continue;
+        e.P[z * N + x] = this._pass(x, z, owner) ? 1 : 0;
+      }
     }
     this._navMode = nm;
   }
@@ -2019,7 +2081,7 @@ export class Game {
           if (u.scanT <= 0) { u.scanT = 0.5; const t = this._acquire(u, Math.min(UNITS[u.type].los, (UNITS[u.type].range > 0 ? this._wRange(u) : 1) + MOVE_REACH), true); if (t && this._canEngage(u, t)) { this._engage(u, t); if (u.order && u.order.auto) u.order.mv = true; break; } }
         }
         if (!u.path) {
-          let p = o.grp && !u.naval ? this._fieldPath(u, o) : null;
+          let p = o.grp ? this._fieldPath(u, o) : null;
           if (p === false) break;   // the group's field is being rebuilt (see _flowField): wait a moment
           if (!p) p = this._reqPath(u, o.x, o.z, -1);
           // no path this tick (search budget spent): wait, unless the way ahead is clear (walking straight into trees wedges units)
@@ -2334,7 +2396,7 @@ export class Game {
   _uReturn(u, o, dt) {
     if (!u.carry || u.carry.amount <= 0) { u.carry = null; if (o.resume) { u.order = o.resume; u.targetId = o.resume.targetId; u.path = null; u.pk = null; } else this._next(u); return; }
     let b = this.entities.get(o.dropId);
-    if (!b || b.dead) { b = this._nearestB(u, x => { const d = BUILDINGS[x.type].dropoff; return d && d.includes(u.carry.type); }); if (!b) { u.state = 'idle'; u.anim = 'idle'; return; } o.dropId = b.id; }
+    if (!b || b.dead || !b.done) { b = this._nearestB(u, x => { const d = BUILDINGS[x.type].dropoff; return d && d.includes(u.carry.type); }); if (!b) { u.state = 'idle'; u.anim = 'idle'; return; } o.dropId = b.id; }
     if (this._approach(u, b, dt, 1.0)) {
       const p = this.players[u.owner]; this._credit(p, u.carry.type, u.carry.amount);
       this.events.emit('deposit', { unit: u, owner: u.owner, res: u.carry.type, amount: u.carry.amount });
@@ -3024,20 +3086,38 @@ export class Game {
     this._setOrder(t, { type: 'unload', wx: s.wx, wz: s.wz, x: s.wx, z: s.wz });
     return true;
   }
-  // ships right-clicked on an own dock: loaded fishboats deliver there and resume fishing; others just park next to it
-  cmdReturn(ids, dockId) {
-    const b = this.entities.get(dockId); if (!b || b.dead || b.kind !== 'building' || b.type !== 'dock') return false;
-    const us = this._live(ids).filter(u => u.naval && u.owner === b.owner); if (!us.length) return false;
-    let park = null;
-    for (const u of us) {
-      if (u.type === 'fishboat' && b.done && u.carry && u.carry.amount > 0) {
-        const o = u.order;
-        if (o && o.type === 'fish') { o.phase = 'ret'; o.dropId = b.id; o.fail = 0; u.path = null; u.pk = null; u.queue.length = 0; u.explore = false; }
-        else { const s = this._navNearestShoal(u.x, u.z); this._setOrder(u, { type: 'fish', targetId: s ? s.id : null, phase: 'ret', dropId: b.id, acc: 0, tick: 0 }); }
-      } else {
-        if (!park) { this._navMode = true; try { park = this._navSpawn(b); } finally { this._navMode = false; } }
-        this.cmdMove([u.id], park.x, park.z);
+  // right-click an own drop-off building:
+  // - dock: loaded fishboats deliver there and resume fishing; other ships park next to it
+  // - land drop-off (TC, storage, lumbercamp, minecamp, mill): carrying villagers drop off matching resources there
+  cmdReturn(ids, dropId, queue = false) {
+    const b = this.entities.get(dropId); if (!b || b.dead || b.kind !== 'building') return false;
+    if (b.type === 'dock') {
+      const us = this._live(ids).filter(u => u.naval && u.owner === b.owner); if (!us.length) return false;
+      let park = null;
+      for (const u of us) {
+        if (u.type === 'fishboat' && b.done && u.carry && u.carry.amount > 0) {
+          const o = u.order;
+          if (o && o.type === 'fish') { o.phase = 'ret'; o.dropId = b.id; o.fail = 0; u.path = null; u.pk = null; u.queue.length = 0; u.explore = false; }
+          else { const s = this._navNearestShoal(u.x, u.z); this._setOrder(u, { type: 'fish', targetId: s ? s.id : null, phase: 'ret', dropId: b.id, acc: 0, tick: 0 }); }
+        } else {
+          if (!park) { this._navMode = true; try { park = this._navSpawn(b); } finally { this._navMode = false; } }
+          this.cmdMove([u.id], park.x, park.z);
+        }
       }
+      return true;
+    }
+    const drop = BUILDINGS[b.type] && BUILDINGS[b.type].dropoff;
+    if (!b.done || !drop || !drop.length) return false;
+    const us = this._live(ids).filter(u => u.type === 'villager' && u.owner === b.owner && u.carry && u.carry.amount > 0 && drop.includes(u.carry.type));
+    if (!us.length) return false;
+    for (const u of us) {
+      let resume = null;
+      if (!queue && u.order) {
+        if (u.order.type === 'gather') resume = this._cloneOrder(u.order);
+        else if (u.order.type === 'return' && u.order.resume) resume = this._cloneOrder(u.order.resume);
+        if (resume && resume.haul) resume.haul = false;
+      }
+      this._setOrder(u, { type: 'return', res: u.carry.type, dropId: b.id, resume }, !!queue);
     }
     return true;
   }

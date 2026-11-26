@@ -90,6 +90,7 @@ export default {
   '🚩 Yeni köylüler doğrudan burada çalışacak': '🚩 New villagers will work here directly',
   '🚩 Yeni balıkçı tekneleri doğrudan burada avlanacak': '🚩 New fishing boats will fish here directly',
   'Boşta köylü yok.': 'No idle villagers.',
+  'Askerî birlik yok.': 'No military units.',
   'Bırak': 'Drop',
 
   // main.js

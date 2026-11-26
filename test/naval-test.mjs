@@ -100,5 +100,32 @@ ok(!sp || eg.dead || !g.cmdAttack([sp.id], eg.id), 'melee cannot attack ships');
 const s3 = g.serialize(); const g3 = Game.deserialize(s3); run(g3, 10);
 ok(true, 'final save/load runs');
 
+// ships path around a large landmass / island instead of stalling on the near shore (2026-11-26)
+{
+  const gIsl = new Game({ mapSize: 256, mapType: 'continent', enemies: 1, seed: 1, mp: true });
+  gIsl.ais.length = 0;
+  gIsl._navMode = true;
+  const w0 = gIsl._navNearPass(15, 128, 30), w1 = gIsl._navNearPass(241, 128, 30);
+  const blockedStraight = w0 && w1 && !gIsl._los(w0.x, w0.z, w1.x, w1.z, 0);
+  gIsl._navMode = false;
+  ok(blockedStraight, 'continent 256 has land between opposite shores');
+  const ship = gIsl._addUnit('galley', 0, w0.x, w0.z);
+  gIsl.cmdMove([ship.id], w1.x, w1.z);
+  // save mid-voyage and verify both original and loaded ship reach the far shore
+  run(gIsl, 20);
+  const snap = Game.deserialize(JSON.stringify(gIsl.serialize()));
+  const ship2 = snap.getEntity(ship.id);
+  for (let s = 0; s < 160 && ship.order; s++) run(gIsl, 1);
+  for (let s = 0; s < 160 && ship2.order; s++) run(snap, 1);
+  ok(Math.hypot(ship.x - w1.x, ship.z - w1.z) < 4, 'ship sailed around continent to far shore (dist ' + Math.hypot(ship.x - w1.x, ship.z - w1.z).toFixed(1) + ')');
+  ok(Math.hypot(ship2.x - w1.x, ship2.z - w1.z) < 4, 'saved/loaded ship also reached far shore');
+  // _approach / _findPath naval BFS fallback: warship attacking an enemy ship on the opposite side of the continent
+  const attacker = gIsl._addUnit('galley', 0, w0.x, w0.z);
+  const target = gIsl._addUnit('fishboat', 1, w1.x, w1.z);
+  gIsl.cmdAttack([attacker.id], target.id);
+  for (let s = 0; s < 180 && !target.dead; s++) run(gIsl, 1);
+  ok(target.dead, 'warship pathed around continent to sink target on far shore');
+}
+
 if (fails.length) { console.log('FAIL', fails); process.exit(1); }
 console.log('ALL OK');
