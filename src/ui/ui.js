@@ -626,7 +626,7 @@ export class UI {
     const box = this._menuBox(`<h2>${tr('Nasıl Oynanır')}</h2><div class="howto">` + [
       tr('<b>Seçim:</b> Sol tık ile seç, sürükleyerek çoklu seç. Çoklu seçimde alt paneldeki tür düğmeleri: tık = yalnızca o türü seç, <kbd>Shift</kbd>+tık = o türü çıkar, <kbd>Ctrl</kbd>+tık = ekrandaki o türün hepsini seç.'),
       tr('<b>Komut:</b> Sağ tık — yürü, topla, saldır, inşa et / onar. <kbd>Shift</kbd> basılıyken verilen emirler sıraya eklenir (köylü önce mevcut işini bitirir). Düz sağ tıkla yürüyen birlikler yoldaki düşmanlara aldırmaz; yolda savaşmaları için <kbd>K</kbd> (Saldırarak Yürü) ya da <kbd>V</kbd> (Devriye) tuşuna basıp yere sol tıkla. Kendi oduncu ya da maden kampına sağ tık, köylüleri en yakın kaynağa gönderir.'),
-      tr('<b>Kamera:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / ok tuşları veya ekran kenarı ile kaydır (WASD yalnızca kamerayı oynatır), tekerlek ile yakınlaş, orta tuş ya da <kbd>Boşluk</kbd> basılıyken fareyle döndür, <kbd>Home</kbd> / <kbd>Backspace</kbd> Şehir Merkezine dön. Touchpad ile mi oynuyorsun? Ayarlar → <b>Touchpad modu</b>: iki parmakla kaydır, parmakları açıp kapatarak yakınlaş.'),
+      tr('<b>Kamera:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / ok tuşları, ekran kenarı ya da orta tuş sürükleme ile kaydır (WASD yalnızca kamerayı oynatır), tekerlek ile yakınlaş, <kbd>Boşluk</kbd> ya da <kbd>Shift</kbd>+orta tuş basılıyken fareyle döndür, <kbd>Home</kbd> / <kbd>Backspace</kbd> Şehir Merkezine dön. Touchpad ile mi oynuyorsun? Ayarlar → <b>Touchpad modu</b>: iki parmakla kaydır, parmakları açıp kapatarak yakınlaş.'),
       tr('<b>Komut kartı:</b> Sağ alttaki düğmeler; kısayollar {0} ızgara sırasıyla.', '<kbd>Q</kbd><kbd>E</kbd><kbd>R</kbd><kbd>T</kbd><kbd>Y</kbd> / <kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd> / <kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd><kbd>B</kbd>'),
       tr('<b>Binalar:</b> <kbd>Shift</kbd>+tık ile aynı türden birden çok bina seç, çift tık ekrandaki tümünü seçer; üretim her binada aynı anda başlar. <kbd>Shift</kbd>+üret: 5 adet sıraya ekler. <kbd>Shift</kbd> basılıyken bina yerleştirmek araç açık kalır, birden çok temel atarsın. Yerleştirirken <kbd>R</kbd> binayı çevirir. Kendi binanı seçince <b>Döndür</b> düğmesi de çıkar.'),
       tr('<b>Sur kapısı:</b> Bitmiş bir sur parçasını seç, <b>Kapı Aç</b> (<kbd>Q</kbd>) ile 3 kare genişliğinde kapı yap. Kapıdan yalnızca sen ve müttefiklerin geçer.'),
@@ -674,6 +674,16 @@ export class UI {
       tseg.append(b);
     }
     trow.append(tseg); parent.append(trow);
+    // screen-edge scrolling with mouse cursor (src/input.js update)
+    const erow = el('div', 'frow', `<label>${tr('Kenar kaydırma')}</label>`);
+    const eseg = el('div', 'seg');
+    for (const [v, t] of [[false, tr('Kapalı')], [true, tr('Açık')]]) {
+      const b = el('button', (this.settings.edgePan !== false) === v ? 'on' : '', t);
+      b.title = tr('Açık: fare ekran kenarına gelince kamera kayar. Orta tuşla sürükleyerek de kaydırabilirsin.');
+      b.onclick = () => { this._click(); this.settings.edgePan = v; eseg.querySelectorAll('button').forEach((x) => x.classList.remove('on')); b.classList.add('on'); this._saveSettings(); };
+      eseg.append(b);
+    }
+    erow.append(eseg); parent.append(erow);
     const lrow = el('div', 'frow', `<label>${tr('Dil')}</label>`);
     const lseg = el('div', 'seg');
     for (const [v, t] of [['tr', 'Türkçe'], ['en', 'English']]) {
@@ -689,7 +699,7 @@ export class UI {
     this._mbtn(box, tr('Geri'), () => this._menuMain());
   }
   _loadSettings() {
-    const def = { vol: { master: 0.8, sfx: 0.8, ambient: 0.5, music: 0.7, ui: 0.6 }, quality: 'high', touchpad: false };
+    const def = { vol: { master: 0.8, sfx: 0.8, ambient: 0.5, music: 0.7, ui: 0.6 }, quality: 'high', touchpad: false, edgePan: true };
     try { const o = JSON.parse(localStorage.getItem('aevum.settings')); if (o && o.vol) return { ...def, ...o, vol: { ...def.vol, ...o.vol } }; } catch (e) { /* ignore */ }
     return def;
   }

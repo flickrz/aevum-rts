@@ -21,7 +21,8 @@ export class Input {
     this.keys = new Set();
     this.mouse = { x: 0, y: 0, inside: false };
     this.drag = null;      // left button box select {x0,y0,active}
-    this.rot = null;       // middle button rotate {x,y}
+    this.rot = null;       // camera rotate {x,y} (Space / Shift+middle / Alt+middle)
+    this.mpan = null;      // middle button drag pan {x,y}
     this.wallStart = null; // {tx,tz}
     this.groups = {};
     this.lastGroupTap = { n: -1, t: 0 };
@@ -60,7 +61,7 @@ export class Input {
       if (e.key === 'Shift' && this.shiftPlaced) this.shiftPlaced = false;
     });
     this._bindTouch(c);
-    window.addEventListener('blur', () => { this.keys.clear(); this.shift = false; this.mouse.inside = false; this.endDrag(); this.rot = null; });
+    window.addEventListener('blur', () => { this.keys.clear(); this.shift = false; this.mouse.inside = false; this.endDrag(); this.rot = null; this.mpan = null; });
     document.addEventListener('mouseleave', () => { this.mouse.inside = false; });
     // only trust "inside" together with real coordinates (a bare mouseenter left x/y at 0,0 -> edge scroll to the corner)
     document.addEventListener('mouseenter', e => {
@@ -77,7 +78,7 @@ export class Input {
 
   reset() {
     this.placing = null; this.wallStart = null; this.placeDown = false; this.groups = {}; this.keys.clear(); this.placeRot = 0;
-    this.endDrag(); this.rot = null; this.setLineLabel(null);
+    this.endDrag(); this.rot = null; this.mpan = null; this.setLineLabel(null);
     try { this.app.renderer.setGhost(null); } catch (err) { /* ignore */ }
   }
 
@@ -278,7 +279,12 @@ export class Input {
   // ---------- mouse ----------
   onDown(e) {
     this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.inside = true;
-    if (e.button === 1) { e.preventDefault(); this.rot = { x: e.clientX, y: e.clientY }; return; }
+    if (e.button === 1) {
+      e.preventDefault();
+      if (e.shiftKey || e.altKey) this.rot = { x: e.clientX, y: e.clientY };
+      else this.mpan = { x: e.clientX, y: e.clientY };
+      return;
+    }
     if (!this.active) return;
     if (this.targeting && (e.button === 0 || e.button === 2)) {
       e.preventDefault();
@@ -317,8 +323,16 @@ export class Input {
   onMove(e) {
     this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.inside = true;
     this.shift = e.shiftKey;
-    if (this.placing && this.active && !this.rot) this.updateGhost();
+    if (this.placing && this.active && !this.rot && !this.mpan) this.updateGhost();
     if (this.targeting && this.tgtLbl) { this.tgtLbl.style.left = (e.clientX + 16) + 'px'; this.tgtLbl.style.top = (e.clientY + 18) + 'px'; }
+    if (this.mpan) {
+      if (this.active) {
+        const cam = this.app.renderer.cam;
+        this.pan(-(e.clientX - this.mpan.x), e.clientY - this.mpan.y, Math.max(10, cam.dist) * TP_PAN * 1.15);
+      }
+      this.mpan.x = e.clientX; this.mpan.y = e.clientY;
+      return;
+    }
     if (this.rot) {
       const cam = this.app.renderer.cam;
       if (this.rot.space) this.rot.moved += Math.abs(e.clientX - this.rot.x) + Math.abs(e.clientY - this.rot.y);
@@ -353,7 +367,7 @@ export class Input {
     if (this.targeting || this.flareArmed) { this._cur = null; return; }   // (they own the crosshair; re-set after)
     let name = '';
     try {
-      const busy = !this.active || this.placing || this.rot || (this.drag && this.drag.active) || (this.fdrag && this.fdrag.active)
+      const busy = !this.active || this.placing || this.rot || this.mpan || (this.drag && this.drag.active) || (this.fdrag && this.fdrag.active)
         || e.target !== this.canvas || document.documentElement.classList.contains('touch');
       if (!busy) {
         const sel = { villagers: false, military: false };
@@ -371,7 +385,7 @@ export class Input {
   endDrag() { this.drag = null; this.box.style.display = 'none'; }
 
   onUp(e) {
-    if (e.button === 1) { if (!(this.rot && this.rot.space)) this.rot = null; return; }
+    if (e.button === 1) { if (!(this.rot && this.rot.space)) this.rot = null; this.mpan = null; return; }
     if (e.button === 2 && this.fdrag) {
       const f = this.fdrag; this.fdrag = null; this.fline.style.display = 'none';
       if (!f.active || !this.active) return;
@@ -769,7 +783,9 @@ export class Input {
     if (K.has('KeyS') || K.has('ArrowDown')) mz -= 1;
     if (K.has('KeyD') || K.has('ArrowRight')) mx += 1;
     if (K.has('KeyA') || K.has('ArrowLeft')) mx -= 1;
-    if (!this.touchMode && this.mouse.inside && document.hasFocus() && !this.rot && !this.app.paused) {
+    const edgeOn = this.app.ui?.settings?.edgePan !== false;
+    const modalOpen = !!(this.app.ui?.modalEl && !this.app.ui.modalEl.classList.contains('hidden')) || !!(this.app.ui?.pauseEl && !this.app.ui.pauseEl.classList.contains('hidden'));
+    if (edgeOn && !this.touchMode && this.mouse.inside && document.hasFocus() && !this.rot && !this.mpan && !this.app.paused && !modalOpen) {
       const w = window.innerWidth, h = window.innerHeight, m = this.mouse;
       if (m.x >= 0 && m.y >= 0 && m.x <= w && m.y <= h) {
         const ramp = (d) => EDGE_MIN + (1 - EDGE_MIN) * Math.min(1, Math.max(0, 1 - d / EDGE_PX));
