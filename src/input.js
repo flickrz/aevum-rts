@@ -530,6 +530,20 @@ export class Input {
           r.addMarker(target.x, target.z, C_GATHER, rad); this.flash(target.id, C_GATHER); this.sfx('command', 'gather:food');
           return;
         }
+        // carrying villagers right-clicking a matching finished drop-off building (TC, storage, lumber/mine camp, mill): drop load there
+        const drop = BUILDINGS[target.type]?.dropoff;
+        const carriers = drop ? villagers.filter(id => { const u = this.ent(id); return u && u.carry && u.carry.amount > 0 && drop.includes(u.carry.type); }) : [];
+        if (carriers.length && game.cmdReturn?.(carriers, target.id, queue)) {
+          const empty = villagers.filter(id => !carriers.includes(id));
+          if (empty.length && (target.type === 'lumbercamp' || target.type === 'minecamp')) {
+            const best = this._campRes(target, empty);
+            if (best) game.cmdGather(empty, best.id, queue);
+          }
+          const rest = units.filter(id => !villagers.includes(id));
+          if (rest.length) game.cmdMove(rest, target.x, target.z, queue);
+          r.addMarker(target.x, target.z, C_GATHER, rad); this.flash(target.id, C_GATHER); this.sfx('command', 'gather:' + (this.ent(carriers[0])?.carry?.type || 'wood'));
+          return;
+        }
         // a lumber camp / mine camp: work the nearest tree / stone or gold to it on explored tiles (a mine whose
         // deposit already has MINE_CAP of my villagers, not counting these, only when no other one has room)
         if (target.type === 'lumbercamp' || target.type === 'minecamp') {

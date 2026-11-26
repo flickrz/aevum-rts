@@ -2334,7 +2334,7 @@ export class Game {
   _uReturn(u, o, dt) {
     if (!u.carry || u.carry.amount <= 0) { u.carry = null; if (o.resume) { u.order = o.resume; u.targetId = o.resume.targetId; u.path = null; u.pk = null; } else this._next(u); return; }
     let b = this.entities.get(o.dropId);
-    if (!b || b.dead) { b = this._nearestB(u, x => { const d = BUILDINGS[x.type].dropoff; return d && d.includes(u.carry.type); }); if (!b) { u.state = 'idle'; u.anim = 'idle'; return; } o.dropId = b.id; }
+    if (!b || b.dead || !b.done) { b = this._nearestB(u, x => { const d = BUILDINGS[x.type].dropoff; return d && d.includes(u.carry.type); }); if (!b) { u.state = 'idle'; u.anim = 'idle'; return; } o.dropId = b.id; }
     if (this._approach(u, b, dt, 1.0)) {
       const p = this.players[u.owner]; this._credit(p, u.carry.type, u.carry.amount);
       this.events.emit('deposit', { unit: u, owner: u.owner, res: u.carry.type, amount: u.carry.amount });
@@ -3024,20 +3024,38 @@ export class Game {
     this._setOrder(t, { type: 'unload', wx: s.wx, wz: s.wz, x: s.wx, z: s.wz });
     return true;
   }
-  // ships right-clicked on an own dock: loaded fishboats deliver there and resume fishing; others just park next to it
-  cmdReturn(ids, dockId) {
-    const b = this.entities.get(dockId); if (!b || b.dead || b.kind !== 'building' || b.type !== 'dock') return false;
-    const us = this._live(ids).filter(u => u.naval && u.owner === b.owner); if (!us.length) return false;
-    let park = null;
-    for (const u of us) {
-      if (u.type === 'fishboat' && b.done && u.carry && u.carry.amount > 0) {
-        const o = u.order;
-        if (o && o.type === 'fish') { o.phase = 'ret'; o.dropId = b.id; o.fail = 0; u.path = null; u.pk = null; u.queue.length = 0; u.explore = false; }
-        else { const s = this._navNearestShoal(u.x, u.z); this._setOrder(u, { type: 'fish', targetId: s ? s.id : null, phase: 'ret', dropId: b.id, acc: 0, tick: 0 }); }
-      } else {
-        if (!park) { this._navMode = true; try { park = this._navSpawn(b); } finally { this._navMode = false; } }
-        this.cmdMove([u.id], park.x, park.z);
+  // right-click an own drop-off building:
+  // - dock: loaded fishboats deliver there and resume fishing; other ships park next to it
+  // - land drop-off (TC, storage, lumbercamp, minecamp, mill): carrying villagers drop off matching resources there
+  cmdReturn(ids, dropId, queue = false) {
+    const b = this.entities.get(dropId); if (!b || b.dead || b.kind !== 'building') return false;
+    if (b.type === 'dock') {
+      const us = this._live(ids).filter(u => u.naval && u.owner === b.owner); if (!us.length) return false;
+      let park = null;
+      for (const u of us) {
+        if (u.type === 'fishboat' && b.done && u.carry && u.carry.amount > 0) {
+          const o = u.order;
+          if (o && o.type === 'fish') { o.phase = 'ret'; o.dropId = b.id; o.fail = 0; u.path = null; u.pk = null; u.queue.length = 0; u.explore = false; }
+          else { const s = this._navNearestShoal(u.x, u.z); this._setOrder(u, { type: 'fish', targetId: s ? s.id : null, phase: 'ret', dropId: b.id, acc: 0, tick: 0 }); }
+        } else {
+          if (!park) { this._navMode = true; try { park = this._navSpawn(b); } finally { this._navMode = false; } }
+          this.cmdMove([u.id], park.x, park.z);
+        }
       }
+      return true;
+    }
+    const drop = BUILDINGS[b.type] && BUILDINGS[b.type].dropoff;
+    if (!b.done || !drop || !drop.length) return false;
+    const us = this._live(ids).filter(u => u.type === 'villager' && u.owner === b.owner && u.carry && u.carry.amount > 0 && drop.includes(u.carry.type));
+    if (!us.length) return false;
+    for (const u of us) {
+      let resume = null;
+      if (!queue && u.order) {
+        if (u.order.type === 'gather') resume = this._cloneOrder(u.order);
+        else if (u.order.type === 'return' && u.order.resume) resume = this._cloneOrder(u.order.resume);
+        if (resume && resume.haul) resume.haul = false;
+      }
+      this._setOrder(u, { type: 'return', res: u.carry.type, dropId: b.id, resume }, !!queue);
     }
     return true;
   }
