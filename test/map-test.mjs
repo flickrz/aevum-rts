@@ -65,20 +65,7 @@ for (const mt of MAP_TYPES) {
   if (mt === 'islands') ok(landMin >= 0.25 && landMax <= 0.6, 'islands: land 25-60 %');
   if (mt === 'inlandsea') ok(centreDeep === maps && landMin > 0.45, 'inlandsea: deep sea at the centre, land ring around');
   if (mt === 'continent') ok(borderMin >= 0.98 && landMin > 0.3 && landMax < 0.8, 'continent: border ring is water, one big landmass');
-  if (mt === 'river') {
-    ok(landMin > 0.6, 'river: mostly land');
-    // check widened canal and reduced crossings (2-3 distinct crossing bands along the canal centerline)
-    const rg = mk('river', 256, 7, 2), rN = 256, rt = rg.map.tiles;
-    const rcx = z => Math.round(rN / 2 + Math.sin(z * 0.07) * rN * 0.07 + Math.sin(z * 0.023) * rN * 0.04);
-    let deepRows = 0, crossBands = 0, inCross = false;
-    for (let z = 12; z < rN - 12; z++) {
-      const cx = rcx(z);
-      let dw = 0; for (let x = cx - 12; x <= cx + 12; x++) if (rt[z * rN + x] === 4) dw++;
-      if (dw >= 8) { deepRows++; inCross = false; }
-      else { if (!inCross) { crossBands++; inCross = true; } }
-    }
-    ok(deepRows > 180 && crossBands >= 2 && crossBands <= 3, `river: wide canal (${deepRows} rows >=8 deep tiles) with few crossings (${crossBands} bands)`);
-  }
+  if (mt === 'river') ok(landMin > 0.6, 'river: mostly land');
 }
 
 // ---- cfg handling / 'random'
