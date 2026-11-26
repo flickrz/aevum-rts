@@ -12,8 +12,9 @@ import { tr } from '../i18n.js';
 import {
   MENU3, safe, h, htmlEl, ensureCss, clickOf, frameDemoCamera, confirmLogout, buildMenuChat,
   SVG_PLAY, SVG_USER, SVG_USERS, SVG_STATS, SVG_GEAR, SVG_LOGOUT,
-  SVG_NEWS, SVG_BULB, SVG_BELL, SVG_HELP, SVG_SWORDS, SVG_SCROLL,
+  SVG_NEWS, SVG_BULB, SVG_BELL, SVG_HELP, SVG_SCROLL,
 } from './menu-shared.js';
+import { forestSvg, colSceneSvg, ITEM_ARTS, BANNER_SVG, SVG_SWORDS2, SVG_CHEV, SVG_PLANE, SVG_HAMMER, SVG_FLOPPY, laurel } from './menu3-art.js';
 
 export { MENU3 };
 
@@ -21,65 +22,14 @@ const CSS_ID = 'aevum-menu3-css';
 const FONT_ID = 'aevum-menu3-font';
 const TIP_KEY = 'aevum.m3TipClosed';
 
-// gold laurel branches beside the logo (inline SVG, mirrored for the right one)
-const laurel = (cls) => `<svg class="m3-laurel ${cls}" viewBox="0 0 40 40" aria-hidden="true">
-  <path d="M33 37C18 33 8 22 6 4" fill="none" stroke="#b08b45" stroke-width="1.6" stroke-linecap="round"/>
-  <g fill="#c9a256">
-    <ellipse cx="7" cy="9" rx="5" ry="2" transform="rotate(-80 7 9)"/>
-    <ellipse cx="9" cy="16" rx="5.4" ry="2.1" transform="rotate(-62 9 16)"/>
-    <ellipse cx="13" cy="23" rx="5.6" ry="2.2" transform="rotate(-44 13 23)"/>
-    <ellipse cx="19" cy="29" rx="5.6" ry="2.2" transform="rotate(-28 19 29)"/>
-    <ellipse cx="26" cy="34" rx="5.4" ry="2.1" transform="rotate(-12 26 34)"/>
-  </g>
-  <g fill="#a88440">
-    <ellipse cx="13" cy="11" rx="4.4" ry="1.8" transform="rotate(10 13 11)"/>
-    <ellipse cx="17" cy="18" rx="4.6" ry="1.9" transform="rotate(24 17 18)"/>
-    <ellipse cx="23" cy="24.5" rx="4.6" ry="1.9" transform="rotate(38 23 24.5)"/>
-  </g>
-</svg>`;
-
-// a faint castle on a hill, drawn on the right of every play card (as in the mockup)
-const SVG_ITEM_ART = `<svg viewBox="0 0 200 64" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
-  <path d="M40 64 L78 44 L104 52 L132 36 L170 48 L200 42 L200 64 Z" fill="currentColor" opacity=".55"/>
-  <g fill="currentColor">
-    <rect x="120" y="22" width="7" height="22"/><polygon points="118.5,22 123.5,12 128.5,22"/>
-    <rect x="130" y="14" width="10" height="30"/><polygon points="128.5,14 135,2 141.5,14"/>
-    <rect x="143" y="24" width="7" height="20"/><polygon points="141.5,24 146.5,15 151.5,24"/>
-    <rect x="112" y="32" width="46" height="14"/>
-    <rect x="112" y="29" width="4" height="3"/><rect x="120" y="29" width="4" height="3"/><rect x="154" y="29" width="4" height="3"/>
-    <polygon points="160,64 166,46 172,64"/><polygon points="170,64 177,40 184,64"/><polygon points="182,64 188,48 194,64"/>
-    <polygon points="86,64 92,48 98,64"/><polygon points="96,64 102,44 108,64"/>
-  </g>
-</svg>`;
-
-// the dark castle and pines at the foot of the left column
-const SVG_COL_CASTLE = `<svg class="m3-col-art-svg" viewBox="0 0 440 150" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
-  <defs><linearGradient id="m3sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d9a55a" stop-opacity="0"/><stop offset=".7" stop-color="#c98d44" stop-opacity=".28"/><stop offset="1" stop-color="#8a5a2a" stop-opacity=".1"/></linearGradient></defs>
-  <rect x="0" y="40" width="440" height="110" fill="url(#m3sky)"/>
-  <path d="M0 118 L70 96 L130 106 L200 84 L270 100 L340 88 L440 104 L440 150 L0 150 Z" fill="#2a2a26"/>
-  <g fill="#1a1b19">
-    <rect x="180" y="58" width="16" height="50"/><polygon points="177,58 188,38 199,58"/>
-    <rect x="200" y="40" width="24" height="68"/><polygon points="197,40 212,14 227,40"/>
-    <rect x="228" y="60" width="16" height="48"/><polygon points="225,60 236,41 247,60"/>
-    <rect x="166" y="76" width="96" height="34"/>
-    <rect x="166" y="70" width="7" height="6"/><rect x="178" y="70" width="7" height="6"/><rect x="243" y="70" width="7" height="6"/><rect x="255" y="70" width="7" height="6"/>
-  </g>
-  <g fill="#e8b45e" opacity=".7"><rect x="210" y="54" width="3" height="5"/><rect x="186" y="70" width="2.5" height="4"/><rect x="235" y="73" width="2.5" height="4"/></g>
-  <path d="M0 128 Q110 110 220 126 T440 120 L440 150 L0 150 Z" fill="#141613"/>
-  <g fill="#10120f">
-    <polygon points="14,150 30,96 46,150"/><polygon points="40,150 58,86 76,150"/><polygon points="70,150 84,108 98,150"/>
-    <polygon points="330,150 346,100 362,150"/><polygon points="356,150 374,84 392,150"/><polygon points="388,150 404,104 420,150"/>
-  </g>
-</svg>`;
-
 const tipClosed = () => { try { return sessionStorage.getItem(TIP_KEY) === '1'; } catch { return false; } };
 const closeTip = () => { try { sessionStorage.setItem(TIP_KEY, '1'); } catch { /* ignore */ } };
 
 export function menu3Main(ui, note) {
   if (!ui._signedIn()) { loginScreen(ui); if (note) ui._menuNote(note); return; }
-  ensureCss(FONT_ID, 'https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Alegreya:wght@500;600;700&display=swap');
+  ensureCss(FONT_ID, 'https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Alegreya:wght@500;600;700;800&family=Nunito:wght@500;600;700;800&display=swap');
   ensureCss(CSS_ID, new URL('./menu3.css', import.meta.url).href);
-  frameDemoCamera(ui, { dist: 33, pitch: 1.02 });
+  frameDemoCamera(ui, { dist: 46, pitch: 1.0 });
 
   ui.menuEl.innerHTML = '';
   ui.menuEl.classList.remove('with-hud', 'm-left');
@@ -90,7 +40,7 @@ export function menu3Main(ui, note) {
   const click = (fn) => clickOf(ui, fn);
 
   // the forest-dark ring around the village (under the panels, over the scene)
-  root.append(h('div', 'm3-vignette'));
+  root.append(htmlEl('div', 'm3-vignette', forestSvg()));
 
   // ==================== TOP BAR ====================
   const topbar = h('header', 'm3-topbar');
@@ -157,6 +107,7 @@ export function menu3Main(ui, note) {
   const pCard = h('div', 'm3-frame m3-player');
   const pBanner = h('button', 'm3-pbanner');
   pBanner.type = 'button'; pBanner.title = tr('Profil'); pBanner.onclick = openProfile;
+  pBanner.innerHTML = BANNER_SVG;
   const avRing = h('span', 'm3-avring');
   avRing.append(avatarEl(prof ? prof.avatar : null, prof ? prof.uid : '', 'm3-av'));
   pBanner.append(avRing);
@@ -202,14 +153,14 @@ export function menu3Main(ui, note) {
     const head = nb.querySelector('.news-head');
     if (head) head.prepend(htmlEl('span', 'm3-card-ico', SVG_NEWS));
     const main = nb.querySelector('.news-main');
-    if (main) main.append(h('span', 'm3-news-chev', '›'));
+    if (main) main.append(htmlEl('span', 'm3-news-chev', SVG_CHEV));
     leftInner.append(nb);
   });
 
   // 3) the big gold "Yeni Oyun"
   const playBtn = h('button', 'm3-play-btn');
   playBtn.type = 'button';
-  playBtn.innerHTML = `<span class="m3-play-ico">${SVG_SWORDS}</span><span class="m3-play-txt"><b class="m3-play-title"></b><small class="m3-play-sub"></small></span><span class="m3-chev">›</span>`;
+  playBtn.innerHTML = `<span class="m3-play-ico">${SVG_SWORDS2}</span><span class="m3-play-txt"><b class="m3-play-title"></b><small class="m3-play-sub"></small></span><span class="m3-chev">${SVG_CHEV}</span>`;
   playBtn.querySelector('.m3-play-title').textContent = tr('Yeni Oyun');
   playBtn.querySelector('.m3-play-sub').textContent = tr('Harita ve ayarlar');
   playBtn.onclick = click(() => ui._menuSetup());
@@ -220,7 +171,7 @@ export function menu3Main(ui, note) {
   const addItem = (iconHtml, title, sub, fn, cls = '') => {
     const b = h('button', 'm3-item' + (cls ? ' ' + cls : ''));
     b.type = 'button';
-    b.innerHTML = `<span class="m3-item-art" aria-hidden="true">${SVG_ITEM_ART}</span><span class="m3-item-ico">${iconHtml}</span><span class="m3-item-txt"><b class="m3-item-title"></b><small class="m3-item-sub"></small></span><span class="m3-chev">›</span>`;
+    b.innerHTML = `<span class="m3-item-art" aria-hidden="true">${ITEM_ARTS[listEl.childElementCount % ITEM_ARTS.length]}</span><span class="m3-item-ico">${iconHtml}</span><span class="m3-item-txt"><b class="m3-item-title"></b><small class="m3-item-sub"></small></span><span class="m3-chev">${SVG_CHEV}</span>`;
     b.querySelector('.m3-item-title').textContent = title;
     b.querySelector('.m3-item-sub').textContent = sub || '';
     b.onclick = click(fn);
@@ -232,11 +183,11 @@ export function menu3Main(ui, note) {
   }
   const multiCard = addItem(SVG_USERS, tr('Çok Oyunculu'), tr('Davet et, birlikte oyna'), () => ui._menuMulti());
   safe(() => interruptedEntry(ui, listEl, multiCard));
-  addItem(ico('x-build'), tr('Sandbox'), tr('Serbest kur'), () => ui.app.newGame({ mapSize: 256, enemies: 1, difficulty: 'normal', startRes: 'high', startAge: 0, sandbox: true, seed: (Math.random() * 1e9) | 0 }));
+  addItem(SVG_HAMMER, tr('Sandbox'), tr('Serbest kur'), () => ui.app.newGame({ mapSize: 256, enemies: 1, difficulty: 'normal', startRes: 'high', startAge: 0, sandbox: true, seed: (Math.random() * 1e9) | 0 }));
   const contCard = addItem(SVG_PLAY, tr('Devam Et'), tr('Kayıt yok'), () => Promise.resolve(safe(() => ui.app.continueLast(), false)).then((ok) => {
     if (!ok && ui.app.lastLoadError && ui.mode === 'menu') ui._menuSaves(ui.app.lastLoadError);
   }).catch(() => {}));
-  const savesCard = addItem(ico('x-save'), tr('Kayıtlı Oyunlar'), '', () => ui._menuSaves());
+  const savesCard = addItem(SVG_FLOPPY, tr('Kayıtlı Oyunlar'), '', () => ui._menuSaves());
   contCard.disabled = true;
   Promise.resolve(safe(() => ui.app.listSaves(), [])).then((l) => {
     if (!listEl.isConnected) return;
@@ -246,7 +197,8 @@ export function menu3Main(ui, note) {
     const ss = savesCard.querySelector('.m3-item-sub'); if (ss) ss.textContent = n ? n + tr(' kayıt') : tr('Kayıt yok');
   }).catch(() => {});
   leftInner.append(listEl);
-  leftCol.append(leftInner, htmlEl('div', 'm3-col-art', SVG_COL_CASTLE));
+  leftCol.append(leftInner);
+  root.append(htmlEl('div', 'm3-col-art', colSceneSvg()));
 
   // the middle: the live village and the tip bar at the bottom
   const stage = h('div', 'm3-stage');
@@ -257,7 +209,7 @@ export function menu3Main(ui, note) {
       `<span class="m3-tip-txt">${tr('<b>İpucu:</b> Önerin mi var? <b>Buraya tıkla ve yaz</b>, ya da oyunda <kbd>Enter</kbd> ile sohbeti açıp <b class="cmention">@claude</b> yaz; doğrudan geliştiriciye gider.')}</span>`);
     tipBody.type = 'button';
     tipBody.onclick = click(() => ui._fbBox());
-    const tipX = h('button', 'm3-tip-x', '✕');
+    const tipX = htmlEl('button', 'm3-tip-x', '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3 3 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>');
     tipX.type = 'button'; tipX.title = tr('Kapat'); tipX.setAttribute('aria-label', tr('Kapat'));
     tipX.onclick = (ev) => { ev.stopPropagation(); safe(() => ui._click()); closeTip(); tip.remove(); };
     tip.append(tipBody, tipX);
@@ -268,7 +220,10 @@ export function menu3Main(ui, note) {
   const chatCol = h('div', 'm3-chat-col');
   safe(() => {
     const gc = buildMenuChat(ui, { cls: 'm3-chat', titleWrapCls: 'm3-chat-titlewrap', icoCls: 'm3-card-ico', rulesIcoCls: 'm3-rules-ico', sendIcoCls: 'm3-send-ico', iconOnlySend: true });
-    if (gc) { gc.classList.add('m3-frame'); chatCol.append(gc); }
+    if (!gc) return;
+    gc.classList.add('m3-frame');
+    const plane = gc.querySelector('.m3-send-ico'); if (plane) plane.innerHTML = SVG_PLANE;
+    chatCol.append(gc);
   });
 
   body.append(leftCol, stage, chatCol);
