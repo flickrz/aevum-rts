@@ -56,10 +56,11 @@ function openPanel(ui, list, first, onSeen) {
   show(first);
 }
 
-export function newsBox(ui) {
+export function newsBox(ui, opts) {
   const list = allNews(); if (!list.length) return null;
   const top = list[0];
-  const wrap = h('div', 'news-wrap');
+  const embedded = !!(opts && opts.embedded);
+  const wrap = h('div', 'news-wrap' + (embedded ? ' embedded' : ''));
   const dot = () => { const d = h('span', 'news-dot'); d.title = tr('Yeni'); return d; };
   const unread = seen() !== top.id;
   const clear = () => wrap.querySelectorAll('.news-dot').forEach((d) => d.remove());
@@ -77,6 +78,7 @@ export function newsBox(ui) {
     for (const it of list.slice(1, 3)) { const b = h('button', 'news-olink', it.title); b.type = 'button'; b.onclick = () => open(it); older.append(b); }
     card.append(older);
   }
+  if (embedded) { wrap.append(card); return wrap; }
   // the small button (phones)
   const btn = h('button', 'news-btn panel'); btn.innerHTML = ico('x-tech'); btn.type = 'button'; btn.title = tr('Duyurular');
   if (unread) btn.append(dot());

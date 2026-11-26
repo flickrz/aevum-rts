@@ -116,9 +116,18 @@ export async function showPlayer(ui, m) {
   };
 }
 
+// subtle cozy name colours for menu2 (deterministic per player)
+const NAME_COLS = ['#e6c26b', '#d99b66', '#9ec5e6', '#9cd4a4', '#d8a6cf', '#e3a691', '#b7c9e2', '#d2c28b'];
+function nameCol(key) {
+  let s = String(key || ''), x = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 16777619) >>> 0; }
+  return NAME_COLS[x % NAME_COLS.length];
+}
+
 // -> the panel element (it keeps itself up to date while it is on screen)
-export function gchatPanel(ui) {
+export function gchatPanel(ui, opts) {
   const cloud = ui.app.cloud;
+  const colorNames = !!(opts && opts.colorNames);
   const wrap = h('aside', 'gchat panel');
   const head = h('div', 'gc-head');
   head.append(h('span', 'gc-title', tr('Genel Sohbet')));
@@ -151,6 +160,7 @@ export function gchatPanel(ui) {
       const r = h('div', 'gc-line' + (m.own ? ' own' : ''));
       r.append(h('span', 'gc-time', fmt(m.t)));
       const n = h('button', 'gc-name', pn(m.name) || tr('Oyuncu')); n.type = 'button';
+      if (colorNames) n.style.color = m.own ? '#f0cf7a' : nameCol(m.fb || m.name);
       n.title = tr('Profili gör');
       n.onclick = () => showPlayer(ui, m);
       r.append(n);
