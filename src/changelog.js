@@ -2,6 +2,30 @@
 // release (Turkish, player-facing: what changed in the game, not how). Shown by src/ui/updates-ui.js.
 export const CHANGELOG = [
   {
+    v: '0.9.12', date: '2026-11-26', title: 'Zil, balıkçılar ve lobi',
+    items: [
+      'Genel Sohbet geçmişi artık güncellemelerde silinmiyor.',
+      'Bayrakla balık sürüsüne gönderilen balıkçı tekneleri tersaneden çıkar çıkmaz balık tutmaya başlıyor.',
+      'Boşta kalan balıkçı tekneleri kendiliğinden en yakın balık sürüsüne gidip balık tutmaya devam ediyor.',
+      'Balık sürüleri artık kıyının dibinde çıkmıyor.',
+      'Balıkçı tekneleri balık tutarken artık görünür bir ağ ve su sıçraması animasyonu var.',
+      'Bayrak dolu bir ağaca ya da madene dikilince köylüler boşta beklemiyor, en yakın aynı kaynağa gidiyor.',
+      'Zil düğmesi geldi: basınca köylüler şehir merkezine sığınıyor, tekrar basınca kaldıkları işe dönüyorlar.',
+      'Lobide oda sahibi oyuncuları odadan atabiliyor.',
+      'Lobide oyuncuların yanında Arkadaş Ekle düğmesi var.',
+      'Harita fare orta tuşuyla sürüklenerek kaydırılabiliyor; ekran kenarı kaydırma ayarlardan açılıp kapatılabiliyor.',
+      'Uzun Yaylı Okçu ve bazı geç çağ araştırmalarının eksik simgeleri eklendi.',
+      'Zor yapay zeka kalabalık üslerde Orta Çağda takılı kalmıyor.',
+      'Mobilde sur ve bina yerleştirme modundan çıkmak için İptal düğmesi geldi.',
+      'Ctrl+A tüm birimlerini seçiyor; hiçbir şey seçili değilken Q tüm askerleri seçiyor.',
+      'Yük taşıyan köylüler bir depoya ya da kampa sağ tıklanınca yüklerini oraya bırakıyor.',
+      'Eğimli zeminde havada duran kaya, çalı ve çimler yere oturtuldu.',
+      'Gemiler artık adaların kıyısında sıkışıp kalmıyor, etrafından dolaşıyor.',
+      'H tuşu ve üst çubuktaki düğme kamerayı şehir merkezine götürüyor; tekrar basınca diğer şehir merkezlerine geçiyor.',
+      'Barut Çağında köylüler askerlerden ayırt edilebilsin diye yeni kıyafet giydi.',
+    ],
+  },
+  {
     v: '0.9.11', date: '2026-11-26', title: 'Genel Sohbet',
     items: [
       'Ana menüye Genel Sohbet geldi: oyundaki herkesle maç dışında da konuşabilirsin. Sohbet sağda, Duyurular kutusu solda profil kartının altında.',
