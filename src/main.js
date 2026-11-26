@@ -16,6 +16,7 @@ import { AUTH_KEY } from './cloud/auth.js';
 import { GoogleSignIn } from './cloud/google.js';
 import { createNotice, markInterrupted, clearInterrupted } from './net/notice.js';
 import { mountNoticeBanner, hostNameOf } from './ui/notice-ui.js';
+import { MENU_DRAFT } from './ui/menu-shared.js';
 import { tr, loc } from './i18n.js';
 
 const STEP = 1 / 30;
@@ -519,10 +520,14 @@ function attachGame(game, demo) {
 
 function startDemo() {
   try {
-    attachGame(new Game({
+    const cfg = {
       mapSize: 96, enemies: 1, difficulty: 'normal', startRes: 'high',
       startAge: 1, sandbox: true, seed: (Math.random() * 1e9) | 0, demo: true,
-    }), true);
+    };
+    if (MENU_DRAFT) cfg.climate = 'temperate';
+    const g = new Game(cfg);
+    if (MENU_DRAFT) { g.reveal = true; g._updateFog(); }
+    attachGame(g, true);
   } catch (err) { showError(err); }
 }
 

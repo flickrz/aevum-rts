@@ -37,7 +37,8 @@
   background: radial-gradient(ellipse 60% 62% at 54% 54%, rgba(12, 16, 22, 0) 48%, rgba(10, 13, 19, 0.56) 100%);
 }
 
-.m2-ico {
+.m2-ico,
+.m2-root .md-ico {
   width: 18px;
   height: 18px;
   fill: currentColor;
@@ -230,7 +231,8 @@
   justify-content: center;
   margin-bottom: 1px;
 }
-.m2-crest-svg {
+.m2-crest-svg,
+.m2-root .md-crest-svg {
   width: 34px;
   height: 20px;
   display: block;
@@ -310,7 +312,8 @@
   justify-content: center;
   color: var(--m2-gold);
 }
-.m2-tab-ico .m2-ico {
+.m2-tab-ico .m2-ico,
+.m2-tab-ico .md-ico {
   width: 20px;
   height: 20px;
 }
@@ -381,7 +384,8 @@
   height: 100%;
   display: block;
 }
-.m2-nav-pennant .m2-crest-svg {
+.m2-nav-pennant .m2-crest-svg,
+.m2-nav-pennant .md-crest-svg {
   position: relative;
   z-index: 1;
   width: 30px;
@@ -446,7 +450,8 @@
   color: var(--m2-gold);
 }
 .m2-nav-ico .gi,
-.m2-nav-ico .m2-ico {
+.m2-nav-ico .m2-ico,
+.m2-nav-ico .md-ico {
   width: 18px;
   height: 18px;
 }
@@ -552,7 +557,8 @@
   justify-content: center;
   color: var(--m2-gold);
 }
-.m2-card-ico .m2-ico {
+.m2-card-ico .m2-ico,
+.m2-card-ico .md-ico {
   width: 17px;
   height: 17px;
 }
@@ -632,7 +638,8 @@
   display: inline-flex;
   color: var(--m2-muted);
 }
-.m2-date-ico .m2-ico {
+.m2-date-ico .m2-ico,
+.m2-date-ico .md-ico {
   width: 13px;
   height: 13px;
 }
@@ -829,7 +836,8 @@
 .m2-rules-ico {
   display: inline-flex;
 }
-.m2-rules-ico .m2-ico {
+.m2-rules-ico .m2-ico,
+.m2-rules-ico .md-ico {
   width: 15px;
   height: 15px;
 }
@@ -889,7 +897,8 @@
 .m2-send-ico {
   display: inline-flex;
 }
-.m2-send-ico .m2-ico {
+.m2-send-ico .m2-ico,
+.m2-send-ico .md-ico {
   width: 14px;
   height: 14px;
 }
@@ -929,7 +938,8 @@
   place-items: center;
   color: var(--m2-gold);
 }
-.m2-fb-ico .m2-ico {
+.m2-fb-ico .m2-ico,
+.m2-fb-ico .md-ico {
   width: 20px;
   height: 20px;
 }
@@ -970,13 +980,13 @@
   .m2-tprow { margin-top: 1px; }
   .m2-torch { top: 10px; width: 24px; height: 40px; }
   .m2-banner-body { padding: 4px 12px 6px; }
-  .m2-crest-svg { width: 28px; height: 16px; }
+  .m2-crest-svg, .m2-root .md-crest-svg { width: 28px; height: 16px; }
   .m2-logo { font-size: 26px; letter-spacing: 5px; }
   .m2-tagline { font-size: 8.5px; margin-top: 3px; }
   .m2-banner-tip { height: 20px; }
   .m2-banner::before, .m2-banner::after { height: 54px; }
   .m2-tab { height: 48px; gap: 3px; }
-  .m2-tab-ico .m2-ico { width: 18px; height: 18px; }
+  .m2-tab-ico .m2-ico, .m2-tab-ico .md-ico { width: 18px; height: 18px; }
   .m2-tab-lbl { font-size: 11px; }
 
   .m2-body { padding: 0 16px 60px; gap: 12px; }
