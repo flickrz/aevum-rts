@@ -157,6 +157,8 @@ const KINDS = {
   chips:     { n: 4,  c: [0xd8a868, 0xa8783e, 0xf0d098], sp: 1.6, up: 2.2, g: 10,  life: [0.3, 0.6],  size: [0.05, 0.09], drag: 0.8, grow: 0,   add: false, a: 1,    spread: 0.05 },
   sdust:     { n: 4,  c: [0xc8c0b0, 0xa8a094, 0xe0d8c8], sp: 0.9, up: 0.9, g: -0.2, life: [0.4, 0.8],  size: [0.12, 0.24], drag: 2,   grow: 1.4, add: false, a: 0.45, spread: 0.08 },
   bspark:    { n: 4,  c: [0xffe070, 0xffb040, 0xffffff], sp: 2.4, up: 2.0, g: 9,   life: [0.15, 0.35], size: [0.04, 0.08], drag: 1,  grow: 0,   add: true,  a: 1,    spread: 0.03 },
+  // fishing boat: small water splashes where the net dips
+  splash:    { n: 7,  c: [0xdcf4ff, 0x9ed8f2, 0xffffff], sp: 1.4, up: 2.2, g: 9,   life: [0.25, 0.55], size: [0.09, 0.18], drag: 1.4, grow: 0.4, add: false, a: 0.85, spread: 0.18 },
   // healer: a few soft green motes rising off a healed unit
   heal:      { n: 5,  c: [0x7dffb0, 0xb8ffd8, 0x4fe39a], sp: 0.5, up: 1.3, g: -0.4, life: [0.6, 1.1], size: [0.07, 0.14], drag: 1.6, grow: 0.3, add: true, a: 0.9, spread: 0.25 },
   sparkle:   { n: 40, c: [0xffd84a, 0xfff2a0, 0xffe680, 0xffffff], sp: 2.8, up: 3.2, g: 1.2, life: [0.6, 1.4], size: [0.08, 0.2], drag: 1.4, grow: 0.2, add: true, a: 1, spread: 0.9 },

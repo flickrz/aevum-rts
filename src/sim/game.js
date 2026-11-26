@@ -1378,7 +1378,8 @@ export class Game {
     if (t && !t.dead && t.amount > 0) return t;
     const want = ra.rtype; if (!want) return null; // flag on plain ground: villager just walks there
     let best = null, bd = 1e9;
-    for (const e of this.entities.values()) { if (e.kind !== 'resource' || e.dead || !(e.amount > 0)) continue; if (want && e.type !== want) continue; const d = dhypot(e.x - ra.x, e.z - ra.z); if (d < (want ? 10 : 1.6) && d < bd) { bd = d; best = e; } }
+    const maxD = want === 'fish' ? 20 : 10;
+    for (const e of this.entities.values()) { if (e.kind !== 'resource' || e.dead || !(e.amount > 0)) continue; if (want && e.type !== want) continue; const d = dhypot(e.x - ra.x, e.z - ra.z); if (d < maxD && d < bd) { bd = d; best = e; } }
     if (best && want) ra.tid = best.id;
     return best;
   }
@@ -2345,11 +2346,21 @@ export class Game {
       const up = ud.upgradedBy && p.techs.has(ud.upgradedBy) ? TECHS[ud.upgradedBy].upgrade.to : q.id;   // (queued before the line's upgrade)
       const u = this._addUnit(up, b.owner, f.x, f.z); p.stats.unitsTrained++;
       this.events.emit('trained', { e: u, building: b });
-      if (ud.naval && (!b.rally || !this._navPass(b.rally.x | 0, b.rally.z | 0))) { const w = b.rally && this._navNearPass(b.rally.x, b.rally.z, 8); if (w) this.cmdMove([u.id], w.x, w.z); else if (f.rx !== f.x || f.rz !== f.z) this.cmdMove([u.id], f.rx, f.rz); }
-      else if (b.rally) {
+      if (ud.naval && b.rally) {
+        const r = u.type === 'fishboat' ? this._rallyWork(b) : null;
+        if (r && r.type === 'fish') this.cmdGather([u.id], r.id);
+        else if (this._navPass(b.rally.x | 0, b.rally.z | 0)) { const w = this._navRallySlot(b.rally.x, b.rally.z, u); this.cmdMove([u.id], w.x, w.z); }
+        else { const w = this._navNearPass(b.rally.x, b.rally.z, 8); if (w) this.cmdMove([u.id], w.x, w.z); else if (f.rx !== f.x || f.rz !== f.z) this.cmdMove([u.id], f.rx, f.rz); }
+      } else if (ud.naval) {
+        if (u.type === 'fishboat') {
+          const s = this._navNearestFreeShoal(u.x, u.z, null, u);
+          if (s) this.cmdGather([u.id], s.id);
+          else if (f.rx !== f.x || f.rz !== f.z) this.cmdMove([u.id], f.rx, f.rz);
+        } else if (f.rx !== f.x || f.rz !== f.z) this.cmdMove([u.id], f.rx, f.rz);
+      } else if (b.rally) {
         const r = this._rallyWork(b);
-        if (r && u.type === 'villager') this.cmdGather([u.id], r.id); else if (ud.naval) { const w = this._navRallySlot(b.rally.x, b.rally.z, u); this.cmdMove([u.id], w.x, w.z); }   /* (2026-11-25: the land slot search sent ships off to a far corner) */ else if (u.type !== 'tradecart') { const sl = this._slotNear(b.rally.x, b.rally.z, u); this.cmdMove([u.id], sl.x, sl.z); }
-      } else if (!ud.naval && u.type !== 'villager' && u.type !== 'tradecart') { const sl = this._slotNear(b.x, b.z + b.size / 2 + 2.2, u); this._setOrder(u, { type: 'move', x: sl.x, z: sl.z }, false); }
+        if (r && u.type === 'villager') this.cmdGather([u.id], r.id); else if (u.type !== 'tradecart') { const sl = this._slotNear(b.rally.x, b.rally.z, u); this.cmdMove([u.id], sl.x, sl.z); }
+      } else if (u.type !== 'villager' && u.type !== 'tradecart') { const sl = this._slotNear(b.x, b.z + b.size / 2 + 2.2, u); this._setOrder(u, { type: 'move', x: sl.x, z: sl.z }, false); }
     } else if (q.kind === 'tech') {
       b.queue.shift(); p.techs.add(q.id); const i = p.pending.indexOf(q.id); if (i >= 0) p.pending.splice(i, 1);
       p.stats.techs++; this._mods(p); this._rescaleBuildings(p); if (TECHS[q.id].upgrade) this._upgradeLine(p, TECHS[q.id].upgrade); this._rescaleUnits(p);
@@ -2843,6 +2854,23 @@ export class Game {
   }
   _navShoals() { if (!this._navFishC) { this._navFishC = []; for (const e of this.entities.values()) if (e.kind === 'resource' && e.type === 'fish' && !e.dead) this._navFishC.push(e); } return this._navFishC; }
   _navNearestShoal(x, z, not) { let best = null, bd = 1e9; for (const s of this._navShoals()) { if (s === not || s.dead || s.amount < 5) continue; const d = sq(s.x - x) + sq(s.z - z); if (d < bd) { bd = d; best = s; } } return best; }
+  _navFishLoad(sid, self) {
+    let n = 0;
+    for (const u of this.units) if (u !== self && !u.dead && u.type === 'fishboat' && u.order && u.order.type === 'fish' && u.order.targetId === sid) n++;
+    return n;
+  }
+  // nearest free fish shoal (prefers shoals with no boat on them, else least crowded nearest)
+  _navNearestFreeShoal(x, z, not, self, skip) {
+    let bestFree = null, bdFree = 1e9, bestAny = null, bestLoad = 1e9, bdAny = 1e9;
+    for (const s of this._navShoals()) {
+      if (s === not || s.dead || s.amount < 5) continue;
+      if (skip && skip.includes(s.id)) continue;
+      const d = sq(s.x - x) + sq(s.z - z), ld = this._navFishLoad(s.id, self);
+      if (ld === 0) { if (d < bdFree) { bdFree = d; bestFree = s; } }
+      else if (ld < bestLoad || (ld === bestLoad && d < bdAny)) { bestLoad = ld; bdAny = d; bestAny = s; }
+    }
+    return bestFree || bestAny;
+  }
   _navCmdFish(ids, t) {
     const us = this._live(ids).filter(u => u.type === 'fishboat'); if (!us.length) return false;
     for (const u of us) this._setOrder(u, { type: 'fish', targetId: t.id, phase: 'go', acc: 0, tick: 0 });
@@ -2905,7 +2933,17 @@ export class Game {
     try {
       if (o && o.type === 'fish') { if (u.cd > 0) u.cd -= dt; this._navFish(u, o, dt); }
       else if (o && o.type === 'unload') { if (u.cd > 0) u.cd -= dt; this._navUnloadStep(u, o, dt); }
-      else this._updateUnit(u, dt);
+      else {
+        this._updateUnit(u, dt);
+        if (u.type === 'fishboat' && !u.dead && !u.order && !u.queue.length) {
+          u.idleFishT = (u.idleFishT || 0) + dt;
+          if (u.idleFishT >= 1.5) {
+            u.idleFishT = 0;
+            const s = this._navNearestFreeShoal(u.x, u.z, null, u);
+            if (s) this._setOrder(u, { type: 'fish', targetId: s.id, phase: 'go', acc: 0, tick: 0 });
+          }
+        } else if (u.idleFishT) u.idleFishT = 0;
+      }
     } finally { this._navMode = false; }
     if (u.cargo && u.cargo.length) {
       for (let i = u.cargo.length - 1; i >= 0; i--) { const e = this.entities.get(u.cargo[i]); if (!e || e.dead || e.aboard !== u.id) { u.cargo.splice(i, 1); continue; } e.x = u.x; e.z = u.z; }
@@ -2927,14 +2965,18 @@ export class Game {
     if (u.carry && u.carry.amount >= cap) { o.phase = 'ret'; o.fail = 0; u.path = null; u.pk = null; return; }
     let t = this.entities.get(o.targetId);
     if (!t || t.dead || t.amount < 1) {
-      const n = this._navNearestShoal(u.x, u.z, t);
-      if (n) { o.targetId = n.id; u.targetId = n.id; o.fail = 0; u.path = null; u.pk = null; return; }
+      const n = this._navNearestFreeShoal(u.x, u.z, t, u);
+      if (n) { o.targetId = n.id; u.targetId = n.id; o.fail = 0; o.bad = 0; u.path = null; u.pk = null; return; }
       if (u.carry && u.carry.amount > 0) { o.phase = 'ret'; return; }
       return this._next(u);
     }
-    if ((o.fail || 0) >= 5) { // unreachable shoal (other water body): try the next one
-      const n = this._navNearestShoal(u.x, u.z, t); o.bad = (o.bad || 0) + 1;
-      if (n && o.bad < 4) { o.targetId = n.id; u.targetId = n.id; o.fail = 0; u.path = null; u.pk = null; return; }
+    if ((o.fail || 0) >= 5) { // unreachable shoal (other water body): try the next free one
+      if (!o.skip) o.skip = [];
+      if (t && !o.skip.includes(t.id)) { o.skip.push(t.id); if (o.skip.length > 6) o.skip.shift(); }
+      const n = this._navNearestFreeShoal(u.x, u.z, t, u, o.skip); o.bad = (o.bad || 0) + 1;
+      if (n && o.bad < 6) { o.targetId = n.id; u.targetId = n.id; o.fail = 0; u.path = null; u.pk = null; return; }
+      u.idleFishT = -10;
+      return this._next(u);
     }
     if (!this._approach(u, t, dt, 0.5)) return; // edge distance: stop within ~1 tile of the shoal centre
     o.fail = 0; o.bad = 0;
@@ -2988,13 +3030,13 @@ export class Game {
   _navGenFish() {
     const m = this.map, N = m.size, T = m.tiles;
     const shoreNear = (tx, tz, r) => { for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) { const x = tx + i, z = tz + j; if (x < 0 || z < 0 || x >= N || z >= N) continue; const t = T[z * N + x]; if (t !== 3 && t !== 4) return true; } return false; };
-    const free = (tx, tz) => tx >= 2 && tz >= 2 && tx < N - 2 && tz < N - 2 && m.blocked[tz * N + tx] === 0 && !this.resAt[tz * N + tx];
+    const free = (tx, tz) => tx >= 3 && tz >= 3 && tx < N - 3 && tz < N - 3 && m.blocked[tz * N + tx] === 0 && !this.resAt[tz * N + tx];
     const deep = [], shallow = [];
-    for (let tz = 2; tz < N - 2; tz++) for (let tx = 2; tx < N - 2; tx++) {
-      // (owner 2026-11-25: "denizde balık yok") open sea counts too, not only water near a shore
+    for (let tz = 3; tz < N - 3; tz++) for (let tx = 3; tx < N - 3; tx++) {
+      // (owner 2026-11-25: "denizde balık yok"; 2026-11-26: keep a 2-tile water margin off the shore so fish never hug land)
       const t = T[tz * N + tx]; if ((t !== 3 && t !== 4) || !free(tx, tz)) continue;
-      // keep at least one water ring around so ships can circle it
-      if (t === 4) deep.push([tx, tz]); else if (!shoreNear(tx, tz, 1)) shallow.push([tx, tz]);
+      if (shoreNear(tx, tz, 2)) continue;
+      if (t === 4) deep.push([tx, tz]); else shallow.push([tx, tz]);
     }
     const placed = [];
     const ok = (c, sp) => placed.every(p => dhypot(p[0] - c[0], p[1] - c[1]) >= sp);

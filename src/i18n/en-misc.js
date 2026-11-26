@@ -88,6 +88,7 @@ export default {
   '🔁 Devriye: hedef noktaya sol tık · Shift: sıraya ekle · Esc / sağ tık: iptal': '🔁 Patrol: left-click the target · Shift: queue · Esc / right-click: cancel',
   '⚔ Saldırarak yürü: hedef noktaya sol tık · Shift: sıraya ekle · Esc / sağ tık: iptal': '⚔ Attack-move: left-click the target · Shift: queue · Esc / right-click: cancel',
   '🚩 Yeni köylüler doğrudan burada çalışacak': '🚩 New villagers will work here directly',
+  '🚩 Yeni balıkçı tekneleri doğrudan burada avlanacak': '🚩 New fishing boats will fish here directly',
   'Boşta köylü yok.': 'No idle villagers.',
   'Bırak': 'Drop',
 

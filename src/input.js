@@ -469,7 +469,7 @@ export class Input {
       if (!p) return;
       let ok = false;
       for (const id of blds) ok = game.setRally(id, p.x, p.z, work ? target.id : null) || ok;
-      if (ok) { r.addMarker(p.x, p.z, work ? C_GATHER : C_RALLY); this.sfx('command'); if (work) app.ui?.hint?.('rallywork', tr('🚩 Yeni köylüler doğrudan burada çalışacak'), 'info', 4); }
+      if (ok) { r.addMarker(p.x, p.z, work ? C_GATHER : C_RALLY); this.sfx('command'); if (work) app.ui?.hint?.('rallywork', tr(target.type === 'fish' ? '🚩 Yeni balıkçı tekneleri doğrudan burada avlanacak' : '🚩 Yeni köylüler doğrudan burada çalışacak'), 'info', 4); }
       return;
     }
 
