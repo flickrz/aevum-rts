@@ -275,7 +275,16 @@ export class Renderer {
     x = clamp(x, 0, N - 0.0001); z = clamp(z, 0, N - 0.0001);
     const xi = x | 0, zi = z | 0, fx = x - xi, fz = z - zi, W = N + 1;
     const a = H[zi * W + xi], b = H[zi * W + xi + 1], c = H[(zi + 1) * W + xi], d = H[(zi + 1) * W + xi + 1];
-    return (a + (b - a) * fx) * (1 - fz) + (c + (d - c) * fx) * fz;
+    // match _buildTerrain() quad split along the b-c diagonal (fx + fz = 1)
+    return fx + fz <= 1 ? a + (b - a) * fx + (c - a) * fz : d + (c - d) * (1 - fx) + (b - d) * (1 - fz);
+  }
+  // lowest terrain height across a small footprint radius r so rocks, bushes, grass and trees stay seated on slopes
+  slopeGroundY(x, z, r = 0) {
+    let y = this.heightAt(x, z);
+    if (!(r > 0)) return y;
+    const y1 = this.heightAt(x - r, z), y2 = this.heightAt(x + r, z), y3 = this.heightAt(x, z - r), y4 = this.heightAt(x, z + r);
+    if (y1 < y) y = y1; if (y2 < y) y = y2; if (y3 < y) y = y3; if (y4 < y) y = y4;
+    return y;
   }
   groundY(x, z) { return Math.max(this.heightAt(x, z), 0); }
 
@@ -395,7 +404,7 @@ export class Renderer {
     this.trees = new Map();
     this._falling = [];
     this.treeMeshes = null;
-    this.decor = null; this._decorIdx = null; this._decorMeshes = null;
+    this.decor = null; this._decorIdx = null; this._decorMeshes = null; this._decorMeta = null;
     this.terrain = null;
     this.water = null;
   }
@@ -680,6 +689,30 @@ export class Renderer {
       nrm.array[i * 3] = nx / l; nrm.array[i * 3 + 1] = 2 / l; nrm.array[i * 3 + 2] = nz / l;
     }
     pos.needsUpdate = true; nrm.needsUpdate = true;
+    // re-seat decor (grass, flowers, rocks) and standing trees inside the levelled area so they never float above a lowered bank
+    if (this._decorIdx && this._decorMeshes) {
+      const idx = this._decorIdx, ms = this._decorMeshes, metas = this._decorMeta, dirty = new Set();
+      const tx0 = Math.max(0, x0), tz0 = Math.max(0, z0), tx1 = Math.min(N - 1, x1), tz1 = Math.min(N - 1, z1);
+      for (let tz = tz0; tz <= tz1; tz++) for (let tx = tx0; tx <= tx1; tx++) {
+        const list = idx.get(tz * N + tx); if (!list) continue;
+        for (let k = 0; k < list.length; k++) {
+          const p = list[k], mi = p >> 16, ii = p & 0xffff, m = ms[mi], arr = m.instanceMatrix.array, off = ii * 16;
+          if (arr[off] === 0 && arr[off + 5] === 0 && arr[off + 10] === 0) continue; // hidden under a building
+          const x = arr[off + 12], z = arr[off + 14], mt = metas && metas[mi];
+          const rad = mt ? mt[ii * 2] : 0, sink = mt ? mt[ii * 2 + 1] : -0.02;
+          arr[off + 13] = this.slopeGroundY(x, z, rad) + sink;
+          dirty.add(m);
+        }
+      }
+      for (const m of dirty) m.instanceMatrix.needsUpdate = true;
+    }
+    if (this.trees) {
+      for (const rec of this.trees.values()) {
+        if (rec.fall >= 0 || rec.x < x0 || rec.x > x1 || rec.z < z0 || rec.z > z1) continue;
+        rec.y = this.slopeGroundY(rec.x, rec.z, 0.2) - 0.04;
+        this._setTree(rec, this._amtScale(rec), 0);
+      }
+    }
   }
 
   _buildWater() {
@@ -804,14 +837,14 @@ export class Renderer {
 
   _addTree(e) {
     if (!this.treeMeshes || this.trees.has(e.id)) return;
-    const y = this.heightAt(e.x, e.z);
+    const y = this.slopeGroundY(e.x, e.z, 0.2);
     const kind = y > 3.0 ? 1 : 0;
     const tm = this._treeChunk(kind, e.x, e.z);
     if (tm.n >= tm.cap) return;
     const v = (e.variant | 0) & 3;
     const h = hash2(e.x * 3.3, e.z * 5.1);
     const rec = {
-      e, kind, tm, idx: tm.n++, x: e.x, y: y - 0.03, z: e.z,
+      e, kind, tm, idx: tm.n++, x: e.x, y: y - 0.04, z: e.z,
       s: (e.scale || 1) * (0.85 + v * 0.09 + h * 0.2), sy: 0.9 + hash2(e.z, e.x) * 0.3,
       rot: h * Math.PI * 2, amt: e.amount, fall: -1,
     };
@@ -907,7 +940,7 @@ export class Renderer {
     gGeo.setAttribute('normal', new THREE.Float32BufferAttribute(gn, 3));
     const gMat = this.patchMaterial(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), { sway: 0.28, hide: true });
     const nGrass = Math.min(9000, Math.floor(N * N * 0.45));
-    const fGeo = new THREE.IcosahedronGeometry(0.06, 0).translate(0, 0.17, 0);
+    const fGeo = new THREE.IcosahedronGeometry(0.06, 0).translate(0, 0.06, 0);
     const fMat = this.patchMaterial(new THREE.MeshLambertMaterial({}), { sway: 0.2, hide: true });
     const KD = this.climate || CLIMATES.temperate;
     const nFl = Math.floor(Math.min(1400, Math.floor(N * N * 0.07)) * KD.flowerMul);
@@ -918,16 +951,17 @@ export class Renderer {
     const fcols = KD.flowers.map((c) => new THREE.Color(c));
     const CH = 32, cs = Math.ceil(N / CH);
     const gBk = new Map(), fBk = new Map(), rBk = new Map();
-    const put = (map, x, y, z, matEl, col) => {
+    const put = (map, x, y, z, matEl, col, rad, sink) => {
       const ck = Math.floor(z / CH) * cs + Math.floor(x / CH);
       let c = map.get(ck);
-      if (!c) map.set(ck, c = { mats: [], cols: col ? [] : null, x0: x, x1: x, y0: y, y1: y, z0: z, z1: z });
+      if (!c) map.set(ck, c = { mats: [], cols: col ? [] : null, meta: [], x0: x, x1: x, y0: y, y1: y, z0: z, z1: z });
       else {
         if (x < c.x0) c.x0 = x; else if (x > c.x1) c.x1 = x;
         if (y < c.y0) c.y0 = y; else if (y > c.y1) c.y1 = y;
         if (z < c.z0) c.z0 = z; else if (z > c.z1) c.z1 = z;
       }
       for (let m = 0; m < 16; m++) c.mats.push(matEl[m]);
+      c.meta.push(rad, sink);
       if (col) c.cols.push(col);
     };
     let ng = 0, nf = 0, nr = 0;
@@ -941,27 +975,27 @@ export class Renderer {
       d.rotation.set(0, rnd() * 6.28, 0);
       if ((t === 0 || t === 6) && pick < 0.8 && ng < nGrass) {
         if (vnoise(x * 0.2, z * 0.2) < 0.35) continue; // clumps
-        const s = 0.8 + rnd() * 1.0;
-        d.position.set(x, y - 0.01, z); d.scale.set(s, s * (0.8 + rnd() * 0.6), s); d.updateMatrix();
-        put(gBk, x, y - 0.01, z, d.matrix.elements, gcols[(rnd() * gcols.length) | 0]);
+        const s = 0.8 + rnd() * 1.0, rad = 0.09 * s, sink = -0.02, gy = this.slopeGroundY(x, z, rad) + sink;
+        d.position.set(x, gy, z); d.scale.set(s, s * (0.8 + rnd() * 0.6), s); d.updateMatrix();
+        put(gBk, x, gy, z, d.matrix.elements, gcols[(rnd() * gcols.length) | 0], rad, sink);
         ng++;
       } else if (t === 0 && pick < 0.9 && nf < nFl) {
         if (vnoise(x * 0.11 + 50, z * 0.11) < 0.55) continue;
-        const s = 0.8 + rnd() * 0.7;
-        d.position.set(x, y, z); d.scale.set(s, s, s); d.updateMatrix();
-        put(fBk, x, y, z, d.matrix.elements, fcols[(rnd() * fcols.length) | 0]);
+        const s = 0.8 + rnd() * 0.7, rad = 0.07 * s, sink = -0.01, gy = this.slopeGroundY(x, z, rad) + sink;
+        d.position.set(x, gy, z); d.scale.set(s, s, s); d.updateMatrix();
+        put(fBk, x, gy, z, d.matrix.elements, fcols[(rnd() * fcols.length) | 0], rad, sink);
         nf++;
       } else if ((t === 0 || t === 2 || t === 5 || t === 6) && pick >= 0.9 && nr < nRock) {
         if (map.blocked && map.blocked[(z | 0) * N + (x | 0)] && t !== 5) continue;
-        const s = 0.5 + rnd() * (t === 5 ? 2.2 : 1.0);
+        const s = 0.5 + rnd() * (t === 5 ? 2.2 : 1.0), rad = 0.22 * s * 0.85, sink = -0.04 * s, gy = this.slopeGroundY(x, z, rad) + sink;
         d.rotation.set(rnd() * 3, rnd() * 6.28, rnd() * 3);
-        d.position.set(x, y + 0.02, z); d.scale.set(s, s * 0.7, s * (0.7 + rnd() * 0.6)); d.updateMatrix();
-        put(rBk, x, y + 0.02, z, d.matrix.elements, null);
+        d.position.set(x, gy, z); d.scale.set(s, s * 0.7, s * (0.7 + rnd() * 0.6)); d.updateMatrix();
+        put(rBk, x, gy, z, d.matrix.elements, null, rad, sink);
         nr++;
       }
     }
     const buildChunks = (bk, geo, mat, cast, recv) => {
-      const out = [];
+      const out = [], metas = [];
       for (const c of bk.values()) {
         const cnt = c.mats.length >> 4;
         const m = new THREE.InstancedMesh(geo, mat, cnt);
@@ -978,17 +1012,20 @@ export class Renderer {
         m.castShadow = cast; m.receiveShadow = recv;
         this.world.add(m);
         out.push(m);
+        metas.push(new Float32Array(c.meta));
       }
       if (!out.length) { geo.dispose(); mat.dispose(); }
-      return out;
+      return { out, metas };
     };
-    const grass = buildChunks(gBk, gGeo, gMat, false, true);
-    const flowers = buildChunks(fBk, fGeo, fMat, false, false);
-    const rocks = buildChunks(rBk, rGeo, rMat, true, true);
+    const gb = buildChunks(gBk, gGeo, gMat, false, true);
+    const fb = buildChunks(fBk, fGeo, fMat, false, false);
+    const rb = buildChunks(rBk, rGeo, rMat, true, true);
+    const grass = gb.out, flowers = fb.out, rocks = rb.out;
     this.decor = { grass, flowers, rocks };
     d.rotation.set(0, 0, 0);
     // tile -> decor instances (packed meshIndex * 2^16 + instance), so buildings / rails can hide what they cover
     const idx = new Map(), meshes = grass.concat(flowers, rocks);
+    this._decorMeta = gb.metas.concat(fb.metas, rb.metas);
     for (let k = 0; k < meshes.length; k++) {
       const m = meshes[k], arr = m.instanceMatrix.array;
       for (let i = 0; i < m.count; i++) {

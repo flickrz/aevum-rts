@@ -2651,7 +2651,12 @@ export class EntityView {
       }
       y = this._updUnit(v, e, dt, tm, gt);
     } else {
-      if (v._tVer !== tVer) { v._tVer = tVer; v._y = map.heightAt(e.x, e.z); }
+      if (v._tVer !== tVer) {
+        v._tVer = tVer;
+        const R = this.ctx.renderer;
+        const rad = e.type === 'berries' ? .34 : (e.type === 'stone' || e.type === 'gold') ? .42 : 0;
+        v._y = rad && R && R.slopeGroundY ? R.slopeGroundY(e.x, e.z, rad) - .04 : (R && R.heightAt ? R.heightAt(e.x, e.z) : map.heightAt(e.x, e.z));
+      }
       y = v._y;
       if (e.amount !== v.lastAmt) {
         if (v.lastAmt !== -1) v.amtT = tm;   // (being gathered: drawn on its own for a while, see below)
