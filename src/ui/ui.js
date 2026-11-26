@@ -10,6 +10,7 @@ import { withMention } from './mention.js';
 import { menuUpdates, hasUnseen } from './updates-ui.js';
 import { newsBox } from './news-ui.js';
 import { gchatPanel } from './gchat-ui.js';
+import { MENU2, menu2Main } from './menu2.js';
 import { mapPreview, previewClimate } from './map-preview.js';
 import { TutorialUI } from './tutorial-ui.js';
 import { TUT_CFG } from '../sim/tutorial.js';
@@ -383,6 +384,7 @@ export class UI {
   // signed in with Google (required to play) and the account's profile is here
   _signedIn() { if (TEST_MODE) return true; return !!safe(() => this.app.cloud && this.app.cloud.loggedIn && this.app.getProfile(), false); }
   _menuMain(note) {
+    if (MENU2) return menu2Main(this, note);
     // nothing is playable before signing in with Google (one account = one player)
     if (!this._signedIn()) { loginScreen(this); if (note) this._menuNote(note); return; }
     // (owner 2026-11-20: the layout of the draft he liked - one column on the left over the live demo, the big
