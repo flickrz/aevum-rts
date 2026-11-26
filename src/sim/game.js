@@ -392,6 +392,9 @@ export class Game {
     if (!MAP_P[mt]) mt = 'river';
     cfg.mapType = mt;
     const P = MAP_P[mt], riv = mt === 'river', SEA = -1.3, H = N / 2;
+    // (owner 2026-11-26) wider river/canal with only 2-3 strategic crossings instead of 10-15 narrow fords
+    const rivW = Math.max(4.5, Math.min(8.5, N * 0.022)), rivBank = 3.0;
+    const rivFords = N <= 320 ? [N * 0.3, N * 0.7] : [N * 0.24, N * 0.5, N * 0.76], rivFHalf = N <= 320 ? 3.5 : 4;
     const sstep = (a, b, x) => { let t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
     // non-river plateaus: per start, the inner radius stays clear of the map border (sea border must not cut it)
     // (the flat settling ground around a start: 1.7x since 2026-11-13, sized for the bigger buildings and a town around them)
@@ -423,8 +426,13 @@ export class Game {
         if (rr > 0.9) h += Math.min(3.6, (rr - 0.9) * 45) * sstep(0.42, 0.58, vn(vx / N * 8 + 800, vz / N * 8 + 800, seed + 8));
       }
       if (P.river) {
-        const dr = Math.abs(vx - rx(vz)), w = 2.2;
-        if (dr < w + 2.5) { const ford = (vz % 26) < 6; const dep = ford ? -0.15 : -0.9; const t = Math.max(0, (dr - w) / 2.5); h = dep + (Math.min(h, 1.2) - dep) * t; }
+        const dr = Math.abs(vx - rx(vz)), w = rivW;
+        if (dr < w + rivBank) {
+          let ford = false; for (let fi = 0; fi < rivFords.length; fi++) if (Math.abs(vz - rivFords[fi]) <= rivFHalf) { ford = true; break; }
+          const dep = ford ? -0.12 : -1.2;
+          const t = Math.max(0, (dr - w) / rivBank);
+          h = dep + (Math.min(h, 1.2) - dep) * t;
+        }
       }
       if (shape) h += (SEA - h) * shape(vx, vz);
       if (riv) {
