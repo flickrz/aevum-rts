@@ -166,8 +166,13 @@
     if (!r.size) { rooms.delete(room); emptySince.set(room, Date.now()); }
   }
   // the public part of a verified identity, as the relay stamps it on messages
-  const pub = (id) => (id ? { uid: id.uid, name: id.name, av: id.av, tp: id.tp } : null);
+  const pub = (id) => (id ? { fb: id.fb, uid: id.uid, name: id.name, av: id.av, tp: id.tp } : null);
   const kicked = new Map();   // room + ' ' + peer -> time: replaced by a newer connection of the same account
+  function isRoomKicked(room, peer, ident) {
+    const r = rooms.get(room);
+    if (!r) return false;
+    return !!(r.kickedPeers && r.kickedPeers.has(peer)) || !!(ident && r.kickedFbs && r.kickedFbs.has(ident.fb));
+  }
   function addPeer(room, peer, pe, r) {
     const old = r.get(peer);
     if (old) { try { old.end(); } catch { /* ignore */ } }
@@ -537,6 +542,21 @@
         tell(o, msg);
       }
     }
+    // host kicking a guest in the lobby: after delivering the kick message, drop them from the room and block rejoin
+    if (m.topic === 'lobby' && peer === r.host && !r.started && m.data && m.data.k === 'kick' && typeof m.data.to === 'string' && m.data.to !== peer) {
+      const targetPeer = m.data.to, target = r.get(targetPeer);
+      if (!r.kickedPeers) r.kickedPeers = new Set();
+      r.kickedPeers.add(targetPeer);
+      if (target && target.ident && target.ident.fb) {
+        if (!r.kickedFbs) r.kickedFbs = new Set();
+        r.kickedFbs.add(target.ident.fb);
+      }
+      if (target) {
+        r.delete(targetPeer);
+        for (const [p, o] of r) if (p !== targetPeer) tell(o, { type: 'left', peer: targetPeer });
+        setTimeout(() => { try { target.dead = true; target.end(); } catch { /* ignore */ } }, 60).unref();
+      }
+    }
   }
   function handleUpgrade(req, socket) {
     let url; try { url = new URL(req.url || '', 'http://x'); } catch { socket.destroy(); return; }
@@ -551,6 +571,7 @@
     const ident = identOf(req, url);
     if (!ident && !NO_AUTH) { bye({ type: 'err', code: 401 }); return; }
     if (kicked.has(room + ' ' + peer)) { bye({ type: 'dup' }); return; }
+    if (isRoomKicked(room, peer, ident)) { bye({ type: 'err', code: 403, reason: 'kicked' }); return; }
     const known = rooms.get(room) && rooms.get(room).get(peer);
     if (known && known.ident && (!ident || ident.fb !== known.ident.fb)) { bye({ type: 'err', code: 403 }); return; }
     if (roomRefused(room, peer, ident)) { bye({ type: 'err', code: 429 }); return; }
@@ -882,6 +903,7 @@
     const ident = identOf(req, url);
     if (!ident && !NO_AUTH) { reply(res, 401, J, '{"error":"ticket"}'); return; }
     if (kicked.has(room + ' ' + peer)) { reply(res, 409, J, '{"error":"dup"}'); return; }
+    if (isRoomKicked(room, peer, ident)) { reply(res, 403, J, '{"error":"kicked"}'); return; }
     // a peer id belongs to the identity that registered it
     const known = rooms.get(room) && rooms.get(room).get(peer);
     if (known && known.ident && (!ident || ident.fb !== known.ident.fb)) { reply(res, 403, J, '{"error":"peer"}'); return; }

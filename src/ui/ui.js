@@ -2387,9 +2387,11 @@ export class UI {
     };
     const TEAMS = [1, 2, 3, 4].map((t) => [t, tr('Takım ') + t]);
     const DIFF = [['easy', tr('Kolay')], ['normal', tr('Normal')], ['hard', tr('Zor')]];
+    const cloud = this.app.cloud, friendFbs = new Set();
     // the host re-broadcasts the lobby every 2 s: only rebuild when it changed, and keep the
     // "add AI" picks and a half-typed name across rebuilds
     let aTeam = 2, aDiff = 'normal', lastKey = null, nameDraft = null;
+    if (cloud && cloud.loggedIn) safe(() => cloud.friends().then((l) => { for (const f of l || []) if (f && f.fb) friendFbs.add(f.fb); lastKey = null; render(); }).catch(() => {}));
     const render = () => {
       if (left || this.lobbySession !== session) return;
       const st = state || {}, slots = st.slots || [], me = myPeer();
@@ -2419,6 +2421,20 @@ export class UI {
           if (host) { const rm = el('button', 'lb-x', '✕'); rm.title = tr('Kaldır'); rm.onclick = () => call('removeSlot', i); row.append(rm); }
         } else {
           row.append(el('span', 'lb-ready' + (s.ready ? ' on' : ''), s.ready ? tr('✔ Hazır') : tr('Bekliyor')));
+          if (!mine && cloud && cloud.loggedIn && s.fb && s.fb !== cloud.user?.uid) {
+            const isFr = friendFbs.has(s.fb);
+            const af = el('button', 'mbtn small lb-addf', isFr ? tr('✔ Arkadaşın') : tr('+ Arkadaş Ekle'));
+            af.type = 'button'; af.disabled = isFr;
+            af.onclick = async () => {
+              this._click(); af.disabled = true;
+              const r = await cloud.addFriend({ fb: s.fb, name: s.name, avatar: s.av || null });
+              if (!r || !r.ok) { af.disabled = false; this._lobbyNote((r && r.error) || tr('Hata')); return; }
+              friendFbs.add(s.fb); af.textContent = tr('✔ Arkadaşın');
+              this._lobbyNote(tr('{0} arkadaş listene eklendi.', pn(s.name)));
+            };
+            row.append(af);
+          }
+          if (host && !mine) { const rm = el('button', 'lb-x', '✕'); rm.title = tr('Odadan çıkar'); rm.onclick = () => call('removeSlot', i); row.append(rm); }
         }
         list.append(row);
       });
@@ -2472,7 +2488,7 @@ export class UI {
     on('chat', (m) => { chatLog.push(m); if (this.lobbySession === session && this.mode === 'menu') drawLog(); else if (this.app.net === session) this._chatPush(m); });
     on('start', (p) => { if (this.lobbySession !== session) return; this.lobbySession = null; safe(() => this.app.startMultiplayer?.(session, p.cfg)); });
     // in-game stall / resume / desync / peerLeft banners are routed by app.startMultiplayer (main.js)
-    on('closed', () => { if (this.lobbySession === session) { this.lobbySession = null; this._menuMulti(tr('Bağlantı kapandı.')); } else if (this.app.net === session) this.toast(tr('⚠ Ağ bağlantısı kapandı'), 'warn'); });
+    on('closed', (p) => { if (this.lobbySession === session) { this.lobbySession = null; this._menuMulti(p?.reason === 'kicked' ? tr('Oda kurucusu seni odadan çıkardı.') : tr('Bağlantı kapandı.')); } else if (this.app.net === session) this.toast(tr('⚠ Ağ bağlantısı kapandı'), 'warn'); });
     render(); drawLog();
     this._onlinePanel(box);
   }

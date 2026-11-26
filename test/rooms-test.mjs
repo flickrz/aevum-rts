@@ -80,6 +80,30 @@ try {
   ok((await list(A.ticket)).some((r) => r.code === 'DDDDD'), 'rooms: room listed while its host is in');
   hd.abort(); await wait(300);
   ok(!(await list(A.ticket)).some((r) => r.code === 'DDDDD'), 'rooms: not listed once the host left');
+
+  // host kick in lobby: guest receives kick, is dropped from room, and cannot rejoin (neither same peer nor same account)
+  const kh = await join('KKKKK', 'ph', A.ticket);
+  const kc = new AbortController(); ctls.push(kc);
+  const kr = await fetch(base + '/mp/events?room=KKKKK&peer=pg&tk=' + encodeURIComponent(B.ticket), { signal: kc.signal });
+  const krd = kr.body.getReader();
+  let kbuf = '';
+  const readSome = async () => { for (let i = 0; i < 6; i++) { const { value, done } = await Promise.race([krd.read(), wait(200).then(() => ({ value: null, done: false }))]); if (value) kbuf += Buffer.from(value).toString('utf8'); if (done || kbuf.includes('"k":"kick"')) break; } };
+  await wait(120);
+  await send('KKKKK', 'ph', A.ticket, state('ph'));
+  // guest cannot kick host
+  await send('KKKKK', 'pg', B.ticket, { k: 'kick', to: 'ph' });
+  await wait(120);
+  ok((await list(C.ticket)).some((r) => r.code === 'KKKKK'), 'kick: guest cannot kick host');
+  // host kicks guest
+  await send('KKKKK', 'ph', A.ticket, { k: 'kick', to: 'pg' });
+  await readSome();
+  ok(kbuf.includes('"k":"kick"') && kbuf.includes('"to":"pg"'), 'kick: kicked guest receives lobby kick message');
+  ok(kbuf.includes('"fb":"fbA"'), 'lobby identity carries verified fb for Add Friend');
+  await wait(120);
+  const rRe1 = await fetch(base + '/mp/events?room=KKKKK&peer=pg&tk=' + encodeURIComponent(B.ticket));
+  const rRe2 = await fetch(base + '/mp/events?room=KKKKK&peer=pg2&tk=' + encodeURIComponent(B.ticket));
+  ok(rRe1.status === 403 && rRe2.status === 403, 'kick: kicked player cannot rejoin room (neither same peer nor new peer of same account)');
+  kh.abort();
 } finally { for (const c of ctls) try { c.abort(); } catch { /* ignore */ } srv.kill(); }
 
 console.log(`rooms-test: ${passes} passed, ${fails} failed`);

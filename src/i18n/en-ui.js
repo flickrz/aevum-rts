@@ -472,4 +472,6 @@ export default {
   "Tekrar bas: tüm köylüler son kaldıkları işe geri döner.": "Press again: all villagers return to their previous tasks.",
   "Şehir zili çaldı: köylüler Şehir Merkezi'ne sığınıyor": "Town bell rung: villagers are sheltering at the Town Center",
   "Köylüler işlerine geri dönüyor": "Villagers are returning to work",
+  "Odadan çıkar": "Kick from room",
+  "Oda kurucusu seni odadan çıkardı.": "The host kicked you from the room.",
 };
