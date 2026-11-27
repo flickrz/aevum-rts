@@ -31,7 +31,8 @@
   content: ""; position: absolute; inset: 0;
   background:
     linear-gradient(180deg, rgba(4, 9, 6, .92) 0, rgba(4, 9, 6, .72) calc(70 * var(--p)), rgba(4, 9, 6, .2) calc(150 * var(--p)), rgba(4, 9, 6, 0) calc(230 * var(--p))),
-    linear-gradient(90deg, rgba(5, 9, 7, .55) 0, rgba(5, 9, 7, 0) calc(460 * var(--p)));
+    linear-gradient(90deg, rgba(5, 9, 7, .55) 0, rgba(5, 9, 7, 0) calc(460 * var(--p))),
+    radial-gradient(ellipse 62% 70% at 50% 54%, rgba(5, 10, 6, 0) 55%, rgba(5, 10, 6, .55) 85%, rgba(4, 8, 5, .8) 100%);
 }
 /* the castle at dusk, bottom left */
 .m3-col-art {

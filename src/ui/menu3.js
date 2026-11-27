@@ -14,7 +14,7 @@ import {
   SVG_PLAY, SVG_USER, SVG_USERS, SVG_STATS, SVG_GEAR, SVG_LOGOUT,
   SVG_NEWS, SVG_BULB, SVG_BELL, SVG_HELP, SVG_SCROLL,
 } from './menu-shared.js';
-import { forestSvg, colSceneSvg, ITEM_ARTS, BANNER_SVG, SVG_SWORDS2, SVG_CHEV, SVG_PLANE, SVG_HAMMER, SVG_FLOPPY, laurel } from './menu3-art.js';
+import { ITEM_ARTS, BANNER_SVG, SVG_SWORDS2, SVG_CHEV, SVG_PLANE, SVG_HAMMER, SVG_FLOPPY, laurel } from './menu3-art.js';
 
 export { MENU3 };
 
@@ -40,7 +40,7 @@ export function menu3Main(ui, note) {
   const click = (fn) => clickOf(ui, fn);
 
   // the forest-dark ring around the village (under the panels, over the scene)
-  root.append(htmlEl('div', 'm3-vignette', forestSvg()));
+  root.append(h('div', 'm3-vignette'));   // (owner 2026-11-27: no drawn trees, castle or flowers behind the menu)
 
   // ==================== TOP BAR ====================
   const topbar = h('header', 'm3-topbar');
@@ -146,6 +146,7 @@ export function menu3Main(ui, note) {
   leftInner.append(pCard);
 
   // 2) Duyurular (newsBox, embedded, with paging dots)
+  let newsEl = null;
   safe(() => {
     const nb = newsBox(ui, { embedded: true, pager: true, onSeen: syncBellDot });
     if (!nb) return;
@@ -154,7 +155,7 @@ export function menu3Main(ui, note) {
     if (head) head.prepend(htmlEl('span', 'm3-card-ico', SVG_NEWS));
     const main = nb.querySelector('.news-main');
     if (main) main.append(htmlEl('span', 'm3-news-chev', SVG_CHEV));
-    leftInner.append(nb);
+    newsEl = nb;   // (owner 2026-11-27: under the play list)
   });
 
   // 3) the big gold "Yeni Oyun"
@@ -197,8 +198,8 @@ export function menu3Main(ui, note) {
     const ss = savesCard.querySelector('.m3-item-sub'); if (ss) ss.textContent = n ? n + tr(' kayıt') : tr('Kayıt yok');
   }).catch(() => {});
   leftInner.append(listEl);
+  if (newsEl) leftInner.append(newsEl);
   leftCol.append(leftInner);
-  root.append(htmlEl('div', 'm3-col-art', colSceneSvg()));
 
   // the middle: the live village and the tip bar at the bottom
   const stage = h('div', 'm3-stage');
