@@ -402,7 +402,7 @@ export class UI {
     // a multiplayer match an update cut (within 30 minutes): "Kesilen maça devam et" right under it (src/ui/notice-ui.js)
     safe(() => interruptedEntry(this, box, multi));
     item('u-villager', tr('Arkadaşlar'), null, () => import('./friends-ui.js').then((m) => m.menuFriends(this)));
-    item('x-build', tr('Sandbox'), tr('serbest kur'), () => this.app.newGame({ mapSize: 256, enemies: 1, difficulty: 'normal', startRes: 'high', startAge: 0, sandbox: true, seed: (Math.random() * 1e9) | 0 }));
+    item('x-build', tr('Sandbox'), tr('serbest kur'), () => this._menuSetup(true));
     const cont = item('x-explore', tr('Devam Et'), '', () => Promise.resolve(safe(() => this.app.continueLast(), false)).then((ok) => { if (!ok && this.app.lastLoadError && this.mode === 'menu') this._menuSaves(this.app.lastLoadError); }).catch(() => {}));
     const saves = item('x-save', tr('Kayıtlı Oyunlar'), '', () => this._menuSaves());
     cont.disabled = true;
@@ -470,10 +470,12 @@ export class UI {
   // "Yeni Oyun" (owner 2026-11-20: "buttons jump around while picking a map, and you can't tell what map you get"):
   // the map types as cards with a real picture each (src/ui/map-preview.js), the chosen one large with a line on what
   // it plays like, and every other setting in fixed-width rows on the right, so nothing moves when something is picked
-  _menuSetup() {
-    const box = this._menuBox('<h2>' + tr('Yeni Oyun') + '</h2>');
+  _menuSetup(sandbox = false) {
+    const box = this._menuBox('<h2>' + tr(sandbox ? 'Sandbox' : 'Yeni Oyun') + '</h2>');
     box.classList.add('setup');
+    if (sandbox) box.classList.add('sandbox-setup');
     const S = this.setup;
+    if (!sandbox && !(S.enemies >= 1)) S.enemies = 1;
     const grid = el('div', 'su-grid'); box.append(grid);
     // ---- left: the map ----
     const left = el('section', 'su-left'); grid.append(left);
@@ -531,7 +533,7 @@ export class UI {
     const redraw = () => { drawBig(); drawCards(); };
     row(tr('Harita Boyutu'), 'mapSize', [[192, tr('Minik')], [256, tr('Küçük')], [320, tr('Orta')], [384, tr('Büyük')], [448, tr('Çok Büyük')], [512, tr('Dev')]]);
     row(tr('İklim'), 'climate', CLIMATE_OPTS, redraw);
-    row(tr('Düşman Sayısı'), 'enemies', [[1, '1'], [2, '2'], [3, '3']], redraw);
+    row(tr('Düşman Sayısı'), 'enemies', sandbox ? [[0, '0'], [1, '1'], [2, '2'], [3, '3']] : [[1, '1'], [2, '2'], [3, '3']], redraw);
     row(tr('Zorluk'), 'difficulty', [['easy', tr('Kolay')], ['normal', tr('Normal')], ['hard', tr('Zor')]]);
     row(tr('Başlangıç Kaynakları'), 'startRes', [['low', tr('Düşük')], ['normal', tr('Normal')], ['high', tr('Yüksek')]]);
     row(tr('Başlangıç Çağı'), 'startAge', AGES.map((a, i) => [i, tr(a.name).split(' ')[0]]));
@@ -549,7 +551,7 @@ export class UI {
     this._mbtn(acts, tr('Geri'), () => this._menuMain());
     this._mbtn(acts, tr('Başla'), () => {
       const d = !!this.devOn && !dev.classList.contains('hidden');
-      this.app.newGame({ ...this.setup, sandbox: d, dev: d, seed: (Math.random() * 1e9) | 0 });
+      this.app.newGame({ ...this.setup, sandbox: !!sandbox || d, dev: d, seed: (Math.random() * 1e9) | 0 });
     }, 'primary');
     redraw();
   }
