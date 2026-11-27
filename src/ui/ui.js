@@ -19,6 +19,13 @@ import { interruptedEntry } from './notice-ui.js';
 import { tr, LANG, setLang, loc, pn } from '../i18n.js';
 import { graphPanel } from './graphs-ui.js';
 import { playerScore } from '../sim/history.js';
+// main menu drafts (?menu2 / ?menu3; index.html sets window.AEVUM_MENU): their modules are imported only when the URL
+// asks for one, so the normal start never downloads them. main.js waits for menuDraftReady before the first menu.
+const MENU_DRAFT = (typeof window !== 'undefined' && window.AEVUM_MENU) || '';
+let draftMain = null;
+export const menuDraftReady = MENU_DRAFT
+  ? import('./theme3.js').then(m => m.loadMenuDraft(MENU_DRAFT)).then(fn => { draftMain = fn; }).catch(err => console.warn('[menu]', err))
+  : null;
 // a tab on the previous build (the server runs a new one): no rooms until it reloads
 const STALE_TEXT = tr('Oyunun yeni sürümü yayında. Sayfayı yenileyip tekrar dene.');
 
@@ -370,9 +377,10 @@ export class UI {
     this.cardSig = null; this.selSig = null; this.questSig = null;
     this._clearDirty = true; this._chatPosDirty = true;
   }
-  _menuBox(html) {
+  // cls: a "t3-" hook for the theme stylesheets (src/ui/theme3); no rule uses it without the flag
+  _menuBox(html, cls) {
     this.menuEl.innerHTML = ''; this.menuEl.classList.remove('with-hud', 'm-left');
-    const box = el('div', 'menu-box panel', html);
+    const box = el('div', 'menu-box panel' + (cls ? ' ' + cls : ''), html);
     this.menuEl.append(box);
     return box;
   }
@@ -384,6 +392,7 @@ export class UI {
   // signed in with Google (required to play) and the account's profile is here
   _signedIn() { if (TEST_MODE) return true; return !!safe(() => this.app.cloud && this.app.cloud.loggedIn && this.app.getProfile(), false); }
   _menuMain(note) {
+    if (draftMain) return draftMain(this, note);
     // nothing is playable before signing in with Google (one account = one player)
     if (!this._signedIn()) { loginScreen(this); if (note) this._menuNote(note); return; }
     // (owner 2026-11-20: the layout of the draft he liked - one column on the left over the live demo, the big
@@ -589,7 +598,7 @@ export class UI {
     return box;
   }
   _menuSaves(errText) {
-    const box = this._menuBox(tr('<h2>Kayıtlı Oyunlar</h2><div class="mperr hidden"></div><div class="savelist">Yükleniyor...</div>'));
+    const box = this._menuBox(tr('<h2>Kayıtlı Oyunlar</h2><div class="mperr hidden"></div><div class="savelist">Yükleniyor...</div>'), 't3-saves');
     const list = box.querySelector('.savelist'), err = box.querySelector('.mperr');
     const fail = (t) => { err.textContent = t; err.classList.remove('hidden'); };
     if (errText) fail(errText);
@@ -639,7 +648,7 @@ export class UI {
       tr('<b>Çağ atlama:</b> Şehir Merkezinden yeterli kaynak ve bina ile sonraki çağa geç; yeni birimler ve binalar açılır.'),
       tr('<b>Zafer:</b> Rakiplerin birim üreten bütün binalarını yık: şehir merkezi, kışla, okçuluk alanı, ahır, kuşatma atölyesi, fabrika ve liman (inşaatına başlanmış temeller de sayılır). Geriye kalan askerler ve köylüler oyunu sürdürmez. Daha fazla binası olan bir rakibin elinde bunlardan 1-2 tane kalınca mini haritada yanıp söner.'),
       tr('<b>Diğer:</b> <kbd>Esc</kbd> iptal / duraklat, mini haritaya tıklayarak kamerayı taşı, sağ tıkla birimleri gönder.'),
-    ].join('<br>\n') + '</div>');
+    ].join('<br>\n') + '</div>', 't3-howto');
     // the tutorial battle (sim/tutorial.js): a story with Bilge Ayaz that teaches the mechanics step by step
     this._mbtn(box, tr('Öğretici Savaşı Başlat'), () => { try { this.app.newGame({ ...TUT_CFG }); } catch (err) { console.error(err); } }, 'primary');
     this._mbtn(box, tr('Geri'), () => this._menuMain());
@@ -698,7 +707,7 @@ export class UI {
     lrow.append(lseg); parent.append(lrow);
   }
   _menuSettings() {
-    const box = this._menuBox('<h2>' + tr('Ayarlar') + '</h2>');
+    const box = this._menuBox('<h2>' + tr('Ayarlar') + '</h2>', 't3-settings');
     this._settingsBody(box);
     this._mbtn(box, tr('Geri'), () => this._menuMain());
   }
@@ -1978,7 +1987,7 @@ export class UI {
     const net = this.app.net, mpPaused = !!(net && net.paused);
     const isSpec = !!(this.game && this.game.players && this.game.players[this._me()] && this.game.players[this._me()].spectator);
     const title = !net ? tr('Duraklatıldı') : mpPaused ? tr('Oyun Duraklatıldı') : tr('Menü');
-    const m = el('div', 'modal panel', `<h2>${title}</h2>`);
+    const m = el('div', 'modal panel t3-pause', `<h2>${title}</h2>`);
     m.style.width = 'min(420px, 92vw)';
     if (net) m.append(el('div', 'pause-info', esc(mpPaused ? (net.pausedBy || tr('Bir oyuncu')) + tr(' oyunu herkes için duraklattı.') : isSpec ? tr('İzleme modu: maç sürüyor.') : tr('Çok oyunculu maç sürüyor; duraklatırsan herkes için durur.'))));
     this.pauseInfoEl = el('div', 'pause-info'); m.append(this.pauseInfoEl);
@@ -1991,7 +2000,7 @@ export class UI {
     }
     if (!isSpec) btn(tr('Kaydet'), () => this._save());
     btn(tr('İstatistik'), () => this.showStats());
-    const sbox = el('div'); sbox.style.margin = '14px 0';
+    const sbox = el('div', 't3-set'); sbox.style.margin = '14px 0';
     this._settingsBody(sbox); m.append(sbox);
     if (net) btn(tr('Maçtan Ayrıl'), async () => {
       if (!(await ask({ title: tr('Maçtan Ayrıl'), text: tr('Maçtan ayrılmak istediğine emin misin?\nMaç diğerleri için sürer.'), ok: tr('Ayrıl'), danger: true }))) return;
@@ -2139,7 +2148,7 @@ export class UI {
     if (!this.game) return;
     this.modalLocked = false; this.techTiles = null;
     this.modalEl.innerHTML = '';
-    const m = el('div', 'modal panel', `<h2>${tr('İstatistikler')}</h2><div style="color:var(--dim)">${tr('Süre: {0} · Rakipler yalnızca keşfedildiğinde listelenir', fmtTime(this.game.time || 0))}</div>${this._statsTable(false)}`);
+    const m = el('div', 'modal panel t3-over', `<h2>${tr('İstatistikler')}</h2><div style="color:var(--dim)">${tr('Süre: {0} · Rakipler yalnızca keşfedildiğinde listelenir', fmtTime(this.game.time || 0))}</div>${this._statsTable(false)}`);
     this._graphs(m, false);
     const b = el('button', 'mbtn small', tr('Kapat')); b.onclick = () => { this._click(); this._closeModal(); };
     m.append(b); this.modalEl.append(m); this.modalEl.classList.remove('hidden');
@@ -2156,7 +2165,7 @@ export class UI {
     const headHtml = isSpec
       ? `<h1 class="win">${tr('MAÇ BİTTİ')}</h1><div style="color:var(--dim)">${wtxt}${tr('Süre: {0}', fmtTime(this.game.time || 0))}</div>`
       : `<h1 class="${won ? 'win' : 'lose'}">${won ? tr('ZAFER') : tr('YENİLGİ')}</h1><div style="color:var(--dim)">${wtxt}${won ? (this.game.mp ? tr('Takımın tüm rakipleri alt etti.') : tr('Tüm rakiplerini alt ettin. Uygarlığın çağlara damga vurdu.')) : tr('Uygarlığın tarihe karıştı.')} · ${tr('Süre: {0}', fmtTime(this.game.time || 0))}</div>`;
-    const m = el('div', 'modal panel', `${headHtml}${this._statsTable(true)}`);
+    const m = el('div', 'modal panel t3-over', `${headHtml}${this._statsTable(true)}`);
     this._graphs(m, true);
     const btn = (t, fn, cls = '') => { const b = el('button', 'mbtn small ' + cls, t); b.onclick = () => { this._click(); fn(); }; m.append(b); };
     const cfg = this.game.cfg;

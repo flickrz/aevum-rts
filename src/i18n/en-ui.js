@@ -490,4 +490,20 @@ export default {
   "MAÇ BİTTİ": "MATCH OVER",
   "{0} uygarlığı yıkıldı!": "{0} has been defeated!",
   "{0} {1} seviyesine ulaştı": "{0} reached {1}",
+  // ui/menu2.js
+  "Ana Sayfa": "Home",
+  "Çağları aş · Uygarlığını kur": "Rise through the ages · Build your civilization",
+  "Harita ve ayarları belirle, uygarlığını kurmaya başla.": "Choose your map and settings, and start building your civilization.",
+  "Yeni Oyun Başlat": "Start New Game",
+  "Oyun sizlerle hızla gelişiyor.": "The game is growing fast with you.",
+  "Hata mı buldun, önerin mi var? <b>Buraya tıkla ve yaz</b>, ya da oyunda <kbd>Enter</kbd> ile sohbeti açıp <b class=\"cmention\">@claude</b> yaz; doğrudan geliştiriciye gider.": "Found a bug or have an idea? <b>Click here and write</b>, or in game open chat with <kbd>Enter</kbd> and write <b class=\"cmention\">@claude</b>; it goes straight to the developer.",
+  // ui/menu3.js
+  "Oyna": "Play",
+  "Bildirimler": "Notifications",
+  "Harita ve ayarlar": "Map and settings",
+  "Davet et, birlikte oyna": "Invite, play together",
+  "Serbest kur": "Build freely",
+  "Son kayıttan": "From last save",
+  "Kayıt yok": "No saves",
+  "<b>İpucu:</b> Önerin mi var? <b>Buraya tıkla ve yaz</b>, ya da oyunda <kbd>Enter</kbd> ile sohbeti açıp <b class=\"cmention\">@claude</b> yaz; doğrudan geliştiriciye gider.": "<b>Tip:</b> Have an idea? <b>Click here and write</b>, or in game open chat with <kbd>Enter</kbd> and write <b class=\"cmention\">@claude</b>; it goes straight to the developer.",
 };

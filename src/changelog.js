@@ -2,8 +2,16 @@
 // release (Turkish, player-facing: what changed in the game, not how). Shown by src/ui/updates-ui.js.
 export const CHANGELOG = [
   {
-    v: '0.9.13', date: '2026-11-27', title: 'Zil, Sandbox ve İzleyici',
+    v: '0.9.13', date: '2026-11-27', title: 'Yeni Görünüm, Zil ve İzleyici',
     items: [
+      'Yepyeni ana menü: ormanla çevrili canlı köyün etrafında solda oyun menüsü, sağda Genel Sohbet.',
+      'Ana menünün üst çubuğu sadeleşti: Arkadaşlar, Güncellemeler ve Nasıl Oynanır üstte; bildirimler ve ayarlar sağ üstte.',
+      'Yeni Oyun, Kayıtlı Oyunlar, Ayarlar, Nasıl Oynanır, Güncellemeler ve İstatistikler ekranları yeni görünüme geçti.',
+      'Çok Oyunculu ekranı, lobi, Arkadaşlar, Profil, davetler ve açılan pencereler yeni görünüme geçti.',
+      'Oyun içinde kaynak çubuğu, üst düğmeler, mini harita ve sohbet yeni görünüme geçti.',
+      'Oyun içinde seçim paneli, birim kartları, komut düğmeleri ve ipuçları yeni görünüme geçti.',
+      'Duraklatma menüsü, teknoloji ağacı, çağ atlama, haraç, istatistikler ve oyun sonu ekranları yeni görünüme geçti.',
+      'Yeni yazı tipleri: başlıklar ve metinler daha okunaklı.',
       'Zile basınca köylüler artık Şehir Merkezinin içine girip korunuyor; zile tekrar basınca çıkıp kaldıkları işe dönüyorlar.',
       'Zil çok oyunculu oyunda çalışmıyordu, düzeltildi.',
       'Genel Sohbette @claude yazınca geri bildirim artık geliştiriciye ulaşıyor; yazarken @claude önerisi de çıkıyor.',

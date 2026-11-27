@@ -23,6 +23,11 @@ export function allNews() {
 }
 const seen = () => { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } };
 const markSeen = (id) => { try { localStorage.setItem(KEY, id); } catch (e) { /* private mode */ } };
+export function hasUnreadNews() { const list = allNews(); return !!(list.length && seen() !== list[0].id); }
+export function openNews(ui, onSeen) {
+  const list = allNews(); if (!list.length) return;
+  openPanel(ui, list, list[0], () => { if (onSeen) onSeen(); });
+}
 
 function openPanel(ui, list, first, onSeen) {
   ui.menuEl.querySelector('.news-ov')?.remove();
@@ -56,27 +61,55 @@ function openPanel(ui, list, first, onSeen) {
   show(first);
 }
 
-export function newsBox(ui) {
+export function newsBox(ui, opts) {
   const list = allNews(); if (!list.length) return null;
   const top = list[0];
-  const wrap = h('div', 'news-wrap');
+  const embedded = !!(opts && opts.embedded);
+  const pager = !!(opts && opts.pager);
+  const onSeen = (opts && opts.onSeen) || null;
+  const wrap = h('div', 'news-wrap' + (embedded ? ' embedded' : ''));
   const dot = () => { const d = h('span', 'news-dot'); d.title = tr('Yeni'); return d; };
   const unread = seen() !== top.id;
-  const clear = () => wrap.querySelectorAll('.news-dot').forEach((d) => d.remove());
+  const clear = () => { wrap.querySelectorAll('.news-dot').forEach((d) => d.remove()); if (onSeen) onSeen(); };
   const open = (it) => { try { ui._click(); } catch (e) { /* */ } openPanel(ui, list, it, clear); };
   // the card (desktop)
   const card = h('aside', 'news-box panel');
   const head = h('div', 'news-head'); head.append(h('span', 'news-lbl', tr('Duyurular')));
   if (unread) head.append(dot());
   const main = h('button', 'news-main'); main.type = 'button';
-  main.append(h('b', 'news-title', top.title), h('span', 'news-body', top.body), h('span', 'news-date', fmtDate(top.date)));
-  main.onclick = () => open(top);
+  const titleEl = h('b', 'news-title', top.title);
+  const bodyEl = h('span', 'news-body', top.body);
+  const dateEl = h('span', 'news-date', fmtDate(top.date));
+  main.append(titleEl, bodyEl, dateEl);
+  let cur = 0;
+  main.onclick = () => open(list[cur]);
   card.append(head, main);
-  if (list.length > 1) {
+  if (pager) {
+    const shown = list.slice(0, 5);
+    if (shown.length > 1) {
+      const dots = h('div', 'news-dots');
+      const btns = shown.map((it, i) => {
+        const b = h('button', 'news-pdot' + (i === 0 ? ' on' : '')); b.type = 'button';
+        b.setAttribute('aria-label', it.title); b.title = it.title;
+        b.onclick = () => {
+          try { ui._click(); } catch (e) { /* */ }
+          cur = i;
+          titleEl.textContent = it.title;
+          bodyEl.textContent = it.body;
+          dateEl.textContent = fmtDate(it.date);
+          btns.forEach((x, j) => x.classList.toggle('on', j === i));
+        };
+        dots.append(b);
+        return b;
+      });
+      card.append(dots);
+    }
+  } else if (list.length > 1) {
     const older = h('div', 'news-older');
     for (const it of list.slice(1, 3)) { const b = h('button', 'news-olink', it.title); b.type = 'button'; b.onclick = () => open(it); older.append(b); }
     card.append(older);
   }
+  if (embedded) { wrap.append(card); return wrap; }
   // the small button (phones)
   const btn = h('button', 'news-btn panel'); btn.innerHTML = ico('x-tech'); btn.type = 'button'; btn.title = tr('Duyurular');
   if (unread) btn.append(dot());

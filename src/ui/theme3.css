@@ -1,0 +1,928 @@
+/* Aevum - theme 3 (?menu3 -> html.theme3). The look of main menu v3 for every screen: dark warm plaques with a
+   double gold line and notched corners, chunky gold main buttons, rounded dark inset boxes, gold icons, Alegreya
+   titles, Cinzel small caps, Nunito text. No blur, no neon, no raster images; the frames are two tiny inline SVGs.
+   Loaded only with the flag (index.html), after style.css; every rule starts with ".theme3", so nothing changes
+   without it. style.css has "#ui button { font-family: inherit; color: inherit }": a button's own colour or font
+   needs "#ui" in the selector. One file, one request: the tokens and shared pieces first, then a section per area
+   (menus, social, hud top, hud bottom, overlays), which build on them.
+
+   Recipes (copy the line, change only the last size):
+     plaque, small  border-image: var(--frame-sm-img) 16 fill / 16px stretch;   (HUD panels, tooltips, 10-18px)
+     plaque, big    border-image: var(--frame-img) 26 fill / 24px stretch;      (menu boxes, modals, 20-30px)
+     gold button    border-image: var(--gold-img) 26 fill / 16px stretch;       (hover: --gold-hot-img)
+   with "background: none; border: 1px solid transparent" (a border-image paints over the box, its width is free of
+   the border's own). Everything else is a plain variable: var(--t3-card), var(--t3-inset-bg), var(--t3-gold-bg) ... */
+
+html.theme3 {
+  /* 1 design px of a 1920x1080 screen (menu v3 is laid out in it); the rest of the UI stays in real px */
+  --p: calc(min(1vh, 0.5625vw) / 10.8);
+  --frame-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='78' height='78'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23202123'/%3E%3Cstop offset='1' stop-color='%23131415'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M13 1.5H65V4a9 9 0 0 0 9 9H76.5V65H74a9 9 0 0 0-9 9V76.5H13V74a9 9 0 0 0-9-9H1.5V13H4a9 9 0 0 0 9-9Z' fill='url(%23g)' stroke='%237d6130' stroke-width='1.2'/%3E%3Cpath d='M17 5.5H61a13 13 0 0 0 11.5 11.5V61a13 13 0 0 0-11.5 11.5H17a13 13 0 0 0-11.5-11.5V17a13 13 0 0 0 11.5-11.5Z' fill='none' stroke='%23c7a05a' stroke-width='1.2' opacity='.85'/%3E%3C/svg%3E");
+  --frame-sm-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23202123'/%3E%3Cstop offset='1' stop-color='%23131415'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M8 1H40V2.5a5.5 5.5 0 0 0 5.5 5.5H47V40H45.5a5.5 5.5 0 0 0-5.5 5.5V47H8V45.5a5.5 5.5 0 0 0-5.5-5.5H1V8H2.5a5.5 5.5 0 0 0 5.5-5.5Z' fill='url(%23g)' stroke='%237d6130'/%3E%3Cpath d='M11 4H37a8 8 0 0 0 7 7V37a8 8 0 0 0-7 7H11a8 8 0 0 0-7-7V11a8 8 0 0 0 7-7Z' fill='none' stroke='%23c7a05a' opacity='.8'/%3E%3C/svg%3E");
+  --gold-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='78' height='78'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffe7a0'/%3E%3Cstop offset='.16' stop-color='%23f4c95f'/%3E%3Cstop offset='.62' stop-color='%23e0a63b'/%3E%3Cstop offset='.9' stop-color='%23bd8324'/%3E%3Cstop offset='1' stop-color='%238c5a12'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M13 1.5H65V4a9 9 0 0 0 9 9H76.5V65H74a9 9 0 0 0-9 9V76.5H13V74a9 9 0 0 0-9-9H1.5V13H4a9 9 0 0 0 9-9Z' fill='url(%23g)' stroke='%233a2406' stroke-width='1.6'/%3E%3Cpath d='M17 5.5H61a13 13 0 0 0 11.5 11.5V61a13 13 0 0 0-11.5 11.5H17a13 13 0 0 0-11.5-11.5V17a13 13 0 0 0 11.5-11.5Z' fill='none' stroke='%23fff3c4' stroke-width='1.2' opacity='.7'/%3E%3C/svg%3E");
+  --gold-hot-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='78' height='78'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23fff1bd'/%3E%3Cstop offset='.16' stop-color='%23fbd676'/%3E%3Cstop offset='.62' stop-color='%23ebb448'/%3E%3Cstop offset='.9' stop-color='%23bd8324'/%3E%3Cstop offset='1' stop-color='%238c5a12'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M13 1.5H65V4a9 9 0 0 0 9 9H76.5V65H74a9 9 0 0 0-9 9V76.5H13V74a9 9 0 0 0-9-9H1.5V13H4a9 9 0 0 0 9-9Z' fill='url(%23g)' stroke='%233a2406' stroke-width='1.6'/%3E%3Cpath d='M17 5.5H61a13 13 0 0 0 11.5 11.5V61a13 13 0 0 0-11.5 11.5H17a13 13 0 0 0-11.5-11.5V17a13 13 0 0 0 11.5-11.5Z' fill='none' stroke='%23fff3c4' stroke-width='1.2' opacity='.7'/%3E%3C/svg%3E");
+
+  /* colours (the first block replaces style.css's own :root values, so the old rules already come out warm) */
+  --gold: #f2c552;
+  --gold2: #b9832a;
+  --ink: #f4eedf;
+  --dim: #b9b2a2;
+  --line: rgba(201, 160, 86, .45);
+  --glass: #1b1c1e;
+  --glass2: #232426;
+  --red: #ff6b5e;
+  --green: #86d58f;
+  --gold-hi: #ffe08a;
+  --muted: #8a8475;
+  --inset: #1b1c1e;
+  --edge: #8c6b33;
+  --edge-hi: #d3aa5c;
+
+  /* faces */
+  --serif: "Alegreya", Georgia, "Times New Roman", serif;
+  --caps: "Cinzel", "Trajan Pro", Georgia, serif;
+  --sans: "Nunito", "Segoe UI", system-ui, sans-serif;
+  --font: "Nunito", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji";
+
+  /* surfaces */
+  --t3-plaque: linear-gradient(180deg, #202123, #131415);   /* a plain plaque where the notched frame does not fit */
+  --t3-card: linear-gradient(180deg, #222325, #17181a);     /* a row / secondary button */
+  --t3-card-hot: linear-gradient(180deg, #2a2b2d, #1b1c1e);
+  --t3-card-edge: rgba(160, 130, 78, .5);
+  --t3-card-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 3px 8px rgba(0, 0, 0, .45);
+  --t3-inset-bg: #17181a;                                    /* lists, inputs, wells */
+  --t3-inset-edge: rgba(255, 255, 255, .08);
+  --t3-inset-shadow: inset 0 2px 7px rgba(0, 0, 0, .45);
+  --t3-gold-bg: linear-gradient(180deg, #ffe7a0 0%, #f4c95f 18%, #e0a63b 70%, #bd8324 100%);   /* a small gold button */
+  --t3-gold-ink: #33200a;
+  --t3-gold-edge: #3a2406;
+  --t3-gold-shadow: inset 0 0 0 1.5px rgba(255, 243, 196, .45), 0 2px 0 #5a3a0c, 0 5px 9px rgba(0, 0, 0, .5);
+  --t3-on: rgba(242, 197, 82, .16);                          /* a chosen option */
+  --t3-shadow: 0 8px 18px rgba(0, 0, 0, .55);                /* under a plaque */
+  --t3-shadow-sm: 0 4px 10px rgba(0, 0, 0, .5);
+  --t3-rule: linear-gradient(90deg, transparent, rgba(201, 160, 86, .6), transparent);   /* a thin gold divider */
+  --t3-veil: rgba(8, 9, 7, .72);                             /* behind a modal */
+  /* a box-shadow is not drawn under its own box, so over bright ground the four notches of a plaque show as light
+     dots: a dark patch in each corner (under the frame) stands in for the shadow there */
+  --t3-n: linear-gradient(rgba(0, 0, 0, .16), rgba(0, 0, 0, .16)); --t3-s: linear-gradient(rgba(0, 0, 0, .34), rgba(0, 0, 0, .34));
+  --t3-notch: var(--t3-n) 0 0 / 9px 9px no-repeat, var(--t3-n) 100% 0 / 9px 9px no-repeat, var(--t3-s) 0 100% / 9px 9px no-repeat, var(--t3-s) 100% 100% / 9px 9px no-repeat;
+
+  scrollbar-color: rgba(201, 160, 86, .5) transparent;      /* (inherited: every scroller) */
+}
+
+.theme3 body { background: #0b0c0a; }
+.theme3 #ui { font-weight: 600; }
+.theme3 ::selection { background: rgba(242, 197, 82, .35); }
+
+/* ---------- plaques ---------- */
+.theme3 .panel {
+  background: var(--t3-notch); background-origin: border-box; border: 1px solid transparent; border-radius: 3px;
+  border-image: var(--frame-sm-img) 16 fill / 16px stretch;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  box-shadow: var(--t3-shadow-sm);
+}
+.theme3 .menu-box, .theme3 .modal {
+  border-radius: 9px; border-image: var(--frame-img) 26 fill / 24px stretch; box-shadow: var(--t3-shadow);
+  scrollbar-color: rgba(201, 160, 86, .55) transparent;
+}
+.theme3 .menu { background: radial-gradient(ellipse at 50% 30%, rgba(22, 24, 18, .5), rgba(6, 8, 6, .9)); }
+.theme3 .overlay { background: var(--t3-veil); }
+
+/* helpers for markup that can take a class */
+.theme3 .t3-frame { background: none; border: 1px solid transparent; border-radius: 6px; border-image: var(--frame-sm-img) 16 fill / 16px stretch; box-shadow: var(--t3-shadow-sm); }
+.theme3 .t3-inset { background: var(--t3-inset-bg); border: 1px solid var(--t3-inset-edge); border-radius: 12px; box-shadow: var(--t3-inset-shadow); }
+.theme3 .t3-card { background: var(--t3-card); border: 1px solid var(--t3-card-edge); border-radius: 12px; box-shadow: var(--t3-card-shadow); }
+.theme3 .t3-title { font-family: var(--serif); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink); }
+.theme3 .t3-caps { font-family: var(--caps); font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+.theme3 .t3-rule { height: 1px; border: 0; background: var(--t3-rule); }
+
+/* ---------- headings and text ---------- */
+.theme3 .menu h2, .theme3 .modal h2 {
+  font-family: var(--serif); font-weight: 600; font-size: 27px; line-height: 1.15; letter-spacing: 0; text-transform: none; color: var(--ink);
+}
+.theme3 .menu h2::after, .theme3 .modal h2::after { content: ""; display: block; height: 1px; margin: 10px auto 0; max-width: 340px; background: var(--t3-rule); }
+.theme3 .modal.askbox h2 { font-size: 23px; }
+.theme3 .logo {
+  font-family: var(--caps); font-weight: 400;
+  background: linear-gradient(180deg, #fff0bf 0%, #f0c765 48%, #b98836 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  text-shadow: none;
+}
+.theme3 .tagline { font-weight: 700; color: #cfc3a6; letter-spacing: 3px; }
+.theme3 .howto { color: var(--ink); }
+.theme3 .howto b { font-weight: 800; }
+.theme3 kbd, .theme3 .howto kbd, .theme3 .tooltip .tn kbd {
+  font-family: inherit; font-weight: 700; padding: 0 7px; color: var(--ink);
+  border: 1px solid rgba(244, 238, 223, .5); border-radius: 6px; background: rgba(255, 255, 255, .05);
+}
+.theme3 .mperr { font-weight: 700; }
+
+/* ---------- buttons ---------- */
+.theme3 .mbtn {
+  padding: 12px 16px; font-size: 15.5px; font-weight: 700; letter-spacing: .2px;
+  background: var(--t3-card); border: 1px solid var(--t3-card-edge); border-radius: 12px;
+  box-shadow: var(--t3-card-shadow);
+  transition: border-color .15s, transform .12s;
+}
+.theme3 .mbtn:hover:not(:disabled) { background: var(--t3-card-hot); border-color: var(--edge-hi); transform: translateY(-1px); box-shadow: var(--t3-card-shadow); }
+.theme3 .mbtn:active:not(:disabled) { transform: translateY(1px); }
+.theme3 .mbtn:disabled { opacity: .45; }
+.theme3 .mbtn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.theme3 .mbtn.small { padding: 8px 16px; font-size: 13.5px; border-radius: 10px; }
+/* the gold one: notched like the big "Yeni Oyun" */
+.theme3 .mbtn.primary, .theme3 .mbtn.primary:hover:not(:disabled) {
+  background: none; border: 1px solid transparent; border-radius: 6px;
+  border-image: var(--gold-img) 26 fill / 16px stretch;
+  box-shadow: 0 5px 10px rgba(0, 0, 0, .5);
+  font-size: 19px; font-weight: 700; letter-spacing: 0; text-shadow: 0 1px 0 rgba(255, 240, 200, .5);
+}
+.theme3 .mbtn.primary:hover:not(:disabled) { border-image-source: var(--gold-hot-img); }
+.theme3 .mbtn.primary.small, .theme3 .mbtn.primary.small:hover:not(:disabled) { border-image-width: 12px; border-radius: 5px; font-size: 15.5px; }
+.theme3 .mbtn.primary, .theme3 #ui .mbtn.primary { font-family: var(--serif); color: var(--t3-gold-ink); }
+.theme3 .mbtn.danger:hover:not(:disabled), .theme3 .mbtn.askdanger { border-color: rgba(255, 107, 94, .7); background: linear-gradient(180deg, #3a2220, #241615); }
+.theme3 .mbtn.askdanger, .theme3 #ui .mbtn.askdanger { color: #ffd9d4; }
+
+/* ---------- form rows ---------- */
+.theme3 .frow > label { color: var(--dim); font-weight: 700; }
+.theme3 .seg { padding: 3px; gap: 3px; border: 1px solid var(--t3-inset-edge); border-radius: 11px; background: var(--t3-inset-bg); box-shadow: var(--t3-inset-shadow); }
+.theme3 .seg button { border: 1px solid transparent; border-radius: 8px; font-weight: 700; transition: color .12s, background-color .12s; }
+.theme3 .seg button:last-child { border-right: 1px solid transparent; }
+.theme3 .seg.wrap button { border-bottom: 1px solid transparent; }
+.theme3 .seg button:hover:not(.on):not(:disabled) { color: var(--ink) !important; background: rgba(255, 255, 255, .05); }
+.theme3 .seg button.on { background: var(--t3-on); border-color: rgba(201, 160, 86, .6); color: var(--gold-hi) !important; font-weight: 800; }
+.theme3 .mpinput, .theme3 select, .theme3 textarea {
+  font-weight: 600; color: var(--ink);
+  background: #131415; border: 1px solid rgba(201, 160, 86, .55); border-radius: 11px;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, .5);
+}
+.theme3 .mpinput { padding: 10px 14px; }
+.theme3 .mpinput::placeholder, .theme3 textarea::placeholder { color: var(--muted); }
+.theme3 .mpinput:focus, .theme3 select:focus, .theme3 textarea:focus { outline: none; border-color: var(--gold); }
+.theme3 select option { background: #17181a; color: var(--ink); }
+.theme3 input[type=checkbox], .theme3 input[type=radio], .theme3 input[type=range] { accent-color: var(--gold); }
+.theme3 .frow .val { font-weight: 800; }
+
+/* ---------- lists ---------- */
+.theme3 .savelist { padding: 6px 8px; border: 1px solid var(--t3-inset-edge); border-radius: 12px; background: var(--t3-inset-bg); box-shadow: var(--t3-inset-shadow); scrollbar-color: rgba(201, 160, 86, .55) transparent; }
+.theme3 .saveitem { border: 1px solid transparent; border-radius: 9px; background: none; transition: border-color .12s, background-color .12s; }
+.theme3 .saveitem:hover { border-color: rgba(201, 160, 86, .55); background: rgba(255, 255, 255, .04); }
+.theme3 table.st th { font-family: var(--caps); font-weight: 600; font-size: .86em; letter-spacing: .08em; }
+.theme3 table.st th, .theme3 table.st td { border-bottom-color: rgba(201, 160, 86, .16); }
+
+/* ---------- scrollbars, tooltips ---------- */
+.theme3 ::-webkit-scrollbar { width: 8px; height: 8px; }
+.theme3 ::-webkit-scrollbar-thumb { background: rgba(201, 160, 86, .45); border-radius: 4px; }
+.theme3 ::-webkit-scrollbar-thumb:hover { background: rgba(201, 160, 86, .7); }
+.theme3 .tooltip { border-image-width: 13px; border-radius: 5px; box-shadow: var(--t3-shadow); }
+.theme3 .tooltip .tn { font-family: var(--serif); font-size: 17px; line-height: 1.2; color: var(--gold-hi); }
+.theme3 .tooltip .td { color: var(--dim); }
+
+/* ==================== MENUS ====================
+   the menu screens: new game setup (.menu-box.setup, map preview), saved games, how to play, settings,
+   updates, stats (.menu-box.stats), the login screen (loginScreen). */
+
+/* ---------- shared pieces ---------- */
+.theme3 .su-h, .theme3 .su-row > label, .theme3 .menu-box.stats .prof-h, .theme3 .up-v, .theme3 .st-headrow {
+  font-family: var(--caps); font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--gold);
+}
+.theme3 .su-big, .theme3 .su-seg, .theme3 .st-tile, .theme3 .st-table, .theme3 .up-list, .theme3 .gate-card,
+.theme3 .menu-box > .howto {
+  border: 1px solid var(--t3-inset-edge); border-radius: 12px; background: var(--t3-inset-bg); box-shadow: var(--t3-inset-shadow);
+}
+
+/* ---------- Yeni Oyun ---------- */
+.theme3 .menu-box.setup { width: min(1180px, 96vw); padding: 26px 34px; background: none; }
+.theme3 .menu-box.setup > h2 { margin-bottom: 20px; }
+/* the map panel is as tall as the settings column and the picture fills it (container units: the panel sizes the picture) */
+.theme3 .su-grid { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 30px; align-items: stretch; }
+.theme3 .su-left { display: flex; flex-direction: column; }
+.theme3 .su-big { flex: 1 1 auto; min-height: 250px; container-type: size; gap: 20px; padding: 14px; border-radius: 14px; }
+.theme3 .su-bigpic { width: min(100cqh, max(45cqw, 100cqw - 200px)); height: min(100cqh, max(45cqw, 100cqw - 200px)); border-radius: 10px; background: #101112; box-shadow: 0 0 0 1px var(--edge), 0 4px 10px rgba(0, 0, 0, .5); }
+.theme3 .su-bigtxt { align-self: stretch; gap: 9px; padding: 4px 0; }
+.theme3 .su-name { font-family: var(--serif); font-size: 27px; font-weight: 600; line-height: 1.1; letter-spacing: 0; color: var(--ink); }
+.theme3 .su-desc, .theme3 .su-left .su-desc { font-size: 14.5px; line-height: 1.5; color: #d9d2c0; }
+.theme3 .su-facts { margin-top: auto; padding-top: 9px; border-top: 1px solid rgba(201, 160, 86, .2); font-size: 12.5px; color: var(--muted); }
+.theme3 .su-h { margin: 18px 0 9px; font-size: 12px; }
+.theme3 .su-types { gap: 7px; }
+.theme3 .su-card { padding: 5px 4px 7px; border: 1px solid var(--t3-card-edge); border-radius: 10px; background: var(--t3-card); transition: border-color .12s; }
+.theme3 .su-card:hover { border-color: var(--edge-hi); background: var(--t3-card-hot); }
+.theme3 .su-card.on { border-color: var(--gold); background: linear-gradient(180deg, rgba(242, 197, 82, .2), rgba(242, 197, 82, .08)); box-shadow: 0 0 0 1px var(--gold); }
+.theme3 .su-thumb { border-radius: 7px; background: #101112; }
+.theme3 .su-cname { font-size: 12.5px; font-weight: 700; }
+.theme3 .su-card.on .su-cname { color: var(--gold-hi); }
+.theme3 .su-rand { font-family: var(--serif); font-weight: 600; background: repeating-linear-gradient(45deg, rgba(242, 197, 82, .07) 0 10px, rgba(255, 255, 255, .015) 10px 20px); }
+.theme3 .su-right { gap: 12px; }
+.theme3 .su-row { gap: 7px; }
+.theme3 .su-row > label { font-size: 12px; }
+.theme3 .su-seg { padding: 3px; gap: 3px; border-radius: 11px; }
+.theme3 .su-seg button { padding: 8px 2px; border: 1px solid transparent; border-radius: 8px; background: none; font-size: 13.5px !important; font-weight: 700; transition: color .12s, background-color .12s; }
+.theme3 .su-seg button:hover:not(.on) { border-color: transparent; background: rgba(255, 255, 255, .05); color: var(--ink) !important; }
+.theme3 .su-seg button.on { border-color: rgba(201, 160, 86, .6); background: var(--t3-on); color: var(--gold-hi) !important; font-weight: 800; }
+.theme3 .devrow { font-size: 13.5px; font-weight: 700; }
+.theme3 .devrow small { font-size: 12px; font-weight: 600; color: var(--muted); }
+.theme3 .su-acts { gap: 12px; margin-top: 6px; }
+.theme3 .su-acts .mbtn { padding: 13px 16px; font-size: 16.5px; }
+.theme3 .su-acts .mbtn.primary { font-size: 23px; line-height: 1; }
+@media (max-width: 900px) { .theme3 .su-grid { grid-template-columns: 1fr; } }
+@media (max-height: 800px) {
+  .theme3 .menu-box.setup { padding: 18px 30px 20px; }
+  .theme3 .menu-box.setup > h2 { margin-bottom: 14px; }
+  .theme3 .su-right { gap: 8px; }
+  .theme3 .su-row { gap: 5px; }
+  .theme3 .su-seg button { padding: 6px 2px; }
+  .theme3 .su-acts .mbtn { padding: 10px 16px; }
+}
+
+/* ---------- Kayıtlı Oyunlar ---------- */
+.theme3 .menu-box.t3-saves { width: min(660px, 92vw); padding: 30px 34px 28px; }
+.theme3 .menu-box > .savelist { max-height: min(430px, 52vh); padding: 6px 8px; font-size: 15px; }
+.theme3 .saveitem { align-items: center; gap: 12px; margin: 4px 0; padding: 11px 10px 11px 16px; border-color: rgba(255, 255, 255, .05); background: rgba(255, 255, 255, .025); }
+.theme3 .saveitem > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.theme3 .saveitem small { flex: none; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.theme3 .saveitem.cloud-only span { color: var(--gold-hi); }
+.theme3 #ui .saveitem .lb-x { width: 30px; height: 30px; margin-left: 2px; padding: 0; border: 1px solid rgba(255, 107, 94, .35); border-radius: 8px; background: rgba(0, 0, 0, .25); color: #ff9d94; font-size: 13px; transition: border-color .12s, background-color .12s; }
+.theme3 #ui .saveitem .lb-x:hover { border-color: var(--red); background: rgba(255, 107, 94, .16); color: #fff; }
+.theme3 .menu-box.t3-saves > .mperr { margin: 0 0 12px; padding: 9px 14px; border: 1px solid rgba(255, 107, 94, .4); border-radius: 10px; background: rgba(255, 107, 94, .08); font-size: 13.5px; }
+.theme3 .menu-box.t3-saves > .mbtn, .theme3 .menu-box.t3-settings > .mbtn, .theme3 .menu-box.stats > .mbtn { margin: 16px 0 0; }
+
+/* ---------- Nasıl Oynanır: the text scrolls in its own box, the two buttons stay under it ---------- */
+.theme3 .menu-box.t3-howto {
+  display: grid; grid-template-columns: 1fr 2fr; grid-template-rows: auto minmax(0, 1fr) auto; gap: 0 12px;
+  width: min(900px, 94vw); padding: 28px 32px 26px; overflow: hidden;
+}
+.theme3 .menu-box.t3-howto > h2, .theme3 .menu-box > .howto { grid-column: 1 / -1; }
+.theme3 .menu-box > .howto { overflow: auto; padding: 14px 20px; font-size: 14.5px; line-height: 1.65; color: #d9d2c0; }
+.theme3 .menu-box > .howto b { color: var(--gold); }
+.theme3 .menu-box > .howto br { display: block; content: ""; margin-top: 9px; }
+.theme3 .menu-box > .howto kbd { font-size: 12.5px; }
+.theme3 .menu-box.t3-howto > .mbtn { grid-row: 3; grid-column: 1; margin: 16px 0 0; }
+.theme3 .menu-box.t3-howto > .mbtn.primary { grid-column: 2; }
+
+/* ---------- Ayarlar ---------- */
+.theme3 .menu-box.t3-settings { width: min(620px, 92vw); padding: 30px 38px 28px; }
+.theme3 .menu-box > .frow { min-height: 46px; margin: 0; padding: 5px 0; box-sizing: border-box; border-bottom: 1px solid rgba(201, 160, 86, .13); }
+.theme3 .menu-box > .frow > label { flex-basis: 170px; font-size: 14.5px; color: var(--ink); }
+.theme3 .menu-box > .frow .val { font-size: 15px; }
+.theme3 .menu-box > .frow .seg button { padding: 8px 4px; font-size: 14px; }
+
+/* ---------- Güncellemeler: the list scrolls, "Geri" stays at the top (the second one below is not needed) ---------- */
+.theme3 .menu-box.updates { display: flex; flex-direction: column; width: min(880px, 96vw); padding: 26px 30px; overflow: hidden; }
+.theme3 .up-top { position: static; flex: none; margin: 0; padding: 0; border: 0; background: none; }
+.theme3 .up-top .up-back { border-color: var(--t3-card-edge); }
+.theme3 .menu-box.updates > .mpnote { flex: none; margin: 10px 0 14px; font-size: 13.5px; }
+.theme3 .menu-box.updates > .mbtn { display: none; }
+.theme3 .up-list { flex: 1 1 auto; min-height: 0; overflow: auto; gap: 10px; margin: 0; padding: 10px; }
+.theme3 .up-rel { padding: 14px 18px; border: 1px solid rgba(160, 130, 78, .3); border-radius: 11px; background: var(--t3-card); }
+.theme3 .up-rel.latest { border-color: rgba(201, 160, 86, .75); background: linear-gradient(180deg, rgba(242, 197, 82, .1), rgba(242, 197, 82, .03)), #1b1c1e; }
+.theme3 .up-head { align-items: baseline; gap: 4px 12px; }
+.theme3 .up-v { font-size: 12.5px; letter-spacing: .1em; }
+.theme3 .up-title { font-family: var(--serif); font-size: 20px; font-weight: 600; line-height: 1.15; }
+.theme3 .up-date { font-size: 12.5px; color: var(--muted); }
+.theme3 .up-new { padding: 2px 9px; background: var(--t3-gold-bg); color: var(--t3-gold-ink); font-weight: 800; }
+.theme3 .up-items { margin-top: 9px; font-size: 14px; color: #d9d2c0; }
+.theme3 .up-items li::marker { color: var(--gold2); }
+
+/* ---------- İstatistikler (the box also gets the HUD rule ".stats { display: flex; flex-wrap: wrap }") ---------- */
+.theme3 .menu-box.stats { display: flex; flex-flow: column nowrap; gap: 0; width: min(860px, 96vw); padding: 26px 30px 28px; overflow: hidden; }
+.theme3 .menu-box.stats > h2 { flex: none; margin-bottom: 6px; text-align: center; }
+.theme3 .st-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding-right: 4px; }
+.theme3 .menu-box.stats .prof-h { margin: 14px 0 8px; font-size: 12.5px; }
+.theme3 .st-tiles { gap: 10px; margin: 0; }
+.theme3 .st-tile { padding: 12px 16px; }
+.theme3 .st-num { font-family: var(--serif); font-size: 34px; font-weight: 600; line-height: 1; color: var(--gold); }
+.theme3 .st-lab { margin-top: 3px; font-size: 13.5px; color: #d9d2c0; }
+.theme3 .st-sub { font-size: 12px; color: var(--muted); }
+.theme3 .st-table { margin: 0; padding: 6px 8px; font-size: 13.5px; }
+.theme3 .st-row { padding: 3px 8px; border-radius: 6px; }
+.theme3 .st-headrow { padding-bottom: 6px; font-size: 10.5px; letter-spacing: .08em; }
+.theme3 .st-day { color: var(--dim); }
+.theme3 .st-bar { background: linear-gradient(90deg, rgba(185, 131, 42, .5), rgba(242, 197, 82, .62)); }
+.theme3 .st-vis em { font-weight: 800; text-shadow: 0 1px 2px rgba(0, 0, 0, .7); }
+.theme3 .st-body .lb-hint { margin: 10px 2px 0; color: var(--muted); }
+
+/* ---------- giriş ---------- */
+.theme3 .menu-box.acc-gate { width: min(540px, 94vw); padding: 34px 36px 32px; }
+.theme3 .gate-card { margin-top: 10px; padding: 22px 24px 18px; border-radius: 14px; }
+.theme3 .gate-text { font-size: 14.5px; color: #d9d2c0; }
+.theme3 .gate-small { color: var(--muted); }
+
+/* ==================== SOCIAL ====================
+   multiplayer (join / host, room list), the lobby (.menu-box.lobby, resume lobby), friends, profile,
+   the chat popups (rules, player card), the news modal and box, invite cards, the online panel. */
+
+/* ---------- shared pieces of these screens ---------- */
+/* a left-aligned title keeps its gold rule on the left */
+.theme3 .lb-head h2::after, .theme3 .gc-modal h2::after, .theme3 .news-modal h2::after { margin-left: 0; }
+.theme3 .mp-wrap .mpnote, .theme3 .menu-box.friends .mpnote, .theme3 .menu-box.profile .mpnote { font-size: 14.5px; line-height: 1.5; margin-bottom: 14px; }
+/* small caps section labels, with a fading gold line where there is room */
+.theme3 .prof-h, .theme3 .lb-maph, .theme3 .lb-invite-h, .theme3 .lb-settings .frow > label, .theme3 .prof-nameform > label, .theme3 .mp-rooms .op-title, .theme3 .prof-tp .prof-lv {
+  font-family: var(--caps); font-weight: 600; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold);
+}
+.theme3 .prof-h { display: flex; align-items: center; gap: 12px; font-size: 13px; margin: 20px 0 10px; }
+.theme3 .prof-h::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(201, 160, 86, .5), transparent); }
+/* wells: lists and groups of settings */
+.theme3 .op-list, .theme3 .mp-wrap > .gchat .gc-list, .theme3 .mp-rooms, .theme3 .lb-map, .theme3 .lb-settings, .theme3 .lb-invite, .theme3 .lb-chat,
+.theme3 .prof-head, .theme3 .prof-avpick, .theme3 .acc-panel {
+  background: var(--t3-inset-bg); border: 1px solid var(--t3-inset-edge); border-radius: 12px; box-shadow: var(--t3-inset-shadow);
+}
+/* rows that are cards */
+.theme3 .fr-row, .theme3 .prof-card, .theme3 .lb-friend {
+  background: var(--t3-card); border: 1px solid rgba(160, 130, 78, .32); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+.theme3 .fr-name { font-size: 15.5px; font-weight: 700; }
+.theme3 .fr-sub { font-size: 12.5px; color: var(--muted); }
+.theme3 .fr-dot { background: #5d5a52; box-shadow: 0 0 0 2px #17181a; }
+.theme3 .fr-dot.on { background: #5fd07c; box-shadow: 0 0 0 2px #17181a; }
+.theme3 .fr-dot.on.busy { background: #e8b44f; box-shadow: 0 0 0 2px #17181a; }
+.theme3 .fr-tag { font-weight: 700; }
+.theme3 .av { box-shadow: 0 0 0 1px var(--edge), 0 2px 5px rgba(0, 0, 0, .4); }
+.theme3 .av.av-lg { box-shadow: 0 0 0 2px var(--edge-hi), 0 0 0 5px #131415, 0 0 0 6px var(--edge), 0 6px 14px rgba(0, 0, 0, .5); }
+.theme3 .lb-x, .theme3 .news-x {
+  border: 1px solid var(--t3-card-edge); border-radius: 8px; background: var(--t3-card); transition: border-color .12s;
+}
+.theme3 .lb-x:hover { border-color: var(--red); }
+.theme3 .news-x { top: 16px; right: 16px; width: 32px; height: 32px; }
+.theme3 #ui .news-x { color: var(--gold); }
+.theme3 .news-x:hover { border-color: var(--edge-hi); }
+.theme3 .cmention { color: var(--gold-hi); font-weight: 700; border-color: var(--edge); background: rgba(201, 160, 86, .12); border-radius: 6px; }
+.theme3 .mn-pop { padding: 5px; background: var(--t3-plaque); border-color: var(--t3-card-edge); border-radius: 10px; box-shadow: var(--t3-shadow-sm); }
+.theme3 .mn-item b { color: var(--gold-hi); }
+.theme3 .mn-item.on { background: var(--t3-on); }
+.theme3 .mn-claude > .mpinput, .theme3 .mn-claude > .mpinput:focus { border-color: var(--gold); box-shadow: inset 0 2px 6px rgba(0, 0, 0, .5); }
+
+/* ---------- multiplayer screen: menu box + online players + chat ---------- */
+.theme3 .mp-wrap { gap: 18px; }
+.theme3 .mp-wrap > .online-panel, .theme3 .mp-wrap > .gchat {
+  width: 320px; gap: 12px; padding: 20px 18px 18px; border-radius: 9px;
+  border-image: var(--frame-img) 26 fill / 24px stretch; box-shadow: var(--t3-shadow);
+}
+.theme3 .op-head, .theme3 .mp-wrap > .gchat .gc-head { padding: 0 4px; }
+.theme3 .op-title, .theme3 .mp-wrap > .gchat .gc-title {
+  font-family: var(--serif); font-weight: 600; font-size: 22px; line-height: 1.15; letter-spacing: 0; text-transform: none; color: var(--ink);
+}
+.theme3 .op-count { padding: 2px 10px; background: var(--t3-on); border: 1px solid rgba(201, 160, 86, .45); color: var(--gold-hi); font-size: 13px; font-weight: 800; }
+.theme3 .online-panel .mbtn.op-all { padding: 9px 14px; font-size: 17px; }
+.theme3 .op-list { gap: 2px; padding: 6px; font-size: 14px; }
+.theme3 .op-row { padding: 7px 8px; border-radius: 9px; }
+.theme3 .op-row:hover { background: rgba(255, 255, 255, .04); border-color: rgba(201, 160, 86, .4); }
+.theme3 .op-row .fr-name { font-size: 14.5px; }
+.theme3 .op-row .fr-sub { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.theme3 .online-panel .mbtn.small.op-inv, .theme3 .mp-rooms .mbtn.small.op-inv { padding: 6px 12px; font-size: 13px; letter-spacing: 0; border-radius: 9px; }
+.theme3 .op-msg, .theme3 .gc-msg { font-size: 13px; font-weight: 700; }
+.theme3 .op-empty, .theme3 .gc-empty { padding: 12px 8px; font-size: 14px; color: var(--dim); }
+/* open rooms */
+.theme3 .mp-rooms { gap: 8px; margin: 14px 0 6px; padding: 12px 10px 8px; }
+.theme3 .mp-rooms .op-head { padding: 0 6px; }
+.theme3 .mp-rooms .op-list { padding: 0; background: none; border: 0; box-shadow: none; }
+.theme3 .mp-who { gap: 6px 10px; margin-bottom: 14px; }
+.theme3 .mp-who-name { font-family: var(--serif); font-weight: 600; font-size: 20px; }
+.theme3 .mp-who small { font-size: 13px; color: var(--muted); }
+.theme3 .acc-tp, .theme3 .lb-tp { color: var(--gold); font-weight: 800; }
+.theme3 .mpcode { font-family: var(--caps); }
+/* the chat column (same pieces as the main menu's chat) */
+.theme3 .mp-wrap > .gchat .gc-list { gap: 1px; padding: 8px 8px 8px 6px; font-size: 14px; line-height: 1.4; }
+.theme3 .mp-wrap > .gchat .gc-line { position: relative; padding: 3px 4px 3px 46px; border-radius: 7px; }
+.theme3 .mp-wrap > .gchat .gc-time { position: absolute; left: 5px; top: 5px; margin: 0; font-size: 11.5px; color: var(--muted); opacity: 1; }
+.theme3 #ui .gc-name { font-weight: 800; color: var(--gold); }
+.theme3 .gc-name::after { color: inherit; }
+.theme3 .gc-own { background: var(--t3-on); font-weight: 700; }
+.theme3 .mp-wrap > .gchat .gc-rbtn {
+  padding: 5px 12px; font-size: 13px; font-weight: 700; text-decoration: none;
+  border: 1px solid var(--t3-card-edge); border-radius: 9px; background: var(--t3-card); transition: border-color .12s;
+}
+.theme3 .mp-wrap > .gchat .gc-rbtn:hover { border-color: var(--edge-hi); }
+.theme3 #ui .mp-wrap > .gchat .gc-rbtn { color: var(--ink); }
+.theme3 .mp-wrap > .gchat .gc-form { gap: 8px; }
+.theme3 .mp-wrap > .gchat .gc-form .gc-inp { padding: 10px 13px; font-size: 14px; }
+.theme3 .mp-wrap > .gchat .gc-form .mbtn.gc-go { padding: 8px 16px; font-size: 15.5px; }
+
+/* ---------- lobby (also the resume lobby) ---------- */
+/* (these three boxes scroll as a whole: a thicker clear border keeps the scrolled content inside the double line) */
+.theme3 .menu-box.lobby, .theme3 .menu-box.friends, .theme3 .menu-box.profile { border-width: 8px 6px; padding: 19px 25px 17px; }
+.theme3 .menu-box.lobby { width: min(800px, 96vw); }
+.theme3 .lb-hint { font-size: 14px; margin: 8px 0 12px; }
+.theme3 .lb-code span { font-size: 14px; }
+.theme3 .lb-codetxt { font-family: var(--caps); font-weight: 600; color: var(--gold-hi); }
+.theme3 .lb-slots { gap: 7px; }
+.theme3 .lb-slot {
+  padding: 9px 12px; border-radius: 10px; border-color: rgba(160, 130, 78, .4); border-left-color: var(--tt, #888);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tt, #888) 17%, #1b1c1e), #1b1c1e 62%);
+}
+.theme3 .lb-slot.mine { border-color: var(--edge-hi); border-left-color: var(--tt, #888); box-shadow: inset 0 0 0 1px rgba(242, 197, 82, .35); }
+.theme3 .lb-name { font-size: 15.5px; font-weight: 700; }
+.theme3 .lb-name small { font-weight: 600; color: var(--muted); }
+.theme3 .lb-kind { padding: 2px 9px; font-size: 11.5px; font-weight: 800; }
+.theme3 .lb-kind.ai { background: rgba(185, 178, 162, .14); }
+.theme3 .lb-kind.wait { background: var(--t3-on); }
+.theme3 .lb-teamtag, .theme3 .lb-ready { font-size: 13px; font-weight: 700; }
+.theme3 .mpsel { padding: 6px 9px; font-size: 13px; border-radius: 9px; }
+.theme3 .lb-add { gap: 8px; margin: 10px 0; font-size: 14px; }
+.theme3 .lb-map, .theme3 .lb-settings { margin: 12px 0; padding: 14px; }
+.theme3 .lb-settings { gap: 12px 16px; }
+.theme3 .lb-settings .frow > label { font-size: 11.5px; }
+.theme3 .lb-settings .frow .mpsel { padding: 8px 10px; font-size: 13.5px; }
+.theme3 .lb-map .su-name { font-family: var(--serif); font-weight: 600; font-size: 21px; }
+.theme3 .lb-map .su-desc { font-size: 14px; }
+.theme3 .lb-invite { margin: 12px 0; padding: 12px 14px; font-size: 14px; }
+.theme3 .lb-invite-h { margin-bottom: 9px; }
+.theme3 .lb-friend { padding: 4px 5px; }
+.theme3 .lb-friend .mbtn.small { padding: 5px 13px; font-size: 13px; }
+.theme3 .lb-chat { margin: 12px 0; padding: 8px; }
+.theme3 .lb-log { height: 100px; font-size: 14px; line-height: 1.45; padding: 2px 6px 8px; }
+.theme3 .lb-log b { color: var(--gold); font-weight: 800; }
+.theme3 .lb-chat .mpinput { padding: 8px 12px; font-size: 14px; }
+.theme3 .lb-foot { gap: 8px; }
+.theme3 .lb-foot .lb-myname { padding: 9px 12px; }
+.theme3 .lb-foot .mbtn.on { border-color: var(--green); background: linear-gradient(180deg, #1f2a21, #161d18); }
+.theme3 #ui .lb-foot .mbtn.on { color: var(--green); }
+
+/* ---------- friends ---------- */
+.theme3 .menu-box.friends { width: min(700px, 96vw); }
+.theme3 .fr-list { gap: 7px; }
+.theme3 .fr-scroll { max-height: 330px; padding-right: 6px; }
+.theme3 .fr-row { padding: 9px 12px; border-radius: 12px; }
+.theme3 .fr-search { gap: 8px; margin-bottom: 10px; }
+.theme3 .fr-search .mpinput { font-size: 15px; }
+.theme3 .prof-empty { font-size: 14px; }
+
+/* ---------- invite cards (top of the screen, any time) ---------- */
+.theme3 .invites { top: 18px; width: min(450px, calc(100vw - 24px)); }
+.theme3 .invite-card { padding: 16px 18px 14px; border-image-width: 18px; box-shadow: var(--t3-shadow); }
+.theme3 .invite-top { gap: 14px; }
+.theme3 .invite-txt { gap: 1px; font-size: 14.5px; }
+.theme3 .invite-txt b { font-family: var(--serif); font-weight: 600; font-size: 20px; line-height: 1.15; color: var(--ink); }
+.theme3 .invite-txt small { font-size: 12.5px; color: var(--muted); }
+
+/* ---------- profile ---------- */
+.theme3 .menu-box.profile { width: min(820px, 96vw); }
+.theme3 .prof-head { gap: 22px; padding: 18px 20px; border-radius: 14px; }
+.theme3 .prof-avcol { gap: 14px; padding: 6px 4px 0; }
+.theme3 .prof-avcol .mbtn.small { padding: 7px 13px; font-size: 13px; }
+.theme3 .prof-nameform > label { font-size: 11.5px; margin-bottom: 7px; }
+.theme3 .prof-namerow .mpinput { font-size: 16.5px; font-weight: 700; }
+.theme3 .acc-status { padding: 2px 10px; font-size: 12.5px; font-weight: 700; background: rgba(0, 0, 0, .25); }
+.theme3 .prof-tp { gap: 4px 14px; }
+.theme3 .prof-tp b { font-family: var(--serif); font-weight: 600; font-size: 31px; line-height: 1; color: var(--gold-hi); font-variant-numeric: lining-nums tabular-nums; }
+.theme3 .prof-tp span { font-size: 13.5px; }
+.theme3 .prof-tprule, .theme3 .prof-meta { font-size: 13px; color: var(--muted); }
+.theme3 .prof-cards { gap: 10px; margin: 12px 0 6px; }
+.theme3 .prof-card { padding: 12px 14px; border-radius: 12px; }
+.theme3 .prof-card b { font-family: var(--serif); font-weight: 600; font-size: 25px; line-height: 1.1; color: var(--gold-hi); font-variant-numeric: lining-nums tabular-nums; }
+.theme3 .prof-card span { font-size: 13.5px; font-weight: 700; }
+.theme3 .prof-card small { font-size: 12.5px; color: var(--muted); }
+.theme3 .prof-stats { font-size: 14px; }
+.theme3 .prof-stat { padding: 5px 2px; border-bottom-color: rgba(201, 160, 86, .16); }
+.theme3 .prof-stat b { font-weight: 800; }
+.theme3 .prof-item, .theme3 .prof-item:hover { border-left: 3px solid var(--muted); }
+.theme3 .prof-item.res-won, .theme3 .prof-item.res-won:hover { border-left-color: var(--green); }
+.theme3 .prof-item.res-lost, .theme3 .prof-item.res-lost:hover { border-left-color: var(--red); }
+.theme3 .prof-item.open { border-color: rgba(201, 160, 86, .55); background: rgba(255, 255, 255, .03); }
+.theme3 .prof-main { font-size: 14.5px; }
+.theme3 .prof-det { border-top-color: rgba(201, 160, 86, .2); }
+.theme3 .prof-players { font-size: 14px; }
+.theme3 .av-pick:hover { border-color: var(--edge); }
+.theme3 .av-pick.on { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(242, 197, 82, .3); }
+.theme3 #ui .acc-link { color: var(--gold); }
+.theme3 #ui .acc-link:hover { color: var(--gold-hi); }
+.theme3 .storage-blocked { border-color: var(--edge-hi); border-radius: 10px; background: #1b1c1e; font-weight: 700; }
+
+/* ---------- account bits (the login card itself is in the menus section) ---------- */
+.theme3 .acc-or { font-family: var(--caps); color: var(--muted); }
+
+/* ---------- pop-ups over a menu: chat rules, player card, news ---------- */
+.theme3 .gc-ov, .theme3 .news-ov { background: rgba(8, 9, 7, .62); }
+.theme3 .gc-modal, .theme3 .news-modal {
+  padding: 26px 30px 24px; border-radius: 9px; border-image: var(--frame-img) 26 fill / 24px stretch; box-shadow: var(--t3-shadow);
+}
+.theme3 .gc-modal { width: min(480px, 92vw); }
+.theme3 .news-modal { width: min(640px, 92vw); }
+.theme3 .gc-modal h2, .theme3 .news-modal h2 { margin-bottom: 16px; padding-right: 36px; }
+.theme3 .gc-rlist, .theme3 .news-items { font-size: 15px; line-height: 1.5; padding-left: 22px; }
+.theme3 .gc-rlist li, .theme3 .news-items li { margin-bottom: 7px; }
+.theme3 .gc-rlist li::marker, .theme3 .news-items li::marker { color: var(--gold2); }
+.theme3 .gc-rnote { font-size: 13.5px; line-height: 1.45; margin-bottom: 16px; }
+.theme3 .gc-ptop { gap: 16px; margin: 0 0 14px; padding-right: 36px; }
+.theme3 .gc-ptop .av { width: 60px; height: 60px; box-shadow: 0 0 0 2px var(--edge-hi), 0 0 0 4px #131415, 0 0 0 5px var(--edge); }
+.theme3 .gc-pname b { font-family: var(--serif); font-weight: 600; font-size: 25px; line-height: 1.1; }
+.theme3 .gc-pname small { font-family: var(--caps); font-weight: 600; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--gold); }
+.theme3 .gc-pstats { font-size: 14.5px; margin-bottom: 12px; }
+.theme3 .gc-pacts { gap: 10px; margin-top: 14px; }
+.theme3 .news-date { font-size: 12.5px; color: var(--muted); opacity: 1; }
+.theme3 .news-ftitle { margin: 4px 0 12px; font-family: var(--serif); font-weight: 600; font-size: 25px; line-height: 1.2; }
+.theme3 .news-p { font-size: 15.5px; }
+.theme3 .news-img { border-radius: 10px; border: 1px solid var(--t3-card-edge); }
+.theme3 .news-others { gap: 3px; margin-top: 16px; padding-top: 12px; border-top-color: rgba(201, 160, 86, .3); }
+.theme3 .news-olink { padding: 4px 2px; font-size: 14px; }
+.theme3 #ui .news-olink { color: var(--dim); }
+.theme3 #ui .news-olink:hover, .theme3 #ui .news-olink.on { color: var(--gold); }
+
+/* ---------- update notice (frame and title: hud top section; toasts there too; the ask dialog: overlays) ---------- */
+.theme3 .updbanner .ub-s { font-size: 13px; }
+.theme3 .mbtn.int-resume { box-shadow: 0 5px 10px rgba(0, 0, 0, .5); }
+
+/* a 1366x768 class screen: the three columns stay side by side, a little narrower */
+@media (max-width: 1500px) {
+  .theme3 .mp-wrap { gap: 12px; }
+  .theme3 .mp-wrap > .online-panel, .theme3 .mp-wrap > .gchat { width: 280px; padding: 16px 13px 14px; }
+  .theme3 .op-title, .theme3 .mp-wrap > .gchat .gc-title { font-size: 19px; }
+  .theme3 .menu-box.lobby { padding: 13px 17px 11px; }
+}
+@media (max-width: 1100px) { .theme3 .mp-wrap > .online-panel, .theme3 .mp-wrap > .gchat { width: auto; } }
+/* a low screen: the lobby and the profile lose some air so less of them scrolls */
+@media (max-height: 820px) {
+  .theme3 .lb-map, .theme3 .lb-settings, .theme3 .lb-invite, .theme3 .lb-chat { margin: 8px 0; padding: 9px 12px; }
+  .theme3 .lb-log { height: 60px; }
+  .theme3 .prof-head { padding: 12px 16px; }
+  .theme3 .av.av-lg { width: 80px; height: 80px; }
+  .theme3 .prof-cards { gap: 8px; }
+  .theme3 .prof-card { padding: 8px 12px; }
+}
+
+/* ==================== HUD, TOP ====================
+   the top and the edges of the HUD: top bar (age, clock, .tbtn buttons), its attached tabs (objective steps,
+   dev panel), FPS label, quests, scoreboard, net banner, toasts, the update notice, the chat dock, and the bottom-left
+   block (next-age box, minimap frame, resource panel with population). */
+
+/* one gold for every age: the frames are gold, so the per-age accents (blue in Orta Çağ ...) are switched off */
+.theme3 .hud { --gold: #f2c552; --gold2: #b9832a; --line: rgba(201, 160, 86, .45); }
+.theme3 .hud.age-0 .panel { box-shadow: var(--t3-shadow-sm); }
+
+/* ---------- top bar ---------- */
+.theme3 .hud .topbar { padding: 7px 14px; border-top-width: 1px; background: var(--t3-notch); background-origin: border-box; box-shadow: var(--t3-shadow-sm); }
+.theme3 .hud .topbar::before, .theme3 .hud .topbar::after { content: none; }
+.theme3 .topbar .tbrow { gap: 5px; }
+.theme3 .topbar .sep { height: 24px; margin: 0 8px; background: linear-gradient(180deg, transparent, rgba(201, 160, 86, .6), transparent); }
+.theme3 .agebox { min-width: 124px; }
+.theme3 .agebox .n { font-family: var(--caps); font-size: 13.5px; font-weight: 700; letter-spacing: .13em; color: var(--gold-hi); }
+.theme3 .hud[class] .agebox .n::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 9px 2px 0; background: var(--gold); transform: rotate(45deg); }
+.theme3 .agebar { height: 3px; margin-top: 4px; background: rgba(255, 255, 255, .09); }
+.theme3 .agebar i, .theme3 .agepanel .obar i { background: linear-gradient(90deg, #b9832a, #ffe08a); }
+.theme3 .clock { padding: 0 6px; font-size: 15px; font-weight: 700; color: var(--ink); }
+
+/* small square buttons (top bar, idle villagers, town bell): dark card, gold icon */
+.theme3 .tbtn {
+  position: relative; border-radius: 9px;
+  background: var(--t3-card); border: 1px solid var(--t3-card-edge);
+  transition: border-color .12s, background-color .12s;
+}
+.theme3 .tbtn:hover { background: var(--t3-card-hot); border-color: var(--edge-hi); }
+.theme3 .topbar .tbtn { width: 36px; height: 34px; }
+.theme3 .tbtn:active { transform: translateY(1px); }
+.theme3 .topbar .tbtn .gi, .theme3 .respanel .tbtn .gi { fill: var(--gold); }
+.theme3 .tbtn.fsbtn.on, .theme3 .tbtn.on { border-color: var(--gold); background: var(--t3-on); }
+
+/* attached tabs under the bar: plain plaques, no notches (they hang from the bar's edge) */
+.theme3 .hudtop .tbsteps, .theme3 .hudtop .devpanel {
+  margin-top: -2px; border: 1px solid var(--edge); border-top: 0; border-radius: 0 0 10px 10px; border-image: none;
+  background: var(--t3-plaque); box-shadow: var(--t3-shadow-sm);
+}
+.theme3 .hudtop .tbsteps { padding: 6px 16px; font-size: 12.5px; }
+.theme3 .hudtop .tbsteps .cur, .theme3 .agepanel .osteps .cur { color: var(--gold-hi); font-weight: 800; }
+.theme3 .devpanel b { font-family: var(--caps); letter-spacing: .08em; }
+.theme3 .devpanel button { border-color: var(--t3-inset-edge); border-radius: 7px; font-weight: 700; }
+.theme3 .devpanel button.on { background: var(--t3-on); border-color: rgba(201, 160, 86, .6); }
+
+.theme3 .fps { font-weight: 700; color: rgba(244, 238, 223, .55); text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
+
+/* ---------- quests, scoreboard ---------- */
+.theme3 .quests, .theme3 .scoreboard { padding: 10px 14px; }
+.theme3 .quests h4 { font-family: var(--caps); font-size: 12px; letter-spacing: .14em; }
+.theme3 .quest { border-top-color: rgba(201, 160, 86, .16); }
+.theme3 .quest .qt { font-weight: 800; }
+.theme3 .scoreboard { font-size: 13px; }
+.theme3 .sbrow { padding: 3px 0; }
+.theme3 .sbrow.you .sbn { color: var(--gold-hi); font-weight: 800; }
+
+/* ---------- banners ---------- */
+.theme3 .netbanner { padding: 13px 26px; font-family: var(--serif); font-size: 19px; color: var(--ink); box-shadow: var(--t3-shadow); }
+.theme3 .netbanner.desync { color: var(--red); }
+.theme3 .netbanner.desync.sticky { font-family: var(--sans); font-size: 14px; font-weight: 700; padding: 9px 18px; }
+/* ---------- toasts, update notice ---------- */
+.theme3 .toasts { gap: 7px; }
+.theme3 .toast {
+  padding: 9px 14px; font-size: 13.5px; font-weight: 700; color: var(--ink); border-radius: 9px;
+  background: var(--t3-plaque); border: 1px solid var(--t3-card-edge); border-left: 3px solid var(--muted); box-shadow: var(--t3-shadow-sm);
+}
+.theme3 .toast.good { border-left-color: var(--green); }
+.theme3 .toast.warn { border-left-color: var(--red); }
+.theme3 .toast.info { border-left-color: var(--gold); }
+.theme3 .updbanner { gap: 16px; padding: 12px 18px; box-shadow: var(--t3-shadow); }
+.theme3 .updbanner .ub-t { font-family: var(--serif); font-weight: 600; font-size: 19px; line-height: 1.15; color: var(--gold-hi); }
+.theme3 .updbanner.ready .ub-t { color: var(--green); }
+
+/* ---------- chat dock ---------- */
+.theme3 .chatdock { border-radius: 3px; transition: none; }
+.theme3 .chatdock.open {
+  background: var(--t3-notch); background-origin: border-box; border-color: transparent; border-image: var(--frame-sm-img) 16 fill / 16px stretch;
+  -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: var(--t3-shadow-sm);
+}
+/* the emoji glyphs are swapped for gold icons (font-size 0 hides the glyph; the badge sets its own size) */
+.theme3 .chattoggle, .theme3 .chatshot {
+  font-size: 0; border-radius: 9px; border: 1px solid var(--t3-card-edge);
+  background: #1c1d1f url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23f2c552' fill-rule='evenodd' d='M12 3C6.5 3 2 6.6 2 11c0 2.3 1.2 4.3 3.1 5.8L4 21l4.6-2.4c1.1.3 2.2.4 3.4.4 5.5 0 10-3.6 10-8s-4.5-8-10-8Zm-4.5 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm4.5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm4.5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z'/%3E%3C/svg%3E") center / 18px no-repeat;
+}
+.theme3 .chattoggle { width: 36px; height: 34px; box-shadow: 0 2px 6px rgba(0, 0, 0, .45); }
+.theme3 .chattoggle:hover, .theme3 .chatshot:hover { border-color: var(--edge-hi); }
+.theme3 .chatshot {
+  width: 42px; padding: 0; opacity: .6; filter: none; border-radius: 11px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23f2c552' fill-rule='evenodd' d='M9 4 7.2 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.2L15 4H9Zm3 13a4 4 0 1 1 0-8 4 4 0 0 1 0 8Z'/%3E%3C/svg%3E");
+}
+.theme3 .chatshot.on { opacity: 1; border-color: var(--gold); background-color: #3a3220; }
+.theme3 .chatbadge { font-weight: 800; }
+.theme3 .chattitle { font-weight: 700; }
+.theme3 .cl { border-radius: 9px; background: rgba(19, 20, 21, .74); color: var(--ink); text-shadow: 0 1px 2px #000; }
+.theme3 .cl .cn { font-weight: 800; }
+.theme3 .cl.sys { color: #cfc8b6; }
+.theme3 .cl.new { animation-name: t3chat; }
+@keyframes t3chat { 0% { background: rgba(242, 197, 82, .5); } 100% { background: rgba(19, 20, 21, .74); } }
+.theme3 .chatdock.open .chathead { padding: 8px 10px 2px; }
+.theme3 .chatdock.open .chatfeed { margin: 0 8px; padding: 6px 10px; border: 1px solid var(--t3-inset-edge); border-radius: 10px; background: var(--t3-inset-bg); }
+.theme3 .chatdock.open .cl { background: none; }
+.theme3 .chatdock.open .cl.new { animation: none; }
+.theme3 .chatdock.open .chatin { padding: 4px 8px 10px; }
+.theme3 .chatin .mpinput { font-size: 15px; }
+
+/* ---------- bottom-left block: next age, minimap, resources ---------- */
+.theme3 .agepanel { padding: 9px 10px 10px 15px; border-top-width: 1px; }
+.theme3 .agepanel .ot { font-family: var(--caps); font-size: 12.5px; font-weight: 700; letter-spacing: .1em; color: var(--gold-hi); }
+.theme3 .agepanel .acost { font-weight: 800; }
+.theme3 .agepanel .obar { height: 5px; background: rgba(255, 255, 255, .09); }
+.theme3 .agebtn { position: relative; border-radius: 10px; border: 1px solid var(--t3-card-edge); background: var(--t3-card); transition: border-color .12s; }
+.theme3 .agebtn .gi { fill: var(--gold); filter: none; }
+.theme3 .agebtn:hover { border-color: var(--edge-hi); background: var(--t3-card-hot); }
+.theme3 .agebtn.off, .theme3 .agebtn.aging { filter: none; opacity: .4; }
+/* ready to age up: the gold button of the menus */
+.theme3 .agebtn.ready, .theme3 .agebtn.ready:hover { border: 1px solid transparent; border-radius: 5px; background: none; border-image: var(--gold-img) 26 fill / 12px stretch; }
+.theme3 .agebtn.ready:hover { border-image-source: var(--gold-hot-img); }
+.theme3 .agebtn.ready .gi { fill: var(--t3-gold-ink); }
+
+/* "look here" (idle villagers, town bell rung, age ready): one opacity-only ring instead of the shadow pulse */
+.theme3 .tbtn.idlebtn.has, .theme3 .respanel .tbtn.bellbtn.on, .theme3 .agebtn.ready { animation: none; box-shadow: none; }
+.theme3 .tbtn.idlebtn.has, .theme3 .respanel .tbtn.bellbtn.on { border-color: var(--gold); background: var(--t3-on); }
+.theme3 .tbtn.idlebtn.has::after, .theme3 .tbtn.bellbtn.on::after, .theme3 .agebtn.ready::after {
+  content: ""; position: absolute; inset: -4px; border: 2px solid var(--gold); border-radius: 12px; pointer-events: none;
+  animation: t3ring 1.4s ease-in-out infinite;
+}
+@keyframes t3ring { 0%, 100% { opacity: 0; } 50% { opacity: .55; } }
+
+.theme3 .minimap { border-image-width: 12px; }
+.theme3 .minimap canvas { border-radius: 6px; }
+
+.theme3 .respanel { padding: 7px 8px 5px; }
+.theme3 .respanel .rtop { gap: 5px; padding-bottom: 7px; border-bottom-color: rgba(201, 160, 86, .3); }
+.theme3 .respanel .tbtn.idlebtn { padding: 0 6px; gap: 2px; border-radius: 8px; }
+.theme3 .respanel .tbtn.idlebtn b { font-weight: 800; }
+.theme3 .respanel .tbtn.bellbtn { border-radius: 8px; }
+.theme3 .respanel .rtop .res.pop { padding: 0 1px; gap: 3px; font-size: 13px; font-weight: 800; letter-spacing: -.2px; }
+.theme3 .respanel .res.pop .gi { width: 15px; height: 15px; fill: var(--gold); }
+.theme3 .res { font-weight: 800; }
+.theme3 .respanel > .res { font-size: 16px; }
+.theme3 .respanel > .res + .res { border-top: 1px solid rgba(201, 160, 86, .13); border-radius: 0; }
+.theme3 .res .rate { font-weight: 700; color: var(--green); }
+.theme3 .res .wk { font-weight: 700; }
+
+/* ==================== HUD, BOTTOM ====================
+   the bottom of the HUD: selection panel (.selpanel, .portrait, .multi), command card (.card, .cmd),
+   queue, control groups, tooltip rows, place hint. The frames come from the shared .panel rule; here only the insides.
+   (The minimap frame, the resource panel and the chat dock are in the hud top section.) Nothing that redraws every frame
+   (hp bars, queue bars, counters) has a shadow, a filter or an animation: flat fills only. */
+
+/* (the hud top section pins one gold for every age on .hud; the tooltip carries its own .age-N class, so it is pinned here) */
+.theme3 .tooltip { --gold: #f2c552; --gold2: #b9832a; --line: rgba(201, 160, 86, .45); }
+/* ---------- selection panel ---------- */
+.theme3 .portrait {
+  border-radius: 12px; border: 1px solid rgba(201, 160, 86, .6);
+  background: radial-gradient(circle at 50% 32%, #2e2c26, #131415 78%);
+}
+.theme3 .portrait .gi, .theme3 .qi .gi, .theme3 .mu .gi, .theme3 .mg .gi, .theme3 .selpanel .stats .gi { fill: var(--gold); }
+.theme3 .selname { font-family: var(--serif); font-size: 21px; font-weight: 600; line-height: 1.1; letter-spacing: 0; color: var(--ink); }
+.theme3 .selname small { margin-left: 9px; font-family: var(--caps); font-size: 10.5px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+.theme3 .hpbar { box-sizing: border-box; height: 11px; border: 1px solid rgba(201, 160, 86, .4); border-radius: 6px; background: #0e0f10; }
+.theme3 .hpbar i { background: linear-gradient(180deg, #9be08f, #4fae5c); }
+.theme3 .hpbar.mid i { background: linear-gradient(180deg, #ffdc7a, #d99a26); }
+.theme3 .hpbar.low i { background: linear-gradient(180deg, #ff8f80, #c8402f); }
+.theme3 .hpbar.mbqbar i { background: linear-gradient(180deg, #ffe08a, #d99a26); }
+.theme3 .hptxt { font-size: 11.5px; font-weight: 700; }
+.theme3 .selpanel .stats { color: var(--ink); font-weight: 700; }
+.theme3 .selpanel .stats span b { color: var(--gold-hi); font-weight: 800; }
+.theme3 .seldesc { color: var(--dim); }
+.theme3 .seldesc.bfx { color: var(--ink); border-left-color: var(--gold2); }
+
+/* queue, multi-selection */
+.theme3 .qi { border-radius: 9px; border-color: rgba(201, 160, 86, .5); background: var(--t3-inset-bg); }
+.theme3 .qi:hover { border-color: var(--red); }
+.theme3 .qi.qmore { font-weight: 800; color: var(--gold-hi); }
+.theme3 .mu { border-radius: 8px; border-color: var(--t3-card-edge); background: var(--t3-inset-bg); }
+.theme3 .mu:hover { border-color: var(--gold); }
+.theme3 .mu i { background: #6fcf7c; }
+.theme3 .mgrp > b { font-family: var(--serif); font-size: 17px; font-weight: 600; margin-right: 6px; }
+.theme3 .mg { border-radius: 13px; border-color: var(--t3-card-edge); background: var(--t3-card); }
+.theme3 .mg:hover { border-color: var(--edge-hi); background: var(--t3-card-hot); }
+.theme3 .mg b { font-weight: 800; }
+
+/* ---------- command card ---------- */
+.theme3 .cmd {
+  border-radius: 10px; border: 1px solid var(--t3-card-edge); background: var(--t3-card);
+  transition: border-color .1s, transform .1s;
+}
+.theme3 .cmd:hover { border-color: var(--edge-hi); background: var(--t3-card-hot); }
+.theme3 .cmd > span:first-child .gi { fill: var(--gold); filter: none; }
+.theme3 .cmd .hk { top: 3px; left: 5px; font-weight: 800; color: var(--ink); opacity: .8; }
+.theme3 .cmd .lbl { font-weight: 700; }
+.theme3 .cmd .back, .theme3 .cmd .bart em { color: var(--gold); }
+.theme3 .cmd.off { filter: none; opacity: .4; border-color: rgba(255, 255, 255, .1); }
+.theme3 .cmd.off > span:first-child .gi { fill: #a39d8e; }
+.theme3 .cmd-empty { border-radius: 10px; border: 1px solid rgba(255, 255, 255, .04); background: rgba(0, 0, 0, .16); }
+/* the stance in use: the gold button of the menus */
+.theme3 .cmd.active {
+  border-color: var(--t3-gold-edge) !important; background: var(--t3-gold-bg) !important;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 243, 196, .45);
+}
+.theme3 .cmd.active > span:first-child .gi { fill: var(--t3-gold-ink); }
+.theme3 .cmd.active .hk, .theme3 .cmd.active .lbl { color: var(--t3-gold-ink); opacity: 1; }
+.theme3 .cmd.active::after { content: ""; right: 6px; bottom: 7px; width: 9px; height: 4px; border: solid var(--t3-gold-ink); border-width: 0 0 2px 2px; transform: rotate(-45deg); }
+
+/* ---------- control groups ---------- */
+.theme3 #ui .grp { border-radius: 9px; border-color: var(--t3-card-edge); background: var(--t3-card); }
+.theme3 #ui .grp i { font-family: var(--caps); font-weight: 700; color: var(--gold); }
+.theme3 #ui .grp b { font-weight: 800; }
+.theme3 #ui .grp .gic .gi { fill: var(--gold); }
+.theme3 #ui .grp .gplus { color: rgba(244, 238, 223, .3); }
+.theme3 #ui .grp:hover { border-color: var(--edge-hi); background: var(--t3-card-hot); }
+.theme3 #ui .grp.act { border-color: var(--gold); background: linear-gradient(180deg, #3b321f, #231d12); box-shadow: inset 0 0 0 1px var(--gold); }
+
+/* ---------- tooltip rows, place hint ---------- */
+.theme3 .tooltip .tn:not(:last-child) { padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid rgba(201, 160, 86, .28); }
+.theme3 .tooltip .tn kbd { align-self: center; font-family: var(--sans); font-size: 11px; line-height: 17px; }
+.theme3 .tooltip .tc { font-weight: 800; color: var(--ink); }
+.theme3 .tooltip .td { line-height: 1.45; }
+.theme3 .tooltip .tr { font-weight: 700; }
+.theme3 .placehint { padding: 9px 18px; font-size: 13.5px; border-image-width: 14px; }
+.theme3 .placehint b { font-family: var(--serif); font-size: 17px; font-weight: 600; color: var(--gold-hi); }
+.theme3 .placehint .gi { fill: var(--gold); }
+.theme3 .placehint .tc { font-weight: 800; }
+.theme3 .place-cancel, .theme3 .touch-drop.cancel { border-color: rgba(255, 107, 94, .6); }
+.theme3 #ui .place-cancel { color: #ffd9d4; }
+
+/* ==================== OVERLAYS ====================
+   what opens over a game: pause menu, tech tree (.techmodal), age up (.ageup), tribute, stats /
+   graphs, game over, the ask dialog (.askbox), the feedback box, the tutorial UI. */
+
+/* the HUD's age classes (.age-0 .. .age-4) recolour --gold / --line; windows over the game stay gold */
+.theme3 .overlay, .theme3 .ageup, .theme3 .tut-story { --gold: #f2c552; --gold2: #b9832a; --line: rgba(201, 160, 86, .45); }
+
+/* ---------- the window ---------- */
+/* a thicker clear border keeps scrolled content and the scrollbar inside the double line (paddings give it back) */
+.theme3 .overlay > .modal { border-width: 8px 6px; padding: 19px 25px; font-size: 14px; }
+.theme3 .overlay > .modal.techmodal { padding: 14px 18px; }
+.theme3 .overlay > .modal.askbox { padding: 16px 20px 10px; }
+.theme3 .overlay .mbtn.primary { font-variant-numeric: lining-nums; }
+.theme3 .overlay > .modal > .mbtn.small { margin: 8px 5px 2px; min-width: 132px; }
+.theme3 .overlay .gi { vertical-align: -0.16em; }
+.theme3 .modal h2 .gi { fill: var(--gold); margin-right: 4px; }
+
+/* ---------- pause menu ---------- */
+.theme3 .pause-info { margin: -4px 0 12px; font-size: 13.5px; }
+.theme3 .modal.t3-pause > .mbtn { margin: 8px 0; }
+/* the settings rows sit in an inset box (the only unnamed div of the pause window) */
+.theme3 .modal.t3-pause > .t3-set {
+  padding: 4px 14px; border: 1px solid var(--t3-inset-edge); border-radius: 12px;
+  background: var(--t3-inset-bg); box-shadow: var(--t3-inset-shadow);
+}
+.theme3 .modal.t3-pause .frow { margin: 9px 0; }
+
+/* ---------- game over, stats ---------- */
+.theme3 .modal h1 {
+  margin: 2px 0 10px; padding-left: .22em;
+  font-family: var(--caps); font-weight: 600; font-size: 50px; line-height: 1.15; letter-spacing: .22em; text-shadow: none;
+}
+.theme3 .modal h1::after { content: ""; display: block; height: 1px; margin: 8px auto 0; max-width: 380px; background: var(--t3-rule); }
+.theme3 .modal h1.win {
+  background: linear-gradient(180deg, #fff0bf 0%, #f0c765 48%, #b98836 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.theme3 .modal h1.lose { color: #d8695d; }
+.theme3 .overlay > .modal > table.st {
+  margin: 14px 0; font-size: 13.5px; border-collapse: separate; border-spacing: 0;
+  border: 1px solid var(--t3-inset-edge); border-radius: 12px; background: var(--t3-inset-bg); box-shadow: var(--t3-inset-shadow);
+}
+.theme3 .overlay > .modal > table.st th, .theme3 .overlay > .modal > table.st td { padding: 6px 14px; }
+.theme3 .overlay > .modal > table.st th { padding-top: 10px; padding-bottom: 8px; border-bottom-color: rgba(201, 160, 86, .4); }
+.theme3 .overlay > .modal > table.st td { font-weight: 700; }
+.theme3 .overlay > .modal > table.st td:first-child { font-weight: 600; }
+.theme3 .overlay > .modal > table.st tr:last-child td { border-bottom: 0; }
+.theme3 table.st th small { font-family: var(--sans); color: var(--muted); letter-spacing: 0; }
+
+/* graphs */
+.theme3 .hgraph { margin: 12px 0 6px; }
+.theme3 .hgraph .seg { margin-bottom: 8px; }
+.theme3 .hg-plot svg { background: var(--t3-inset-bg); border: 1px solid var(--t3-inset-edge); border-radius: 12px; }
+.theme3 .hg-grid { stroke: rgba(201, 160, 86, .14); }
+.theme3 .hg-ax { fill: var(--muted); font-weight: 700; }
+.theme3 .hg-leg { justify-content: center; gap: 8px; margin-top: 8px; }
+.theme3 .hg-chip { padding: 4px 11px; font-size: 12.5px; font-weight: 700; border: 1px solid var(--t3-card-edge); border-radius: 9px; background: var(--t3-card); transition: border-color .12s; }
+.theme3 .hg-chip:hover { border-color: var(--edge-hi); }
+
+/* ---------- tech tree ---------- */
+.theme3 .techhead { margin: -4px 0 12px; font-size: 13.5px; }
+.theme3 .techhead b { color: var(--gold-hi); }
+.theme3 .tga {
+  padding: 7px 4px 6px; font-family: var(--caps); font-weight: 600; font-size: 13px; letter-spacing: .08em; color: var(--dim);
+  border: 1px solid var(--t3-card-edge); border-radius: 10px; background: var(--t3-card);
+}
+.theme3 .tga small { font-size: 9.5px; letter-spacing: .16em; color: var(--muted); }
+.theme3 .tga.cur { color: var(--gold-hi); border-color: var(--gold); background: linear-gradient(180deg, #3a301a, #241e12); }
+.theme3 .tga.cur small { color: var(--gold); }
+.theme3 .tga.fut { opacity: .5; }
+.theme3 .tga .gi { fill: var(--muted); }
+.theme3 .tgl { font-family: var(--caps); font-weight: 600; font-size: 11px; letter-spacing: .1em; border-right-color: rgba(201, 160, 86, .3); }
+.theme3 .tgl .gi { fill: var(--gold); }
+.theme3 .tgcell { border-bottom-color: rgba(201, 160, 86, .16); }
+.theme3 .tech {
+  padding: 5px 8px; border: 1px solid rgba(255, 255, 255, .09); border-radius: 10px; background: var(--t3-card);
+  transition: border-color .12s, transform .12s;
+}
+.theme3 .tech .ti .gi { fill: #cfc6b0; }
+.theme3 .tech .tnm { font-size: 13px; font-weight: 700; }
+.theme3 .tech .tcs { color: #cfc8b8; font-weight: 700; }
+.theme3 .tech .tst { font-weight: 600; }
+.theme3 .tech.ok { border-color: var(--edge-hi); background: linear-gradient(180deg, #3a301a, #241e12); }
+.theme3 .tech.ok .ti .gi { fill: var(--gold); }
+.theme3 .tech.ok .tst { color: var(--gold-hi); }
+.theme3 .tech.ok:hover { border-color: var(--gold-hi); background: linear-gradient(180deg, #46391d, #2b2314); box-shadow: none; }
+.theme3 .tech.ok.poor { border-color: var(--t3-card-edge); background: var(--t3-card); }
+.theme3 .tech.ok.poor .ti .gi { fill: #cfc6b0; }
+.theme3 .tech.ok.poor .tst { color: var(--red); }
+.theme3 .tech.done { border-color: rgba(134, 213, 143, .5); background: linear-gradient(180deg, #1f2b22, #161d18); }
+.theme3 .tech.done .ti .gi { fill: var(--green); }
+.theme3 .tech.prog { border-color: rgba(150, 182, 216, .65); background: linear-gradient(180deg, #212a34, #171c22); }
+.theme3 .tech.prog .tst { color: #a9c6e6; }
+.theme3 .tech.lockAge, .theme3 .tech.noBld, .theme3 .tech.orphan { opacity: .55; }
+.theme3 .techlegend { margin: 14px 0 6px; font-size: 12px; font-weight: 700; }
+.theme3 .techlegend .lg.ok { color: var(--gold-hi); }
+.theme3 .techlegend .lg.prog { color: #a9c6e6; }
+
+/* ---------- tribute ---------- */
+.theme3 .overlay > .modal.tribute { width: min(664px, 94vw); }
+.theme3 .tribute .tsub { margin: -4px 0 14px; font-size: 13.5px; }
+.theme3 .tribute .trow { gap: 7px; margin: 12px 0; }
+.theme3 .tribute .tlbl { width: 70px; font-family: var(--caps); font-weight: 600; font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); }
+.theme3 .tribute .tchip {
+  padding: 7px 12px; font-size: 13.5px; font-weight: 700;
+  border: 1px solid var(--t3-card-edge); border-radius: 10px; background: var(--t3-card);
+  transition: border-color .12s;
+}
+.theme3 .tribute .tchip:hover { border-color: var(--edge-hi); }
+.theme3 .tribute .tchip.on { border-color: var(--gold); background: linear-gradient(180deg, #3a301a, #241e12); }
+.theme3 #ui .tribute .tchip.on { color: var(--gold-hi); }
+.theme3 .tribute .tchip small { font-size: 11.5px; font-weight: 600; color: var(--dim); }
+.theme3 .tribute .mbtn.small { margin: 0 4px 0 0; min-width: 0; }
+.theme3 #ui .tribute .mbtn.primary { font-family: var(--sans); font-size: 14px; font-weight: 800; text-shadow: none; }
+.theme3 .tribute .mbtn.primary .gi { fill: var(--t3-gold-ink); }
+.theme3 .tribute > .mbtn.small:last-child { margin: 16px auto 0; min-width: 132px; }
+
+/* ---------- ask dialog, feedback box ---------- */
+.theme3 .overlay.askov { background: var(--t3-veil); }
+.theme3 .asktext { font-size: 15px; line-height: 1.5; margin: 0 0 12px; }
+.theme3 .askbtns { gap: 10px; }
+.theme3 .askbtns .mbtn.small { min-width: 132px; }
+.theme3 .fbta { margin: 8px 0 6px; font-size: 14px; }
+.theme3 .fbnote { font-size: 12.5px; font-weight: 700; }
+
+/* ---------- age up ---------- */
+.theme3 .ageup { background: radial-gradient(ellipse at center, rgba(34, 26, 10, .74), rgba(6, 7, 5, .9)); }
+.theme3 .ageup::before, .theme3 .ageup::after { background: #0b0c0a; }
+.theme3 .ageup .lab { font-family: var(--caps); font-weight: 600; font-size: 15px; letter-spacing: .5em; color: var(--gold); }
+.theme3 .ageup .big {
+  font-family: var(--caps); font-weight: 600; line-height: 1.2;
+  background-image: linear-gradient(180deg, #fff0bf 0%, #f0c765 48%, #b98836 100%);
+  filter: drop-shadow(0 4px 14px rgba(0, 0, 0, .7));
+}
+.theme3 .ageup .big::after { content: ""; display: block; height: 1px; margin: 4px auto 0; width: min(520px, 70vw); background: var(--t3-rule); }
+.theme3 .ageup li { font-size: 15.5px; color: var(--ink); }
+.theme3 .aul { font-family: var(--caps); font-weight: 600; font-size: 12px; letter-spacing: .3em; }
+.theme3 .auit { width: 84px; padding: 7px 4px 6px; border: 1px solid var(--t3-card-edge); border-radius: 10px; background: #1b1c1e; }
+.theme3 .auit .gi { fill: var(--gold); }
+.theme3 .auit em { font-size: 11px; font-weight: 700; color: var(--ink); }
+.theme3 .aumore { font-weight: 700; }
+.theme3 .auskip { font-family: var(--caps); font-weight: 600; letter-spacing: .3em; opacity: .75; }
+@media (max-height: 800px) {
+  .theme3 .auit { width: 70px; padding: 4px 2px; }
+  .theme3 .auit em { font-size: 10px; }
+}
+
+/* ---------- tutorial ---------- */
+.theme3 .tut-story { width: 380px; padding: 13px 18px 8px; font-size: 14.5px; line-height: 1.45; }
+.theme3 .tut-story h4 { margin: 0 0 7px; padding-bottom: 6px; font-family: var(--caps); font-size: 12px; letter-spacing: .16em; border-bottom: 1px solid rgba(201, 160, 86, .3); }
+.theme3 .tut-story .th { font-size: 13.5px; color: var(--ink); }
+.theme3 .tut-story .tp { font-size: 12px; font-weight: 700; }
+.theme3 .tut-story .mbtn.small { margin: 8px 0 4px; min-width: 96px; }
+.theme3 .tut-hl { outline-color: #f2c552; }
+@media (max-height: 800px) {
+  .theme3 .overlay > .modal > table.st th, .theme3 .overlay > .modal > table.st td { padding-top: 4px; padding-bottom: 4px; }
+  .theme3 .modal h1 { font-size: 40px; margin-bottom: 6px; }
+}
+
+/* ---------- stats / game over: the buttons sit under the table, above the graph (hook class t3-over, ui.js), so
+   they are in view without scrolling ---------- */
+.theme3 .modal.t3-over { display: flex; flex-wrap: wrap; justify-content: center; align-content: flex-start; }
+.theme3 .modal.t3-over > * { flex: 0 0 100%; min-width: 0; }
+.theme3 .modal.t3-over > .mbtn { flex: 0 0 auto; order: 1; margin: 2px 5px 6px; }
+.theme3 .modal.t3-over > .hgraph { order: 2; }
