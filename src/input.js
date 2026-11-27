@@ -800,7 +800,7 @@ export class Input {
 
   // the next idle villager; all: every idle villager at once (Shift), the camera on the one nearest the middle of them
   nextIdleVillager(all = false) {
-    const idle = this.game.unitsOf(this.me()).filter(u => u.type === 'villager' && u.state === 'idle' && !u.dead && !u.aboard && !u.garrisoned && !u.sheltered);
+    const idle = this.game.unitsOf(this.me()).filter(u => u.type === 'villager' && u.state === 'idle' && !u.dead && !u.aboard && !u.garrisoned && !u.sheltered).sort((a, b) => a.id - b.id);
     if (!idle.length) {
       this.game.events.emit('notify', { text: tr('Boşta köylü yok.'), type: 'info' });
       return;

@@ -214,9 +214,10 @@ export class UI {
     // resources: idle villagers + population on top, then one row per resource (amount, income / min, workers)
     this.resPanel = el('div', 'respanel panel');
     const rtop = el('div', 'rtop');
-    this.idleEl = el('button', 'tbtn idlebtn', ico('u-villager') + '<b>0</b>');
+    this.idleEl = el('button', 'tbtn idlebtn hidden', ico('u-villager') + '<b>0</b>');
+    this.idleEl.type = 'button';
     this._idleBEl = this.idleEl.querySelector('b');
-    this.idleEl.onclick = (ev) => { this._click(); safe(() => this.app.input?.nextIdleVillager(!!ev?.shiftKey)); };
+    this.idleEl.onclick = (ev) => { this._click(); safe(() => this.app.input?.nextIdleVillager(!!ev?.shiftKey)); this.slowT = -99; };
     this._tip(this.idleEl, () => ({ name: tr('Boşta köylüler'), desc: tr('Sıradaki boşta köylüyü seç ve ona git. Kısayol: Tab veya nokta (.). Shift ile: tüm boştaki köylüleri seç.') }));
     this.bellBtn = el('button', 'tbtn bellbtn', BELL_ICO);
     this.bellBtn.onclick = () => { this._click(); safe(() => this.game?.cmdTownBell?.(this._me())); };
@@ -719,6 +720,7 @@ export class UI {
     this.lastRes = {}; this.pings = []; this.questDoneAt = new Map(); this.gameOverShown = false;
     this.hintAt = {}; this.rateSamples = []; this.slowT = -99; this.orphanSince = new Map(); this.objSig = null;
     this.mmTerrain = null; this.mmFog = null; this.mmFogVer = -1;
+    if (this.idleEl) { this.idleEl.classList.add('hidden'); this.idleEl.classList.remove('has'); }
     this.toastsEl.innerHTML = ''; this._closeModal(true);
     this._applySettings();
     const ev = game?.events; if (!ev) return;
@@ -919,7 +921,7 @@ export class UI {
     let idle = 0; const building = new Set();
     for (const u of units) {
       if (u.dead || u.type !== 'villager') continue;
-      if (u.state === 'idle' && !u.sheltered) idle++;
+      if (u.state === 'idle' && !u.sheltered && !u.aboard && !u.garrisoned) idle++;
       if (u.order && u.order.type === 'build') building.add(u.order.targetId);
       if (u.state === 'build' && u.order && u.order.targetId != null) building.add(u.order.targetId);
     }
@@ -937,6 +939,7 @@ export class UI {
       const h = wk[r] ? ico('u-villager') + wk[r] : '';
       if (n._h !== h) { n._h = h; n.innerHTML = h; }
     }
+    this.idleEl.classList.toggle('hidden', idle === 0);
     this.idleEl.classList.toggle('has', idle > 0);
     if (this.bellBtn) this.bellBtn.classList.toggle('on', !!p.bell);
     const demo = !!this.app.demo;
