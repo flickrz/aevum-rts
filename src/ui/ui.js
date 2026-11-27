@@ -1248,7 +1248,7 @@ export class UI {
       // stone and gold mines never run out (src/sim/game.js): no misleading "350 / 350"
       const endless = e.kind === 'resource' && (e.type === 'stone' || e.type === 'gold');
       if (ht) {
-        const txt = fog ? tr('Sisin içinde') : endless ? `∞ ${tr('Sınırsız {0}', RES_NAME[NATURE[e.type]?.res] || '')}` : e.kind === 'resource' ? `${Math.ceil(e.amount)} /${Math.ceil(e.maxAmount || e.amount)} ${RES_NAME[NATURE[e.type]?.res] || ''}` : tr('{0} / {1} can', Math.ceil(e.hp), Math.ceil(e.maxHp));
+        const txt = fog ? tr('Sisin içinde') : endless ? `∞ ${tr('Sınırsız {0}', RES_NAME[NATURE[e.type]?.res] || '')}` : e.kind === 'resource' ? `${Math.ceil(e.amount)} / ${Math.ceil(e.maxAmount || e.amount)} ${RES_NAME[NATURE[e.type]?.res] || ''}` : tr('{0} / {1} can', Math.ceil(e.hp), Math.ceil(e.maxHp));
         if (ht.textContent !== txt) ht.textContent = txt;
       }
       const st = this._selStats;
@@ -1299,6 +1299,9 @@ export class UI {
       // (owner 2026-11-20) at most MINE_CAP villagers on one deposit
       const n = safe(() => this.game.mineLoad(this.game._depOf(e), this._me()), 0);
       s.push(`<span>${ico('u-villager')} ${tr('<b>{0}/{1}</b> işçin bu maden öbeğinde', n, MINE_CAP)}</span>`);
+    } else if (e.kind === 'resource' && (e.type === 'deer' || e.type === 'wolf' || e.type === 'bear')) {
+      const status = e.live ? tr('Vahşi') : e.alive ? tr('Avlanabilir') : tr('Avlandı');
+      s.push(`<span>${RES_ICON.food} <b>${Math.ceil(e.amount)}</b> ${RES_NAME.food}</span>`, `<span>${tr('Durum')}: <b>${status}</b></span>`);
     }
     return s.join('');
   }

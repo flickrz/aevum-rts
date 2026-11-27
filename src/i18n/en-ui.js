@@ -480,4 +480,7 @@ export default {
   "Şehir Merkezine Git": "Jump to Town Center",
   "Kamerayı Şehir Merkezine götür; tekrar basınca diğer Şehir Merkezleri arasında geçiş yapar. Kısayol: H / Home": "Jump the camera to your Town Center; press again to cycle through your Town Centers. Shortcut: H / Home",
   "Herkese yaz… (@claude: hata / öneri)": "Write to everyone… (@claude: bug / idea)",
+  "Vahşi": "Wild",
+  "Avlanabilir": "Huntable",
+  "Avlandı": "Hunted",
 };

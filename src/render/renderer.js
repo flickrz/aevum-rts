@@ -1228,7 +1228,17 @@ export class Renderer {
       } catch (err) { /* ignore */ }
     }
     const p = this.screenToGround(clientX, clientY);
-    if (!p || !this.game.resourceNear) return null;
+    if (!p) return null;
+    if (this.game.deer) {
+      let best = null, bd = 1.4 * 1.4;
+      for (const a of this.game.deer) {
+        if (a.dead || !this.game.isEntityVisible(a)) continue;
+        const d = (a.x - p.x) * (a.x - p.x) + (a.z - p.z) * (a.z - p.z);
+        if (d <= bd) { bd = d; best = a; }
+      }
+      if (best) return best.id;
+    }
+    if (!this.game.resourceNear) return null;
     const r = this.game.resourceNear(p.x, p.z, 1.4);
     if (r && r.type === 'tree' && !r.dead && this._fogAt(r.x, r.z) > 0) return r.id;
     return null;
