@@ -1585,47 +1585,60 @@ export class Game {
     }
     return false;
   }
+  // true when tile (x, z) has been explored by owner's team (sim-side team grid, deterministic, never view fog)
+  _isExplored(owner, x, z) {
+    if (this.cfg.fog === 'explored') return true;
+    const g = this._tv && this._tv.get(this.teamOf(owner));
+    if (!g) return false;
+    const N = this.map.size, tx = Math.min(N - 1, Math.max(0, x | 0)), tz = Math.min(N - 1, Math.max(0, z | 0));
+    return g[tz * N + tx] > 0;
+  }
   // Where a freshly trained villager (or fishboat) should work when the rally flag sits on a resource / farm / pasture.
-  // If that target's slots are full, redirects to the nearest same-type resource with room instead of idling.
+  // If that target's slots are full, redirects only to an explored same-type resource with room within REDIRECT_R tiles;
+  // otherwise returns null so the villager walks to the rally point and waits near the target.
   _rallyWork(b) {
+    const REDIRECT_R = 16;
     const ra = b.rally; if (!ra) return null;
     const t = ra.tid != null ? this.entities.get(ra.tid) : null;
     if (t && !t.dead && t.kind === 'building') {
       if (t.type === 'farm' || t.type === 'pasture') {
         const cap = t.type === 'farm' ? FARM_SLOTS : 6;
         if (this._resWorkers(t.id, b.owner) < cap) return t;
-        let best = null, bd = 1e9;
+        let best = null, bd = REDIRECT_R;
         for (const o of this.buildings) {
           if (o === t || o.dead || !o.done || o.owner !== b.owner || o.type !== t.type) continue;
           if (this._resWorkers(o.id, b.owner) >= cap) continue;
-          const d = dhypot(o.x - t.x, o.z - t.z); if (d < bd) { bd = d; best = o; }
+          const d = dhypot(o.x - t.x, o.z - t.z); if (d <= bd) { bd = d; best = o; }
         }
         return best;
       }
-      // flag on a drop-off camp (lumber camp, mining camp, mill): work the nearest matching free resource around it
+      // flag on a drop-off camp (lumber camp, mining camp, mill): work the nearest matching free explored resource around it
       const bd0 = BUILDINGS[t.type], drop = bd0 && t.owner === b.owner && !(bd0.trains || []).length ? bd0.dropoff : null; if (!drop) return null;
       const mf = new Map();
-      let best = null, bd = 1e9, far = null, fd = 1e9;
+      let best = null, bd = REDIRECT_R;
       for (const e of this.entities.values()) {
         if (e.kind !== 'resource' || e.dead || !(e.amount > 0) || e.type === 'fish' || !drop.includes(RES_OF[e.type])) continue;
-        if (this._resFull(e, b.owner, mf)) continue;
+        if (!this._isExplored(b.owner, e.x, e.z)) continue;
         const d = dhypot(e.x - t.x, e.z - t.z);
-        if (d < 16 && d < bd) { bd = d; best = e; }
-        if (d < fd) { fd = d; far = e; }
+        if (d >= bd) continue;
+        if (this._resFull(e, b.owner, mf)) continue;
+        bd = d; best = e;
       }
-      return best || far;
+      return best;
     }
     const aliveRes = t && !t.dead && t.kind === 'resource' && t.amount > 0;
     if (aliveRes && (t.type === 'fish' || !this._resFull(t, b.owner))) return t;
     const want = aliveRes ? t.type : ra.rtype; if (!want) return null; // flag on plain ground: villager just walks there
     const mf = new Map();
     let best = null, bd = 1e9;
-    const maxD = want === 'fish' ? 20 : 1e9;
+    const maxD = want === 'fish' ? 20 : REDIRECT_R;
     for (const e of this.entities.values()) {
       if (e.kind !== 'resource' || e.dead || !(e.amount > 0) || e.type !== want) continue;
-      if (want !== 'fish' && this._resFull(e, b.owner, mf)) continue;
+      if (want !== 'fish' && !this._isExplored(b.owner, e.x, e.z)) continue;
       const d = dhypot(e.x - ra.x, e.z - ra.z);
-      if (d < maxD && d < bd) { bd = d; best = e; }
+      if (d > maxD || d >= bd) continue;
+      if (want !== 'fish' && this._resFull(e, b.owner, mf)) continue;
+      bd = d; best = e;
     }
     if (best && !aliveRes) ra.tid = best.id;
     return best;
@@ -2452,15 +2465,17 @@ export class Game {
     }
     return n;
   }
-  // a villager starting on a mine takes a place at its deposit; when it is full he goes to the nearest other deposit
-  // of that kind with room, else he stops and his owner is told
+  // a villager starting on a mine takes a place at its deposit; when it is full he goes to the nearest other explored
+  // deposit of that kind with room within 16 tiles, else he stops and his owner is told
   _admitMine(u, o, t, dep) {
     if (this.mineLoad(dep, u.owner) < MINE_CAP) { o.dadm = dep; return true; }
-    let best = null, bd = 1e9;
+    const R = 16;
+    let best = null, bd = R * R;
     const full = new Map();
     for (const e of this.entities.values()) {
       if (e.kind !== 'resource' || e.type !== t.type || e.dead) continue;
-      const d = sq(e.x - u.x) + sq(e.z - u.z); if (d >= bd) continue;
+      const d = sq(e.x - t.x) + sq(e.z - t.z); if (d > bd) continue;
+      if (!this._isExplored(u.owner, e.x, e.z)) continue;
       const k = this._depOf(e); if (k === dep) continue;
       let f = full.get(k); if (f === undefined) { f = this.mineLoad(k, u.owner) - (o.dadm === k ? 1 : 0) >= MINE_CAP; full.set(k, f); }
       if (!f) { bd = d; best = e; }
