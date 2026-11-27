@@ -115,7 +115,7 @@ export function resultOf(game, me) {
   }
   if (p && p.defeated) return 'lost';
   // every opponent is out and at least one of them left the match (a friend quit): a win, not 'abandoned'
-  const opp = p && game.players ? game.players.filter((q, i) => i !== me && q.team !== p.team) : [];
+  const opp = p && game.players ? game.players.filter((q, i) => i !== me && !q.spectator && q.team !== p.team) : [];
   if (opp.length && opp.every(q => q.left || q.defeated) && opp.some(q => q.left)) return 'won';
   return 'abandoned';
 }
@@ -125,18 +125,24 @@ export function buildRecord(game, ctx) {
   const mp = ctx.mode === 'mp';
   // single player: the sim calls the human "Oyuncu 1" -> the profile name (multiplayer keeps the in-game name)
   const myName = !mp && checkName(ctx.myName || '').ok ? checkName(ctx.myName).name : null;
-  const players = (game.players || []).map((p, i) => ({
-    name: String((i === me && myName) || p.name || (p.isAI ? 'Yapay Zekâ' : 'Oyuncu ' + (i + 1))).slice(0, NAME_MAX + 4),
-    uid: p.isAI ? null : cleanUid(i === me ? ctx.myUid : (ctx.uids || [])[i]),
-    team: p.team | 0, ai: !!p.isAI,
-    difficulty: p.isAI ? (DIFFS.includes(p.difficulty) ? p.difficulty : (DIFFS.includes(cfg.difficulty) ? cfg.difficulty : 'normal')) : null,
-    won: ov && ov.winnerTeam != null && ov.winnerTeam >= 0 ? ov.winnerTeam === p.team : (ov ? (i === me ? !!ov.won : null) : null),
-  }));
+  let recMe = 0;
+  const players = [];
+  (game.players || []).forEach((p, i) => {
+    if (p.spectator) return;
+    if (i === me) recMe = players.length;
+    players.push({
+      name: String((i === me && myName) || p.name || (p.isAI ? 'Yapay Zekâ' : 'Oyuncu ' + (i + 1))).slice(0, NAME_MAX + 4),
+      uid: p.isAI ? null : cleanUid(i === me ? ctx.myUid : (ctx.uids || [])[i]),
+      team: p.team | 0, ai: !!p.isAI,
+      difficulty: p.isAI ? (DIFFS.includes(p.difficulty) ? p.difficulty : (DIFFS.includes(cfg.difficulty) ? cfg.difficulty : 'normal')) : null,
+      won: ov && ov.winnerTeam != null && ov.winnerTeam >= 0 ? ov.winnerTeam === p.team : (ov ? (i === me ? !!ov.won : null) : null),
+    });
+  });
   const result = resultOf(game, me);
   // won because the opponents left: mark my side as the winners
   if (!ov && result === 'won') { const myTeam = game.players[me].team; for (const q of players) q.won = q.team === myTeam; }
   return {
-    v: 1, id: String(ctx.id), uid: cleanUid(ctx.myUid), me,
+    v: 1, id: String(ctx.id), uid: cleanUid(ctx.myUid), me: recMe,
     endedAt: ctx.now != null ? ctx.now : Date.now(),
     mode: mp ? 'mp' : 'sp',
     mapType: String(cfg.mapType || 'river'), mapSize: MAP_SIZES.includes(cfg.mapSize) ? cfg.mapSize : 128,

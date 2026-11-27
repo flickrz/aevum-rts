@@ -256,8 +256,9 @@ export class Game {
       // exact team grids came with the save: only build the local view copy, the sim keeps its own cadence
       this._tvRestored = false;
       const N = this.map.size;
-      for (const p of this.players) if (!this._tv.has(p.team)) this._tv.set(p.team, new Uint8Array(N * N));
-      const mine = this._tv.get(this.teamOf(this.me)); if (mine) this.fog.set(mine);
+      for (const p of this.players) if (!p.spectator && !this._tv.has(p.team)) this._tv.set(p.team, new Uint8Array(N * N));
+      if (this.players[this.me] && this.players[this.me].spectator) this.fog.fill(2);
+      else { const mine = this._tv.get(this.teamOf(this.me)); if (mine) this.fog.set(mine); }
       this.fogVersion++;
     } else this._updateFog();
   }
@@ -271,13 +272,14 @@ export class Game {
     const cp = this._cfgPlayers();
     for (const p of this.players) {
       const c = cp && cp[p.id];
+      if (p.spectator || (c && c.spectator && !p.isAI)) { p.spectator = true; p.team = 0; }
       if (p.team == null) p.team = c && c.team != null ? Math.max(0, Math.min(15, c.team | 0)) : (p.isAI ? 2 : 1);
       if (!p.kind) p.kind = p.isAI ? 'ai' : 'human';
       if (p.name == null) p.name = (c && c.name) ? String(c.name).slice(0, 24) : (p.isAI ? 'Bilgisayar ' + p.id : 'Oyuncu ' + (p.id + 1));
       if (p.difficulty == null && c && c.difficulty) p.difficulty = c.difficulty;
     }
     this._tm = new Int16Array(Math.max(8, this.players.length)).fill(-1);
-    for (const p of this.players) this._tm[p.id] = p.team;
+    for (const p of this.players) this._tm[p.id] = p.spectator ? -1 : p.team;
     if (this.me >= this.players.length) this.me = 0;
   }
   teamOf(pid) { return pid >= 0 && pid < this._tm.length ? this._tm[pid] : -1; }
@@ -318,7 +320,7 @@ export class Game {
   // one whitelisted command on behalf of player pid; ids not owned by pid are dropped, owner args forced to pid
   execCommand(pid, method, args) {
     pid = pid | 0;
-    if (!CMD_SET.has(method) || !this.players[pid] || this.players[pid].left) return false;
+    if (!CMD_SET.has(method) || !this.players[pid] || this.players[pid].left || this.players[pid].spectator) return false;
     const a = Array.isArray(args) ? args.slice() : [];
     const own = id => { const e = this.entities.get(id); return !!e && e.owner === pid && !e.dead; };
     // (each id once: a repeated id queued the same order once per copy; the raw list is capped first, pop is 1000)
@@ -355,7 +357,7 @@ export class Game {
   // an AI takes over a human's civilization (continuing a saved match without that player); same on every client
   convertToAI(pid, difficulty = 'normal') {
     const p = this.players[pid];
-    if (!p || p.isAI) return false;
+    if (!p || p.isAI || p.spectator) return false;
     const d = ['easy', 'normal', 'hard'].includes(difficulty) ? difficulty : 'normal';
     p.isAI = true; p.kind = 'ai'; p.left = false; p.difficulty = d;
     const cp = this._cfgPlayers();
@@ -385,7 +387,14 @@ export class Game {
     const np = cp ? cp.length : 1 + Math.max(0, Math.min(3, cfg.enemies | 0));
     const fr = [[0.2, 0.2], [0.8, 0.8], [0.8, 0.2], [0.2, 0.8]];
     let starts = []; for (let i = 0; i < 4; i++) starts.push([Math.round(fr[i][0] * N), Math.round(fr[i][1] * N)]);
-    if (cp) starts = this._mpStarts(cp, N);
+    const startByPid = new Array(np);
+    if (cp) {
+      const activeIdx = [], activeCp = [];
+      for (let i = 0; i < np; i++) if (!(cp[i] && cp[i].spectator && cp[i].kind !== 'ai')) { activeIdx.push(i); activeCp.push(cp[i]); }
+      starts = activeCp.length ? this._mpStarts(activeCp, N) : [];
+      activeIdx.forEach((pid, k) => { startByPid[pid] = starts[k]; });
+    } else for (let i = 0; i < np; i++) startByPid[i] = starts[i];
+    const na = cp ? starts.length : np;
     const ph = (seed % 7);
     const rx = z => N / 2 + dsin(z * 0.07 + ph) * N * 0.07 + dsin(z * 0.023 + ph * 2) * N * 0.04;
     const sDist = (x, z) => { let m = 1e9; for (const s of starts) { const d = dhypot(x - s[0], z - s[1]); if (d < m) m = d; } return m; };
@@ -444,13 +453,13 @@ export class Game {
       heights[vz * V + vx] = h;
     }
     // (islands, owner 2026-11-25: no land link between players at all - war there is by ship only)
-    if (mt === 'islands') this._mapSeparate(heights, N, starts.slice(0, np), SEA);
-    else this._mapConnect(heights, N, starts.slice(0, np), seed, hsh);
+    if (mt === 'islands') this._mapSeparate(heights, N, starts.slice(0, na), SEA);
+    else this._mapConnect(heights, N, starts.slice(0, na), seed, hsh);
     // Forests take a fixed share (P.fs) of the open land on every seed: the fbm threshold is the matching quantile,
     // so one seed cannot bury the map in trees. Forest is held back from the starts (none within FC0 tiles, thinning
     // in up to FC1) so every player has room to build a town; the start's own wood cluster sits inside that ring.
     // (only the starts in use: single-player keeps 4 corner spots even with fewer players)
-    const live = starts.slice(0, np), aDist = (x, z) => { let m = 1e9; for (const s of live) { const d = dhypot(x - s[0], z - s[1]); if (d < m) m = d; } return m; };
+    const live = starts.slice(0, na), aDist = (x, z) => { let m = 1e9; for (const s of live) { const d = dhypot(x - s[0], z - s[1]); if (d < m) m = d; } return m; };
     const FC0 = 18, FC1 = 28, fv = new Float64Array(N * N).fill(-9), cand = [], grassV = new Uint8Array(N * N);
     for (let tz = 0; tz < N; tz++) for (let tx = 0; tx < N; tx++) {
       const i = tz * V + tx, ha = (heights[i] + heights[i + 1] + heights[i + V] + heights[i + V + 1]) / 4;
@@ -520,8 +529,11 @@ export class Game {
     // players
     const sr = cfg.sandbox ? { food: 99999, wood: 99999, stone: 99999, gold: 99999 } : cfg.startRes === 'low' ? { food: 200, wood: 200, stone: 100, gold: 0 } : cfg.startRes === 'high' ? { food: 900, wood: 900, stone: 450, gold: 300 } : { food: 300, wood: 300, stone: 150, gold: 100 };
     for (let i = 0; i < np; i++) {
-      const p = { id: i, isAI: cp ? (cp[i] && cp[i].kind) === 'ai' : i > 0, color: PLAYER_COLORS[i], res: (cfg.sandbox && i > 0) ? { food: 300, wood: 300, stone: 150, gold: 100 } : { ...sr }, age: Math.max(0, Math.min(4, cfg.startAge | 0)), pop: 0, popCap: 0, techs: new Set(), pending: [], defeated: false, startX: starts[i][0], startZ: starts[i][1], ageProgress: 0, ageAt: 0,
+      const isSpec = !!(cp && cp[i] && cp[i].spectator && cp[i].kind !== 'ai');
+      const stPos = isSpec ? [Math.round(N / 2), Math.round(N / 2)] : startByPid[i];
+      const p = { id: i, isAI: !isSpec && (cp ? (cp[i] && cp[i].kind) === 'ai' : i > 0), color: PLAYER_COLORS[i], res: isSpec ? { food: 0, wood: 0, stone: 0, gold: 0 } : (cfg.sandbox && i > 0) ? { food: 300, wood: 300, stone: 150, gold: 100 } : { ...sr }, age: Math.max(0, Math.min(4, cfg.startAge | 0)), pop: 0, popCap: 0, techs: new Set(), pending: [], defeated: false, startX: stPos[0], startZ: stPos[1], ageProgress: 0, ageAt: 0,
         stats: { gathered: { food: 0, wood: 0, stone: 0, gold: 0 }, unitsTrained: 0, unitsLost: 0, kills: 0, buildingsBuilt: 0, buildingsLost: 0, razed: 0, techs: 0 } };
+      if (isSpec) { p.spectator = true; p.team = 0; }
       this._mods(p); this.players.push(p);
     }
     // resources
@@ -603,7 +615,7 @@ export class Game {
       }
     }
     try { this._navGenFish(); } catch (err) { console.error('fish gen', err); }
-    if (this.cfg.mapType !== 'islands') this._ensureWalkable(starts.slice(0, this.players.length));
+    if (this.cfg.mapType !== 'islands') this._ensureWalkable(live);
     // no stray trees: a tree with fewer than two others touching it (left by a pass cut through a grove, or a start
     // clump squeezed by water) goes (2026-11-14, owner: no lone trees on open grass)
     for (const e of [...this.entities.values()]) {
@@ -614,6 +626,7 @@ export class Game {
     }
     // starting bases
     for (const p of this.players) {
+      if (p.spectator) continue;
       const ts = BUILDINGS.towncenter.size, h = ts / 2;   // (centred on the start)
       const b = this._addBuilding('towncenter', p.id, Math.round(p.startX - h), Math.round(p.startZ - h), true);
       // (owner 2026-11-20, like the capitol in Empire Earth: every side knows from the first second where each
@@ -888,7 +901,7 @@ export class Game {
   unitsOf(owner) { return this.units.filter(u => u.owner === owner && !u.dead); }
   buildingsOf(owner) { return this.buildings.filter(b => b.owner === owner && !b.dead); }
   isEntityVisible(e) {
-    if (!e) return false; if (this.reveal) return true; if (e.owner === this.me || this.isAlly(e.owner, this.me)) return true;
+    if (!e) return false; if (this.reveal || (this.players[this.me] && this.players[this.me].spectator)) return true; if (e.owner === this.me || this.isAlly(e.owner, this.me)) return true;
     if (e.revT !== undefined && this.time - e.revT < 4 && !e.dead && (e.revO === this.me || this.isAlly(e.revO, this.me))) return true;
     // (owner 2026-11-20) a rival's building plan - a foundation nobody has started on - is shown only to its own side
     if (e.kind === 'building' && !e.done && !(e.progress > 0)) return false;
@@ -2679,8 +2692,8 @@ export class Game {
       this.events.emit('ageUp', { owner: b.owner, age: p.age });
       if (b.owner === this.me) { const cnt = o => Object.values(o).filter(x => x.age === p.age && x.id !== 'house').length, nb = cnt(BUILDINGS), nu = cnt(UNITS), nt = cnt(TECHS);
         this.events.emit('notify', { text: tr('Yeni çağ: {0} bina, {1} birlik ve {2} teknoloji açıldı. Tüm binaların güçlendi!', nb, nu, nt), type: 'good' }); }
-      const mine = b.owner === this.me, ally = !mine && this.isAlly(b.owner, this.me);
-      this.events.emit('notify', { text: mine ? tr('{0} başladı!', tr(AGES[p.age].name)) : tr(ally ? 'Bir müttefik {0} seviyesine ulaştı' : 'Bir rakip {0} seviyesine ulaştı', tr(AGES[p.age].name)), type: mine || ally ? 'good' : 'warn' });
+      const mine = b.owner === this.me, ally = !mine && this.isAlly(b.owner, this.me), spec = !!(this.players[this.me] && this.players[this.me].spectator);
+      this.events.emit('notify', { text: mine ? tr('{0} başladı!', tr(AGES[p.age].name)) : spec ? tr('{0} {1} seviyesine ulaştı', p.name, tr(AGES[p.age].name)) : tr(ally ? 'Bir müttefik {0} seviyesine ulaştı' : 'Bir rakip {0} seviyesine ulaştı', tr(AGES[p.age].name)), type: mine || ally ? 'good' : spec ? 'info' : 'warn' });
     }
   }
 
@@ -2796,13 +2809,13 @@ export class Game {
   _knownStarts(g) {
     // (round the town centre's middle: an odd-sized one, 9x9 since 2026-11-20, stands half a tile off the start point)
     const N = this.map.size, h = BUILDINGS.towncenter.size / 2, r = h - 0.25, mid = v => Math.round(v - h) + h;
-    for (const q of this.players) if (q.startX != null) forDisc(N, mid(q.startX), mid(q.startZ), r, (a, b) => { for (let i = a; i < b; i++) if (!g[i]) g[i] = 1; });
+    for (const q of this.players) if (!q.spectator && q.startX != null) forDisc(N, mid(q.startX), mid(q.startZ), r, (a, b) => { for (let i = a; i < b; i++) if (!g[i]) g[i] = 1; });
   }
   _updateFog() {
     const N = this.map.size, NN = N * N, fog = this.fog;
     if (!this._tv) this._tv = new Map();
     const tv = this._tv;
-    for (const p of this.players) if (!tv.has(p.team)) { const g = new Uint8Array(NN); if (this.cfg.fog === 'explored') g.fill(1); else this._knownStarts(g); if (this._fogSeed && p.team === this.teamOf(this.me)) g.set(this._fogSeed); tv.set(p.team, g); this._bFogVer++; }
+    for (const p of this.players) if (!p.spectator && !tv.has(p.team)) { const g = new Uint8Array(NN); if (this.cfg.fog === 'explored') g.fill(1); else this._knownStarts(g); if (this._fogSeed && p.team === this.teamOf(this.me)) g.set(this._fogSeed); tv.set(p.team, g); this._bFogVer++; }
     this._fogSeed = null;
     for (const g of tv.values()) {
       if ((g.length & 3) === 0 && (g.byteOffset & 3) === 0) {
@@ -2873,8 +2886,9 @@ export class Game {
       if (b.dead) continue; const i = Math.min(N - 1, Math.max(0, b.z | 0)) * N + Math.min(N - 1, Math.max(0, b.x | 0));
       for (const [team, g] of tv) if (g[i] === 2) b.sv = (b.sv | 0) | (1 << (team & 31));
     }
+    const meP = this.players[this.me];
     const mine = tv.get(this.teamOf(this.me));
-    if (this.reveal) fog.fill(2); // view only: spectators (defeated or finished) see everything live
+    if (this.reveal || (meP && meP.spectator)) fog.fill(2); // view only: spectators (lobby, defeated or finished) see everything live
     else if (mine) fog.set(mine);
     this.fogVersion++;
   }
@@ -2885,10 +2899,11 @@ export class Game {
     return n;
   }
   _checkWin() {
-    if (this.cfg.sandbox || this.cfg.tutorial || this.players.length < 2) return;   // (the tutorial ends the match itself)
-    const myTeam = this.teamOf(this.me);
+    if (this.cfg.sandbox || this.cfg.tutorial) return;   // (the tutorial ends the match itself)
+    if (this.players.filter(p => !p.spectator).length < 2) return;
+    const myTeam = this.teamOf(this.me), meSpec = !!(this.players[this.me] && this.players[this.me].spectator);
     for (const p of this.players) {
-      if (p.defeated) continue;
+      if (p.defeated || p.spectator) continue;
       // (owner 2026-11-20) a player is out when every building that trains units is gone - town centers, barracks,
       // archery ranges, stables, siege workshops, factories, docks; a foundation counts once work on it has started.
       // Units left over do not keep a player in: a villager or a scout hidden somewhere no longer stops the match.
@@ -2900,15 +2915,15 @@ export class Game {
       if (!prod && this.units.some(u => u.owner === p.id && !u.dead && u.type === 'villager')) { p.prodLeft = 0; continue; }
       if (!prod) {
         p.defeated = true;
-        if (p.id !== this.me) this.events.emit('notify', this.isAlly(p.id, this.me) ? { text: tr('Bir müttefik uygarlık yıkıldı!'), type: 'warn' } : { text: tr('Bir rakip uygarlık yıkıldı!'), type: 'good' });
+        if (p.id !== this.me) this.events.emit('notify', meSpec ? { text: tr('{0} uygarlığı yıkıldı!', p.name), type: 'info' } : this.isAlly(p.id, this.me) ? { text: tr('Bir müttefik uygarlık yıkıldı!'), type: 'warn' } : { text: tr('Bir rakip uygarlık yıkıldı!'), type: 'good' });
         if (p.id === this.me) this.reveal = true;
         this.events.emit('playerDefeated', { id: p.id, team: p.team });
       }
     }
     // a team is out when none of its players has a building that trains units; the match ends when one team remains
-    const alive = new Set(); for (const p of this.players) if (!p.defeated) alive.add(p.team);
-    if (alive.size <= 1) { const winnerTeam = alive.size ? [...alive][0] : -1; this.over = { won: winnerTeam === myTeam, winnerTeam }; }
-    else if (!this.mp && this.players.every(p => p.isAI || p.defeated)) this.over = { won: false, winnerTeam: -1 }; // single player: the human lost
+    const alive = new Set(); for (const p of this.players) if (!p.defeated && !p.spectator) alive.add(p.team);
+    if (alive.size <= 1) { const winnerTeam = alive.size ? [...alive][0] : -1; this.over = { won: myTeam >= 0 && winnerTeam === myTeam, winnerTeam }; }
+    else if (!this.mp && this.players.every(p => p.isAI || p.defeated || p.spectator)) this.over = { won: false, winnerTeam: -1 }; // single player: the human lost
     if (this.over && !this._overSent) { this._overSent = true; this.reveal = true; this._updateFog(); this.events.emit('gameOver', { won: this.over.won, winnerTeam: this.over.winnerTeam }); }
   }
 
@@ -3373,6 +3388,7 @@ export class Game {
     const want = Math.max(16, Math.min(110, Math.round(pool.length / 18)));
     for (const c of pool) { if (placed.length >= want) break; if (ok(c, 5)) put(c); }
     for (const p of this.players) {
+      if (p.spectator) continue;
       const all = deep.concat(shallow).filter(c => { const d = dhypot(c[0] + 0.5 - p.startX, c[1] + 0.5 - p.startZ); return d >= 7 && d <= 25 && free(c[0], c[1]); });
       if (!all.length) continue;
       all.sort((a, b) => (dhypot(a[0] - p.startX, a[1] - p.startZ) + (T[a[1] * N + a[0]] === 4 ? 0 : 4)) - (dhypot(b[0] - p.startX, b[1] - p.startZ) + (T[b[1] * N + b[0]] === 4 ? 0 : 4)));

@@ -113,15 +113,16 @@ const app = {
     if (game.me == null) game.me = full.me | 0;
     // the whole map shows only when the match opens it (own defeat, match over): a console 'app.game.reveal = true'
     // would show one player everything without anybody noticing (view only: the simulation never reads it)
-    Object.defineProperty(game, 'reveal', { configurable: false, get: () => !!(game.over || (game.players[game.me] && game.players[game.me].defeated)), set: () => {} });
+    Object.defineProperty(game, 'reveal', { configurable: false, get: () => !!(game.over || (game.players[game.me] && (game.players[game.me].defeated || game.players[game.me].spectator))), set: () => {} });
     wrapNetCommands(game);
     app.net = session;
     cloudSafe(c => c.stopInbox());   // pause /mp/inbox long-poll while in a match (resumed on close / leave / menu)
     attachGame(game, false);
+    const meP = game.players[game.me];
     histCtx.set(game, {
       mode: 'mp', match: session.match || session.code || 'MP',
       uids: ((session.start0 && session.start0.slots) || []).map(s => (s && s.kind === 'human' ? profile.cleanUid(s.uid) : null)),
-      mt: tpStart('mp', session.match || session.code || null, game.players[game.me] ? game.players[game.me].team : null),
+      mt: meP && meP.spectator ? null : tpStart('mp', session.match || session.code || null, meP ? meP.team : null),
     });
     app._mpAutoAt = game.tick + MP_AUTOSAVE_TICKS;
     // the match cut by an update runs again: the main menu's "Kesilen maça devam et" is done
@@ -180,7 +181,7 @@ const app = {
 
   // map flare at (x, z): shown here and sent to the teammates (multiplayer)
   flare(x, z) {
-    const game = app.game; if (!game || app.demo) return false;
+    const game = app.game; if (!game || app.demo || (game.players && game.players[game.me] && game.players[game.me].spectator)) return false;
     const N = game.map ? game.map.size : 0;
     x = Math.max(0, Math.min(N, x)); z = Math.max(0, Math.min(N, z));
     if (app.net && game.mp) { if (!app.net.flare(x, z)) return false; }
@@ -342,6 +343,7 @@ function wrapNetCommands(game) {
     if (typeof orig !== 'function') continue;
     game[m] = function (...args) {
       if (game.__inSim || !app.net || app.game !== game) return orig.apply(game, args);
+      if (game.players && game.players[game.me] && game.players[game.me].spectator) return false;
       app.net.issue(m, args);
       return true;
     };
@@ -361,7 +363,7 @@ function saveMpRecord(session, game, ev) {
       name: (ev.auto ? tr('Çok Oyunculu Otomatik — ') : tr('Çok Oyunculu — ')) + stamp + ' · ' + humans + ' · ' + tr('{0}. dk', mins),
       time, mp: true, code: match, tick: game.tick, me: game.me, hash: ev.hash, by: ev.by, owner: ownerUid(),
       // uid: profile identity of the human in that slot (save metadata only; matched first when the match is continued)
-      players: game.players.map((p, i) => ({ name: p.name, uid: p.isAI ? null : profile.cleanUid(session.start0 && session.start0.slots && session.start0.slots[i] && session.start0.slots[i].uid), team: p.team, kind: p.isAI ? 'ai' : 'human', difficulty: p.difficulty || null, color: p.color, left: !!p.left, defeated: !!p.defeated })),
+      players: game.players.map((p, i) => ({ name: p.name, uid: p.isAI ? null : profile.cleanUid(session.start0 && session.start0.slots && session.start0.slots[i] && session.start0.slots[i].uid), team: p.team, kind: p.isAI ? 'ai' : 'human', difficulty: p.difficulty || null, color: p.color, left: !!p.left, defeated: !!p.defeated, spectator: !!p.spectator })),
       data: game.serialize(),
     };
     key = storage.MP_PREFIX + match + '-' + (ev.auto ? 'auto' : game.tick);
@@ -379,6 +381,7 @@ function recordGame(game, final) {
   const ctx = game && histCtx.get(game);
   if (!ctx || ctx.done || game.cfg.sandbox || game.cfg.demo || game.cfg.tutorial) return Promise.resolve(null);
   const me = game.me | 0, mine = game.players[me];
+  if (!mine || mine.spectator) return Promise.resolve(null);
   if (!final && !game.over && !(mine && mine.defeated) && (game.time || 0) < ABANDON_MIN_S) return Promise.resolve(null);
   const p = app.getProfile();
   if (!p) return Promise.resolve(null);
@@ -505,7 +508,7 @@ function attachGame(game, demo) {
   const p = game.players[app.me] || game.players[0];
   const cam = app.renderer.cam;
   cam.tx = p.startX; cam.tz = p.startZ;
-  if (demo) { cam.dist = 46; } else { cam.dist = 34; }
+  if (demo) { cam.dist = 46; } else if (p && p.spectator) { cam.dist = 42; } else { cam.dist = 34; }
   try { app.audio.attach(game); } catch (err) { console.warn(err); }
   game.events.on('notify', ev => { if (ev && ev.x != null && ev.z != null) app.lastAlert = { x: ev.x, z: ev.z }; });
   game.events.on('underAttack', ev => { if (ev) app.lastAlert = { x: ev.x, z: ev.z }; });

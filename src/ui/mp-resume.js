@@ -28,7 +28,7 @@ export function menuResume(ui, errText) {
     list.innerHTML = '';
     if (!l || !l.length) { list.innerHTML = tr('<div style="color:var(--dim);text-align:center;padding:20px">Çok oyunculu kayıt yok. Maç sırasında 💾 Kaydet\'e bas (kurucu 2 dakikada bir otomatik kaydeder).</div>'); return; }
     for (const s of l) {
-      const ppl = (s.players || []).map((p) => (p.kind === 'ai' ? '🤖 ' : '') + esc(pn(p.name)) + ' <small>T' + (p.team | 0) + '</small>').join(' · ');
+      const ppl = (s.players || []).map((p) => (p.kind === 'ai' ? '🤖 ' : '') + esc(pn(p.name)) + ' <small>' + (p.spectator ? tr('İzle') : 'T' + (p.team | 0)) + '</small>').join(' · ');
       // (☁: the save is in the account's cloud only / newer there; downloaded when it is opened, e.g. on another PC)
       const d = el('div', 'saveitem', `<span>${esc(saveBadge(s) + (s.name || s.key))}<br><small>${ppl}</small></span><small>${s.time ? new Date(s.time).toLocaleString(loc()) : ''}</small>`);
       if (s.cloud) d.title = saveBadgeTitle(s);
@@ -105,10 +105,10 @@ export function showResumeLobby(ui, session) {
     const list = el('div', 'lb-slots');
     slots.forEach((s, i) => {
       const mine = s.kind === 'human' && s.peer && s.peer === my;
-      const row = el('div', 'lb-slot team' + (s.team || 1) + (mine ? ' mine' : ''));
-      row.append(el('span', 'lb-sw', '')); row.lastChild.style.background = hex(PLAYER_COLORS[i] ?? 0xffffff);
+      const row = el('div', 'lb-slot ' + (s.spectator ? 'spectator' : 'team' + (s.team || 1)) + (mine ? ' mine' : ''));
+      row.append(el('span', 'lb-sw', '')); row.lastChild.style.background = s.spectator ? '#9ab0c8' : hex(PLAYER_COLORS[i] ?? 0xffffff);
       row.append(el('span', 'lb-name', esc(pn(s.name)) + (s.peer && s.peer === st.hostPeer ? ' <small>👑</small>' : '') + (mine ? ' <small>' + tr('(sen)') + '</small>' : '')));
-      row.append(el('span', 'lb-teamtag', tr('Takım {0}', esc(s.team || 1))));
+      row.append(el('span', 'lb-teamtag', s.spectator ? tr('İzle') : tr('Takım {0}', esc(s.team || 1))));
       if (s.kind === 'ai') {
         row.append(el('span', 'lb-kind ai', tr('Yapay Zekâ')));
         if (host) row.append(sel(DIFF, s.difficulty || 'normal', (v) => call('setSlot', i, { difficulty: v })));
@@ -120,7 +120,7 @@ export function showResumeLobby(ui, session) {
       } else {
         // a human of the save who is not here (yet)
         row.append(el('span', 'lb-kind wait', tr('Bekleniyor')));
-        if (host) {
+        if (host && !s.spectator) {
           row.append(sel([['idle', tr('Gelmezse: yeri boş kalsın')], ['ai', tr('Gelmezse: yapay zekâ oynasın')]], s.mode === 'ai' ? 'ai' : 'idle', (v) => call('setSlotMode', i, v)));
           if (s.mode === 'ai') row.append(sel(DIFF, s.difficulty || 'normal', (v) => call('setSlot', i, { difficulty: v })));
         } else {

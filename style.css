@@ -1168,3 +1168,9 @@ html.touch .gchat.menu-chat { display: none; }
 @media (max-width: 1100px) { .gchat.menu-chat { width: 280px; } }
 @media (max-height: 560px), (max-width: 760px) { .gchat.menu-chat { display: none; } }
 @media (max-width: 1100px) { .mp-wrap > .gchat { width: auto; contain: none; min-height: 0; height: 360px; } }
+/* lobby spectator slot & minimal spectator HUD */
+.lb-slot.spectator { border-color: rgba(160,185,220,.38); }
+.hud.spectator-hud .respanel,
+.hud.spectator-hud .agepanel,
+.hud.spectator-hud .groupbar,
+.hud.spectator-hud .card { display: none; }

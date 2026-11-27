@@ -172,7 +172,7 @@ export class UI {
       top.append(b); return b;
     };
     this.homeBtn = tb(ico('b-towncenter'), tr('Şehir Merkezine Git'), tr('Kamerayı Şehir Merkezine götür; tekrar basınca diğer Şehir Merkezleri arasında geçiş yapar. Kısayol: H / Home'), () => this.app.input?.goHome());
-    tb(ico('x-tech'), tr('Teknoloji'), tr('Teknoloji ağacı: tüm çağların araştırmaları. Uygun olanı tıklayıp araştır.'), () => this.showTech());
+    this.techBtn = tb(ico('x-tech'), tr('Teknoloji'), tr('Teknoloji ağacı: tüm çağların araştırmaları. Uygun olanı tıklayıp araştır.'), () => this.showTech());
     tb(ico('x-stats'), tr('İstatistik'), tr('Oyun istatistikleri ve skor.'), () => this.showStats());
     this.flareBtn = tb(ico('x-flare'), tr('İşaret Ver'), tr('Haritaya işaret bırak: takım arkadaşın mini haritada ve oyunda görür. Butona bas, sonra haritaya ya da mini haritaya tıkla. Kısayol: Alt + tık'), () => this.app.input?.armFlare());
     this.tribBtn = tb(ico('x-ally'), tr('Müttefike Kaynak Gönder'), tr('Takım arkadaşına yiyecek, odun, taş ya da altın gönder (kesinti yok).'), () => this.showTribute());
@@ -774,11 +774,17 @@ export class UI {
       this.toast(p.active ? tr('Şehir zili çaldı: köylüler Şehir Merkezi\'ne sığınıyor') : tr('Köylüler işlerine geri dönüyor'), p.active ? 'warn' : 'good');
       this.cardSig = null;
     });
-    if (this.tribBtn) this.tribBtn.style.display = this._allies().length ? '' : 'none';
+    const isSpec = !!(game.players && game.players[this._me()] && game.players[this._me()].spectator);
+    this.hudEl.classList.toggle('spectator-hud', isSpec);
+    if (this.homeBtn) this.homeBtn.style.display = isSpec ? 'none' : '';
+    if (this.techBtn) this.techBtn.style.display = isSpec ? 'none' : '';
+    if (this.flareBtn) this.flareBtn.style.display = isSpec ? 'none' : '';
+    if (this.tribBtn) this.tribBtn.style.display = !isSpec && this._allies().length ? '' : 'none';
     const mp = !!this.app.net;
     for (const b of [this.pauseBtn]) if (b) b.style.display = mp ? 'none' : '';
-    if (this.saveBtn) { this.saveBtn.style.display = ''; this.saveBtn.title = mp ? tr('Maçı kaydet: herkes aynı anda kaydeder (Çok Oyunculu → Kayıtlı Maça Devam Et)') : this.saveBtn.title; }
+    if (this.saveBtn) { this.saveBtn.style.display = isSpec ? 'none' : ''; this.saveBtn.title = mp ? tr('Maçı kaydet: herkes aynı anda kaydeder (Çok Oyunculu → Kayıtlı Maça Devam Et)') : this.saveBtn.title; }
     if (this.chatBtn) this.chatBtn.style.display = mp ? '' : 'none';
+    if (isSpec) this.toast(tr('👁 İzleme modu: tüm harita görünür.'), 'info');
     // tutorial mode: the guide's panel and highlights; no saving there (main.js saveGame)
     if (this.tut) { safe(() => this.tut.destroy()); this.tut = null; }
     if (game.cfg?.tutorial && game.quests?.tutorial) {
@@ -1191,6 +1197,17 @@ export class UI {
 
   _refreshTop() {
     const g = this.game, p = g.players[this._me()]; if (!p) return;
+    if (p.spectator) {
+      const an = tr('👁 İzleme Modu');
+      const n = this._ageNameEl || this.ageEl.querySelector('.n'); if (n.textContent !== an) n.textContent = an;
+      if (this._ageBarW !== '0%') { this._ageBarW = '0%'; (this._ageBarEl || this.ageEl.querySelector('i')).style.width = '0%'; }
+      const ct = fmtTime(g.time || 0);
+      if (this._clockTxt !== ct) { this._clockTxt = ct; this.clockEl.textContent = ct; }
+      if (!this.objEl.classList.contains('hidden')) { this.objEl.classList.add('hidden'); this._clearDirty = true; }
+      if (!this.stepsEl.classList.contains('hidden')) { this.stepsEl.classList.add('hidden'); this._clearDirty = true; }
+      if (this.idleEl && !this.idleEl.classList.contains('hidden')) this.idleEl.classList.add('hidden');
+      return;
+    }
     for (const r of RES_LIST) {
       const v = Math.floor(p.res[r] || 0), d = this.resEls[r];
       if (this.lastRes[r] !== v) {
@@ -1959,19 +1976,20 @@ export class UI {
   _buildPause() {
     this.pauseEl.innerHTML = '';
     const net = this.app.net, mpPaused = !!(net && net.paused);
+    const isSpec = !!(this.game && this.game.players && this.game.players[this._me()] && this.game.players[this._me()].spectator);
     const title = !net ? tr('Duraklatıldı') : mpPaused ? tr('Oyun Duraklatıldı') : tr('Menü');
     const m = el('div', 'modal panel', `<h2>${title}</h2>`);
     m.style.width = 'min(420px, 92vw)';
-    if (net) m.append(el('div', 'pause-info', esc(mpPaused ? (net.pausedBy || tr('Bir oyuncu')) + tr(' oyunu herkes için duraklattı.') : tr('Çok oyunculu maç sürüyor; duraklatırsan herkes için durur.'))));
+    if (net) m.append(el('div', 'pause-info', esc(mpPaused ? (net.pausedBy || tr('Bir oyuncu')) + tr(' oyunu herkes için duraklattı.') : isSpec ? tr('İzleme modu: maç sürüyor.') : tr('Çok oyunculu maç sürüyor; duraklatırsan herkes için durur.'))));
     this.pauseInfoEl = el('div', 'pause-info'); m.append(this.pauseInfoEl);
     const btn = (t, fn, cls = '') => { const b = el('button', 'mbtn ' + cls, t); b.onclick = () => { this._click(); fn(); }; m.append(b); };
     if (!net) btn(tr('Devam Et'), () => this.app.setPaused?.(false), 'primary');
-    else if (mpPaused) btn(tr('Oyunu Devam Ettir (herkes için)'), () => { net.requestPause(false); }, 'primary');
+    else if (mpPaused && !isSpec) btn(tr('Oyunu Devam Ettir (herkes için)'), () => { net.requestPause(false); }, 'primary');
     else {
       btn(tr('Oyuna Dön'), () => this.toggleGameMenu(false), 'primary');
-      btn(tr('Oyunu Duraklat (herkes için)'), () => { net.requestPause(true); });
+      if (!isSpec) btn(tr('Oyunu Duraklat (herkes için)'), () => { net.requestPause(true); });
     }
-    btn(tr('Kaydet'), () => this._save());
+    if (!isSpec) btn(tr('Kaydet'), () => this._save());
     btn(tr('İstatistik'), () => this.showStats());
     const sbox = el('div'); sbox.style.margin = '14px 0';
     this._settingsBody(sbox); m.append(sbox);
@@ -2021,7 +2039,7 @@ export class UI {
   _score(p) {
     return playerScore(p);
   }
-  _statsPlayers(showAll) { const g = this.game; return g.players.filter((p) => showAll || p.id === this._me() || this._ally(this._me(), p.id) || g.over || this._enemyKnown(p)); }
+  _statsPlayers(showAll) { const g = this.game, me = this._me(), isSpec = !!g.players?.[me]?.spectator; return g.players.filter((p) => !p.spectator && (showAll || isSpec || p.id === me || this._ally(me, p.id) || g.over || this._enemyKnown(p))); }
   _statsName(p) { return p.id === this._me() ? tr('Sen') : this.game?.mp ? this._pname(p.id) : tr('Rakip ') + p.id; }
   _graphs(m, showAll) { safe(() => m.append(graphPanel(this.game, this._statsPlayers(showAll).map((p) => ({ id: p.id, name: this._statsName(p) })))), null); }
   _statsTable(showAll) {
@@ -2133,8 +2151,12 @@ export class UI {
     this.modalEl.innerHTML = '';
     if (this.tut && this.game.cfg?.tutorial) { const tm = safe(() => this.tut.gameOver(won), null); if (tm) { this.modalEl.append(tm); this.modalEl.classList.remove('hidden'); return; } }
     if (this.game.mp) won = this._mpWon(won);
+    const isSpec = !!(this.game.players && this.game.players[this._me()] && this.game.players[this._me()].spectator);
     const wt = this.game.mp ? this._winTeam() : null, wtxt = wt != null ? tr('Takım {0} kazandı! ', wt) : '';
-    const m = el('div', 'modal panel', `<h1 class="${won ? 'win' : 'lose'}">${won ? tr('ZAFER') : tr('YENİLGİ')}</h1><div style="color:var(--dim)">${wtxt}${won ? (this.game.mp ? tr('Takımın tüm rakipleri alt etti.') : tr('Tüm rakiplerini alt ettin. Uygarlığın çağlara damga vurdu.')) : tr('Uygarlığın tarihe karıştı.')} · ${tr('Süre: {0}', fmtTime(this.game.time || 0))}</div>${this._statsTable(true)}`);
+    const headHtml = isSpec
+      ? `<h1 class="win">${tr('MAÇ BİTTİ')}</h1><div style="color:var(--dim)">${wtxt}${tr('Süre: {0}', fmtTime(this.game.time || 0))}</div>`
+      : `<h1 class="${won ? 'win' : 'lose'}">${won ? tr('ZAFER') : tr('YENİLGİ')}</h1><div style="color:var(--dim)">${wtxt}${won ? (this.game.mp ? tr('Takımın tüm rakipleri alt etti.') : tr('Tüm rakiplerini alt ettin. Uygarlığın çağlara damga vurdu.')) : tr('Uygarlığın tarihe karıştı.')} · ${tr('Süre: {0}', fmtTime(this.game.time || 0))}</div>`;
+    const m = el('div', 'modal panel', `${headHtml}${this._statsTable(true)}`);
     this._graphs(m, true);
     const btn = (t, fn, cls = '') => { const b = el('button', 'mbtn small ' + cls, t); b.onclick = () => { this._click(); fn(); }; m.append(b); };
     const cfg = this.game.cfg;
@@ -2271,7 +2293,7 @@ export class UI {
     const g = this.game; if (!g) return null;
     const ov = g.over || {}; const t = ov.winnerTeam ?? ov.winningTeam ?? ov.team;
     if (t != null) return t;
-    const alive = new Set((g.players || []).map((p, i) => (p.defeated || p.left ? null : this._teamOf(p.id ?? i))).filter((x) => x != null));
+    const alive = new Set((g.players || []).map((p, i) => (p.defeated || p.left || p.spectator ? null : this._teamOf(p.id ?? i))).filter((x) => x != null && x >= 0));
     return alive.size === 1 ? [...alive][0] : null;
   }
   _mpWon(fallback) {
@@ -2418,6 +2440,7 @@ export class UI {
       s.onchange = () => onch(s.value); s.onkeydown = (ev) => ev.stopPropagation(); return s;
     };
     const TEAMS = [1, 2, 3, 4].map((t) => [t, tr('Takım ') + t]);
+    const TEAMS_H = [...TEAMS, [0, tr('İzle')]];
     const DIFF = [['easy', tr('Kolay')], ['normal', tr('Normal')], ['hard', tr('Zor')]];
     const cloud = this.app.cloud, friendFbs = new Set();
     // the host re-broadcasts the lobby every 2 s: only rebuild when it changed, and keep the
@@ -2437,16 +2460,16 @@ export class UI {
       const list = el('div', 'lb-slots');
       slots.forEach((s, i) => {
         const mine = s.kind === 'human' && s.peer != null && s.peer === me;
-        const row = el('div', 'lb-slot team' + (s.team || 1) + (mine ? ' mine' : ''));
+        const row = el('div', 'lb-slot ' + (s.spectator ? 'spectator' : 'team' + (s.team || 1)) + (mine ? ' mine' : ''));
         row.append(el('span', 'lb-sw', ''));
-        row.lastChild.style.background = hex(PLAYER_COLORS[i] ?? 0xffffff);
+        row.lastChild.style.background = s.spectator ? '#9ab0c8' : hex(PLAYER_COLORS[i] ?? 0xffffff);
         if (s.kind === 'human') row.append(avatarEl(s.av, s.uid, 'av-sm'));
         row.append(el('span', 'lb-name', esc(pn(s.name) || (s.kind === 'ai' ? tr('Yapay Zekâ') : tr('Oyuncu'))) + (s.peer && s.peer === st.hostPeer ? ' <small>' + ico('x-crown') + '</small>' : '') + (mine ? ' <small>' + tr('(sen)') + '</small>' : '')));
         if (s.kind === 'human' && s.tp != null) row.append(el('span', 'lb-tp', tr('Sv ') + levelOf(s.tp).level + ' · ' + esc(tpText(s.tp))));
         row.append(el('span', 'lb-kind ' + s.kind, s.kind === 'ai' ? tr('Yapay Zekâ') : tr('İnsan')));
         const canTeam = mine || (host && s.kind === 'ai');
-        if (canTeam) row.append(sel(TEAMS, s.team || 1, (v) => (mine ? call('setTeam', +v) : call('setSlot', i, { team: +v })), 'lb-team'));
-        else row.append(el('span', 'lb-teamtag', tr('Takım ') + esc(s.team || 1)));
+        if (canTeam) row.append(sel(s.kind === 'human' ? TEAMS_H : TEAMS, s.spectator ? 0 : (s.team || 1), (v) => (mine ? call('setTeam', +v) : call('setSlot', i, { team: +v })), 'lb-team'));
+        else row.append(el('span', 'lb-teamtag', s.spectator ? tr('İzle') : tr('Takım ') + esc(s.team || 1)));
         if (s.kind === 'ai') {
           if (host) row.append(sel(DIFF, s.difficulty || 'normal', (v) => call('setSlot', i, { difficulty: v })));
           else row.append(el('span', 'lb-teamtag', (DIFF.find((d) => d[0] === s.difficulty) || DIFF[1])[1]));
@@ -2477,7 +2500,8 @@ export class UI {
         const ab = el('button', 'mbtn small', tr('+ Ekle')); ab.disabled = slots.length >= 8;
         ab.onclick = () => call('addAI', aTeam, aDiff); add.append(ab); body.append(add);
         const sets = st.settings || {}, sg = el('div', 'lb-settings');
-        body.append(this._lobbyMap(sets, slots.length, (t) => call('setSettings', { mapType: t })));
+        const activeN = slots.filter((s) => !s.spectator).length;
+        body.append(this._lobbyMap(sets, activeN, (t) => call('setSettings', { mapType: t })));
         const srow = (lab, node) => { const r = el('div', 'frow', `<label>${lab}</label>`); r.append(node); sg.append(r); };
         srow(tr('Harita Boyutu'), sel([[192, tr('Minik')], [256, tr('Küçük')], [320, tr('Orta')], [384, tr('Büyük')], [448, tr('Çok Büyük')], [512, tr('Dev')]], sets.mapSize ?? 320, (v) => call('setSettings', { mapSize: +v })));
         srow(tr('İklim'), sel(CLIMATE_OPTS, sets.climate ?? 'random', (v) => call('setSettings', { climate: v })));
@@ -2487,8 +2511,8 @@ export class UI {
         srow(tr('Oda Listesi'), sel([['1', tr('Herkese açık')], ['0', tr('Sadece davetle')]], st.listed === false ? '0' : '1', (v) => call('setListed', v === '1')));
         body.append(sg);
       } else {
-        const sets = st.settings || {};
-        body.append(this._lobbyMap(sets, slots.length, null));
+        const sets = st.settings || {}, activeN = slots.filter((s) => !s.spectator).length;
+        body.append(this._lobbyMap(sets, activeN, null));
         body.append(el('div', 'lb-hint', `${tr('Harita:')} ${esc(({ 192: tr('Minik'), 256: tr('Küçük'), 320: tr('Orta'), 384: tr('Büyük'), 448: tr('Çok Büyük'), 512: tr('Dev') })[sets.mapSize] || sets.mapSize || '-')} · ${tr('Tür:')} ${MAP_TYPE_TR[sets.mapType || 'river'] || '-'} · ${tr('İklim:')} ${(CLIMATE_OPTS.find((c) => c[0] === (sets.climate || 'random')) || CLIMATE_OPTS[0])[1]} · ${tr('Kaynak:')} ${({ low: tr('Düşük'), normal: tr('Normal'), high: tr('Yüksek') })[sets.startRes] || '-'} · ${tr('Çağ:')} ${tr(AGES[sets.startAge ?? 0]?.name) || '-'}`));
       }
       foot.innerHTML = '';
@@ -2505,8 +2529,8 @@ export class UI {
       const rd = el('button', 'mbtn small' + (mySlot?.ready ? ' on' : ''), mySlot?.ready ? tr('✔ Hazırım') : tr('Hazırım'));
       rd.onclick = () => call('setReady', !mySlot?.ready); foot.append(rd);
       if (host) {
-        const humans = slots.filter((s) => s.kind === 'human'), teams = new Set(slots.map((s) => s.team || 1));
-        const okStart = humans.length > 0 && humans.every((s) => s.ready) && teams.size >= 2;
+        const humans = slots.filter((s) => s.kind === 'human'), activeSlots = slots.filter((s) => !s.spectator), teams = new Set(activeSlots.map((s) => s.team || 1));
+        const okStart = humans.length > 0 && humans.every((s) => s.ready) && activeSlots.length >= 2 && teams.size >= 2;
         const sb = el('button', 'mbtn small primary', tr('Başlat')); sb.disabled = !okStart;
         sb.title = okStart ? '' : tr('Herkes hazır olmalı ve en az iki farklı takım bulunmalı');
         sb.onclick = () => call('start'); foot.append(sb);
@@ -2728,12 +2752,12 @@ export class UI {
     if (!this.app.net || !g?.mp) { if (this.scoreEl && !this.scoreEl.classList.contains('hidden')) { this.scoreEl.classList.add('hidden'); this._chatPosDirty = true; } return; }
     if (!this.scoreEl) { this.scoreEl = el('div', 'scoreboard panel'); this.hudEl.append(this.scoreEl); this._chatPosDirty = true; }
     if (this.scoreEl.classList.contains('hidden')) { this.scoreEl.classList.remove('hidden'); this._chatPosDirty = true; }
-    const me = this._me();
-    const rows = (g.players || []).map((p, i) => ({ p, id: p.id ?? i })).sort((a, b) => this._teamOf(a.id) - this._teamOf(b.id) || a.id - b.id);
+    const me = this._me(), isSpec = !!g.players?.[me]?.spectator;
+    const rows = (g.players || []).map((p, i) => ({ p, id: p.id ?? i })).filter(({ p }) => !p.spectator).sort((a, b) => this._teamOf(a.id) - this._teamOf(b.id) || a.id - b.id);
     let h = '';
     for (const { p, id } of rows) {
       const ally = this._ally(me, id), you = id === me;
-      const res = ally && !you ? `<span class="sbres">${RES_LIST.map((r) => `${RES_ICON[r]}${Math.floor(p.res?.[r] || 0)}`).join(' ')}</span>` : '';
+      const res = ((ally && !you) || isSpec) ? `<span class="sbres">${RES_LIST.map((r) => `${RES_ICON[r]}${Math.floor(p.res?.[r] || 0)}`).join(' ')}</span>` : '';
       h += `<div class="sbrow${you ? ' you' : ally ? ' ally' : ''}${p.defeated || p.left ? ' out' : ''}"><span class="dot" style="background:${pHex(id)}"></span><span class="sbn">${esc(this._pname(id))}${p.kind === 'ai' ? ' 🤖' : ''}${p.defeated ? ' ☠' : p.left ? ' ⏏' : ''}</span><span class="sbt team${this._teamOf(id)}">T${this._teamOf(id)}</span><span class="sba">${esc((tr(AGES[p.age]?.name) || '').split(' ')[0])}</span>${res}</div>`;
     }
     if (h !== this.scoreSig) { this.scoreSig = h; this.scoreEl.innerHTML = h; this._chatPosDirty = true; }

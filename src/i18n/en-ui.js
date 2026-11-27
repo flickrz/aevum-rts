@@ -483,4 +483,11 @@ export default {
   "Vahşi": "Wild",
   "Avlanabilir": "Huntable",
   "Avlandı": "Hunted",
+  "İzle": "Spectate",
+  "👁 İzleme Modu": "👁 Spectator Mode",
+  "👁 İzleme modu: tüm harita görünür.": "👁 Spectator mode: whole map visible.",
+  "İzleme modu: maç sürüyor.": "Spectator mode: match in progress.",
+  "MAÇ BİTTİ": "MATCH OVER",
+  "{0} uygarlığı yıkıldı!": "{0} has been defeated!",
+  "{0} {1} seviyesine ulaştı": "{0} reached {1}",
 };
