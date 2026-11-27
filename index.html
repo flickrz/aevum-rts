@@ -38,6 +38,18 @@
   if (on) document.write('<link rel="modulepreload" href="' + window.AEVUM_CODE + 'src/main.js">');   /* (fetched now, not after the stylesheets) */
   var l = document.getElementById('aevum-css');
   if (on && l) l.onerror = function () { l.onerror = null; console.warn('[cdn] style.css from this host'); l.href = './style.css'; };
+  /* drafts, off unless the URL asks: ?menu2 / ?menu3 pick a main menu draft (its module is imported only then), and
+     ?menu3 also turns on the new look for every screen (html.theme3): its fonts and stylesheets are written here, by
+     the parser, so the first paint already has them. Without the flag none of this is requested. */
+  var flag = function (n) { var m = new RegExp('[?&]' + n + '(?:=([^&]*))?(?:&|$)').exec(q); return !!m && m[1] !== '0'; };
+  var d = window.AEVUM_MENU = flag('menu3') ? 'menu3' : flag('menu2') ? 'menu2' : '';
+  if (d === 'menu3') {
+    document.documentElement.classList.add('theme3');
+    var t = window.AEVUM_CODE + 'src/ui/', css = function (id, href) { document.write('<link rel="stylesheet" id="' + id + '" href="' + href + '">'); };
+    css('aevum-menu3-font', 'https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Alegreya:wght@500;600;700;800&family=Nunito:wght@500;600;700;800&display=swap');
+    css('aevum-t3', t + 'theme3.css');
+    css('aevum-menu3-css', t + 'menu3.css');
+  }
 })();
 </script>
 <!-- emoji fallback: Windows 10's emoji font lacks the newer icons (🪵 🪨 🪙 🫐); only the glyphs a page uses are downloaded -->

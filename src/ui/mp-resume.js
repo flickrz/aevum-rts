@@ -18,7 +18,7 @@ function myName(ui) { return safe(() => ui._mpName(), '') || 'Komutan'; }
 // ---------- save picker (host) ----------
 export function menuResume(ui, errText) {
   const app = ui.app;
-  const box = ui._menuBox(tr('<h2>Kayıtlı Maça Devam Et</h2><div class="mpnote">Kaydettiğin bir çok oyunculu maçı seç. Bir oda açılır; davet ettiğin oyuncular gelince hesabından tanınıp kendi yerine oturur.</div>'));
+  const box = ui._menuBox(tr('<h2>Kayıtlı Maça Devam Et</h2><div class="mpnote">Kaydettiğin bir çok oyunculu maçı seç. Bir oda açılır; davet ettiğin oyuncular gelince hesabından tanınıp kendi yerine oturur.</div>'), 't3-saves');
   const err = el('div', 'mperr hidden'); box.append(err);
   const list = el('div', 'savelist', tr('Yükleniyor...')); box.append(list);
   const fail = (e) => { err.textContent = (e && e.message) || String(e || tr('Hata')); err.classList.remove('hidden'); };

@@ -2,7 +2,7 @@
 import { TEST_MODE, TEST_PROFILE } from './testmode.js';
 import { Game } from './sim/game.js';
 import { Renderer } from './render/renderer.js';
-import { UI } from './ui/ui.js';
+import { UI, menuDraftReady } from './ui/ui.js';
 import { Input } from './input.js';
 import { AudioManager } from './audio.js';
 import * as storage from './storage.js';
@@ -16,9 +16,9 @@ import { AUTH_KEY } from './cloud/auth.js';
 import { GoogleSignIn } from './cloud/google.js';
 import { createNotice, markInterrupted, clearInterrupted } from './net/notice.js';
 import { mountNoticeBanner, hostNameOf } from './ui/notice-ui.js';
-import { MENU_DRAFT } from './ui/menu-shared.js';
 import { tr, loc } from './i18n.js';
 
+const MENU_DRAFT = !!menuDraftReady;   // a main menu draft (?menu2 / ?menu3) is on
 const STEP = 1 / 30;
 const AUTOSAVE_EVERY = 90;
 const MP_AUTOSAVE_TICKS = 5 * 60 * 30;
@@ -755,4 +755,5 @@ function boot() {
   requestAnimationFrame(frame);
 }
 
-try { boot(); } catch (err) { showError(err); }
+const start = () => { try { boot(); } catch (err) { showError(err); } };
+if (menuDraftReady) menuDraftReady.then(start); else start();   // (a menu draft: its module is here before the first menu)
