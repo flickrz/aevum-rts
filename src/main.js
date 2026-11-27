@@ -517,12 +517,41 @@ function attachGame(game, demo) {
   }
 }
 
+function startDemoWork(game) {
+  if (!game || !game.cfg || !game.cfg.demo) return;
+  const tc = game.buildingsOf(0).find(b => b.type === 'towncenter');
+  const vils = game.unitsOf(0).filter(u => u.type === 'villager');
+  if (!tc || !vils.length) return;
+  const pick = (types) => {
+    for (const t of types) { const r = game.resourceNear(tc.x, tc.z, 36, t); if (r) return r; }
+    return null;
+  };
+  // Demo only: split player 0's villagers across nearby wood, food, stone, and gold so the menu village looks alive
+  const jobs = [
+    [pick(['tree']), 7],
+    [pick(['berries', 'deer']), 5],
+    [pick(['stone']), 4],
+    [pick(['gold']), 4],
+  ].filter(([r]) => !!r);
+  if (!jobs.length) return;
+  let i = 0;
+  for (let j = 0; j < jobs.length && i < vils.length; j++) {
+    const [res, want] = jobs[j];
+    const take = j === jobs.length - 1 ? vils.length - i : Math.min(want, vils.length - i);
+    const ids = vils.slice(i, i + take).map(u => u.id);
+    if (ids.length) game.cmdGather(ids, res.id);
+    i += take;
+  }
+}
+
 function startDemo() {
   try {
-    attachGame(new Game({
+    const game = new Game({
       mapSize: 96, enemies: 1, difficulty: 'normal', startRes: 'high',
       startAge: 1, sandbox: true, seed: (Math.random() * 1e9) | 0, demo: true,
-    }), true);
+    });
+    startDemoWork(game);
+    attachGame(game, true);
   } catch (err) { showError(err); }
 }
 
