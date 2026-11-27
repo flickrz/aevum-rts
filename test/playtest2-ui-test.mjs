@@ -184,5 +184,26 @@ console.log('Drop-off return');
   ok(A3.hash() === B3.hash(), 'both clients stay in sync after villager drop-off');
 }
 
+// ---- 6) second town center trains villagers (MP lockstep)
+console.log('Second town center');
+{
+  const A4 = new Game(cfg(0)), B4 = new Game(cfg(1));
+  const both4 = (pid, m, a) => { const ra = A4.execCommand(pid, m, JSON.parse(JSON.stringify(a))), rb = B4.execCommand(pid, m, JSON.parse(JSON.stringify(a))); if (ra !== rb) fails.push('clients disagree on ' + m); return ra; };
+  for (const g of [A4, B4]) { g.players[0].res.wood = 2000; g.players[0].res.stone = 2000; g.players[0].res.food = 2000; }
+  const vils = A4.unitsOf(0).filter(u => u.type === 'villager').slice(0, 6).map(u => u.id);
+  const sp = spot(A4, 'towncenter', 0, 10);
+  ok(!!sp, 'found spot for second town center');
+  const tc2Id = both4(0, 'placeBuilding', [0, 'towncenter', sp[0], sp[1], vils, false, 0]);
+  const tc2 = A4.entities.get(tc2Id);
+  ok(tc2 && tc2.type === 'towncenter' && !tc2.done, 'second town center foundation placed');
+  run(A4, 80); run(B4, 80);
+  ok(tc2.done, 'second town center finished building');
+  const pop0 = A4.players[0].pop;
+  ok(both4(0, 'train', [tc2.id, 'villager']) === true, 'second town center queues a villager');
+  run(A4, 30); run(B4, 30);
+  ok(A4.players[0].pop === pop0 + 1 && tc2.queue.length === 0, `second town center spawned a villager (${pop0} -> ${A4.players[0].pop})`);
+  ok(A4.hash() === B4.hash(), 'both clients stay in sync after second town center trains villager');
+}
+
 console.log(fails.length ? `\n${fails.length} FAILED` : '\nALL OK');
 process.exit(fails.length ? 1 : 0);

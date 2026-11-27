@@ -743,7 +743,7 @@ export class UI {
     });
     on('trained', (p) => { if (p.e?.owner === this._me()) this.toast(`${UNITS[p.e.type]?.icon || ''} ${tr('{0} hazır', tr(UNITS[p.e.type]?.name) || p.e.type)}`, 'info', p.e.x, p.e.z); });
     on('researched', (p) => { if (p.owner === this._me()) { const t = typeof p.tech === 'string' ? TECHS[p.tech] : p.tech; this.toast(`${t?.icon || ico('x-tech')} ${tr('Araştırma tamamlandı: {0}', tr(t?.name) || p.tech)}`, 'good'); this.cardSig = null; } });
-    on('buildComplete', (p) => { if (p.e?.owner === this._me() && p.e.type !== 'rail') this.toast(`${BUILDINGS[p.e.type]?.icon || ico('b-house')} ${tr('{0} tamamlandı', tr(BUILDINGS[p.e.type]?.name) || p.e.type)}`, 'good', p.e.x, p.e.z); });
+    on('buildComplete', (p) => { if (p.e?.owner === this._me()) { this.cardSig = null; this.selSig = null; if (p.e.type !== 'rail') this.toast(`${BUILDINGS[p.e.type]?.icon || ico('b-house')} ${tr('{0} tamamlandı', tr(BUILDINGS[p.e.type]?.name) || p.e.type)}`, 'good', p.e.x, p.e.z); } });
     on('questDone', (p) => {
       const q = p.quest || {}; this.questDoneAt.set(q.id, performance.now()); this.questSig = null;
       this.toast(`✔ ${tr('Görev tamamlandı: {0}', tr(q.title || ''))}${q.reward ? ' (' + this._rewardText(q.reward) + ')' : ''}`, 'good');
@@ -1440,10 +1440,9 @@ export class UI {
   // ------------------------------------------------------------------ command card
   _refreshCard() {
     const g = this.game, p = g.players[this._me()], ents = this._ents();
-    let sig = this.page + '|' + (p?.age ?? 0) + '|' + (p?.techs?.size ?? 0) + '|' + ents.length + '|';
+    let sig = this.page + '|' + (p?.age ?? 0) + '|' + (p?.techs?.size ?? 0) + '|' + (p?.bell ? 1 : 0) + '|' + ents.length + '|';
     if (ents.length) {
-      const e = ents[0];
-      sig += e.id + e.type + (e.done ? 'd' : 'u') + (e.queue ? e.queue.map((q) => q.kind + q.id).join(';') : '') + ents.some((x) => x.type === 'villager') + (ents.length > 1 ? ents.map((x) => x.type + (x.done ? 'd' : 'u')).join(',') : '') + ents.map((x) => x.form || '').join('');
+      sig += ents.map((x) => x.id + ':' + x.type + (x.done ? 'd' : 'u') + (x.queue ? x.queue.map((q) => q.kind + q.id).join(';') : '') + (x.form || '')).join(',');
     }
     if (sig !== this.cardSig) { this.cardSig = sig; this._renderCard(ents); if (this.tut) safe(() => this.tut.applyHl()); }
     for (const b of this.buttons) {
@@ -1584,7 +1583,13 @@ export class UI {
           if (p.pop + (u.pop ?? 1) > p.popCap) return { ok: false, reason: tr('Nüfus sınırı dolu (1000)') };
           return { ok: true };
         },
-        run: () => { let ok = false; for (let i = many(); i > 0; i--) for (const b of pool) if (safe(() => g.train(b.id, uid), false)) ok = true; return ok; },
+        run: () => {
+          let ok = false;
+          const load = (b) => ((b.queue || []).some((q) => q.kind === 'age') ? 1000 : 0) + (b.queue ? b.queue.length : 0);
+          const ord = pool.length > 1 ? pool.slice().sort((a, b) => load(a) - load(b) || a.id - b.id) : pool;
+          for (let i = many(); i > 0; i--) for (const b of ord) if (safe(() => g.train(b.id, uid), false)) ok = true;
+          return ok;
+        },
       });
     }
     const queuedTech = new Set();
