@@ -85,8 +85,8 @@ export class Input {
 
   // ---------- helpers ----------
   ent(id) { return id == null ? null : this.game.getEntity(id); }
-  ownUnits() { return this.app.selection.filter(id => { const e = this.ent(id); return e && e.kind === 'unit' && e.owner === this.me() && !e.dead; }); }
-  ownVillagers() { return this.app.selection.filter(id => { const e = this.ent(id); return e && e.kind === 'unit' && e.owner === this.me() && !e.dead && e.type === 'villager'; }); }
+  ownUnits() { return this.app.selection.filter(id => { const e = this.ent(id); return e && e.kind === 'unit' && e.owner === this.me() && !e.dead && !e.aboard && !e.garrisoned; }); }
+  ownVillagers() { return this.app.selection.filter(id => { const e = this.ent(id); return e && e.kind === 'unit' && e.owner === this.me() && !e.dead && !e.aboard && !e.garrisoned && e.type === 'villager'; }); }
   // a building that trains units (only those take a rally flag)
   _trains(id) { const e = this.ent(id); return !!e && !!BUILDINGS[e.type] && (BUILDINGS[e.type].trains || []).length > 0; }
   // a drop-off camp (lumber camp, mining camp, mill): a rally flag on it sends new villagers to work around it
@@ -781,13 +781,13 @@ export class Input {
 
   // Ctrl+A: all own commandable units on the map
   selectAllUnits() {
-    const ids = this.game.unitsOf(this.me()).filter(u => !u.dead && !u.aboard && u.type !== 'train').map(u => u.id);
+    const ids = this.game.unitsOf(this.me()).filter(u => !u.dead && !u.aboard && !u.garrisoned && u.type !== 'train').map(u => u.id);
     if (ids.length) this.app.select(ids);
   }
   // Q (with nothing selected): all own military units (land soldiers, support, siege, and warships)
   selectAllMilitary() {
     const ids = this.game.unitsOf(this.me()).filter(u => {
-      if (u.dead || u.aboard) return false;
+      if (u.dead || u.aboard || u.garrisoned) return false;
       const d = UNITS[u.type];
       return !!d && d.cls !== 'civil' && d.cls !== 'train' && u.type !== 'fishboat' && u.type !== 'transport';
     }).map(u => u.id);
@@ -800,7 +800,7 @@ export class Input {
 
   // the next idle villager; all: every idle villager at once (Shift), the camera on the one nearest the middle of them
   nextIdleVillager(all = false) {
-    const idle = this.game.unitsOf(this.me()).filter(u => u.type === 'villager' && u.state === 'idle' && !u.dead && !u.sheltered);
+    const idle = this.game.unitsOf(this.me()).filter(u => u.type === 'villager' && u.state === 'idle' && !u.dead && !u.aboard && !u.garrisoned && !u.sheltered);
     if (!idle.length) {
       this.game.events.emit('notify', { text: tr('Boşta köylü yok.'), type: 'info' });
       return;

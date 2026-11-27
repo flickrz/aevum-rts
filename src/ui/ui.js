@@ -1,7 +1,7 @@
 // Aevum UI: main menu, HUD, minimap, tooltips, overlays. DOM only, no three.js.
 import { TEST_MODE } from '../testmode.js';
 import { AGES, UNITS, BUILDINGS, TECHS, PLAYER_COLORS } from '../data.js';
-import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS, MINE_CAP, healerStats, healerRate, healerBolt, PROD_B, PASTURE_IDLE_RATE, NO_ROTATE } from '../sim/game.js';
+import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS, MINE_CAP, SHELTER_CAP, healerStats, healerRate, healerBolt, PROD_B, PASTURE_IDLE_RATE, NO_ROTATE } from '../sim/game.js';
 import { firstLaunch, menuProfile } from './profile-ui.js';
 import { levelOf } from '../rank.js';
 import { menuHud, saveBadge, saveBadgeTitle, confirmDeleteSave, loginScreen, avatarEl, tpText } from './cloud-ui.js';
@@ -729,6 +729,11 @@ export class UI {
       this._trainsSeen.add(trn.id); this.toast(ico('u-train') + tr(' Demir yolu bağlandı!'), 'good', trn.x, trn.z); this.cardSig = null; this.selSig = null;
     });
     on('board', (p) => { if (p.transport?.owner === this._me()) { this.cardSig = null; this.selSig = null; } });
+    on('garrison', (p) => {
+      if (p.unit && Array.isArray(this.app.selection) && this.app.selection.includes(p.unit.id)) this.app.select(this.app.selection.filter(id => id !== p.unit.id));
+      if (p.building?.owner === this._me()) { this.cardSig = null; this.selSig = null; }
+    });
+    on('ungarrison', (p) => { if (p.building?.owner === this._me()) { this.cardSig = null; this.selSig = null; } });
     on('unload', (p) => {
       if (p.transport?.owner === this._me()) { this.cardSig = null; this.selSig = null; }
       const t = p.transport; if (!t || t.owner !== this._me() || game.time - this._unloadT < 3) return;
@@ -1280,6 +1285,7 @@ export class UI {
         s.push(`<span>${ico('x-atk')} <b>${atk}</b></span>`, `<span>${ico('x-range')} <b>${(d.range || 0) + (m.towerRange || 0) + towerAgeBonus(e.type, op?.age)}</b></span>`);
       }
       if (d.popCap) s.push(`<span>${ico('x-pop')} <b>+${d.popCap}</b></span>`);
+      if (e.done && SHELTER_CAP[e.type]) s.push(`<span>${ico('u-villager')} <b>${(e.garrison || []).length}/${SHELTER_CAP[e.type]}</b></span>`);
       if (e.type === 'farm' && e.farm && Array.isArray(e.farm.plots)) s.push(`<span>Ekili parsel: <b>${e.farm.plots.filter((q) => q.s > 0).length}/8</b></span>`, `<span>Olgun: <b>${e.farm.plots.filter((q) => q.s === 5).length}</b></span>`);
       else if (e.type === 'farm' && e.farm) s.push(`<span>${tr('Tarla:')} <b>${[tr('Boş'), tr('Sürülü'), tr('Ekili'), tr('Büyüyor'), tr('Olgun'), tr('Hasat')][e.farm.stage] || '-'}</b></span>`);
       if (e.done) s.push(...safe(() => this._extraStats(e), []));
@@ -1838,7 +1844,7 @@ export class UI {
     for (let i = 0; i < mmE.length; i++) {
       const e = mmE[i];
       if (e.known && e.owner !== me && !e.dead) known.m.set(e.id, e);
-      if (e.dead || e.kind === 'resource' || e.aboard != null || (e.kind === 'building' && e.type === 'rail')) continue;
+      if (e.dead || e.kind === 'resource' || e.aboard != null || e.garrisoned || (e.kind === 'building' && e.type === 'rail')) continue;
       if (e.owner !== me && hasVis && !g.isEntityVisible(e)) continue;
       ctx.fillStyle = pHex(e.owner);
       if (e.train) { ctx.fillStyle = '#fff6a8'; ctx.beginPath(); ctx.arc(e.x * k, e.z * k, 2.2, 0, Math.PI * 2); ctx.fill(); continue; }

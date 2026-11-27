@@ -123,6 +123,8 @@ export const CASTLE_VOLLEY = 3, CASTLE_AGE_ATK = 4;
 export const TOWER_CANNON_AGE = 3;
 // a building queues as many units as the player can pay for (paid when queued); this only stops runaway queues
 export const TRAIN_QUEUE_MAX = 100;
+// garrison shelter capacity for the Town Bell (villagers hide inside and are safe from attacks)
+export const SHELTER_CAP = { towncenter: 20, castle: 15, tower: 5 };
 // wood in one tree (owner decision 2026-11-12: a tree is worth as much as a big mine)
 export const TREE_WOOD = 800;
 // towers see and shoot farther every age after the Bronze Age (+1 tile per age: 7 -> 10 in the Industrial Age)
@@ -298,6 +300,7 @@ export class Game {
     for (const e of this.entities.values()) {
       mix(e.id); mix(strHash(e.type)); mix(e.owner); mix(Math.round(e.x * 100)); mix(Math.round(e.z * 100)); mix(Math.round((e.hp || 0) * 10));
       if (e.kind === 'resource') mix(Math.round((e.amount || 0) * 10)); else if (e.dead) mix(7);
+      if (e.garrisoned) mix(e.garrisoned);
     }
     for (const p of this.players) { mix(p.age); mix(p.pop); mix(p.defeated ? 1 : 0); mix(p.left ? 1 : 0); for (const k of ['food', 'wood', 'stone', 'gold']) mix(Math.round((p.res[k] || 0) * 10)); }
     for (const a of this.ais) mix(a.rs);
@@ -1128,7 +1131,7 @@ export class Game {
     this.events.emit('buildingRot', { e: b });
     return true;
   }
-  _live(ids) { const out = []; for (const id of ids || []) { const u = this.entities.get(id); if (u && u.kind === 'unit' && !u.dead && !u.aboard && !u.train) out.push(u); } return out; }
+  _live(ids) { const out = []; for (const id of ids || []) { const u = this.entities.get(id); if (u && u.kind === 'unit' && !u.dead && !u.aboard && !u.garrisoned && !u.train) out.push(u); } return out; }
   // Explore: units wander toward unexplored tiles until they get any other order.
   cmdExplore(ids) { let n = 0; for (const u of this._live(ids)) { if (this._exploreStep(u)) n++; } return n > 0; }
   _exploreStep(u) {
@@ -1267,7 +1270,7 @@ export class Game {
     return out;
   }
   cmdAttack(ids, targetId, queue = false) {
-    const t = this.entities.get(targetId); if (!t || t.dead || (t.kind === 'resource' && !t.live)) return false;
+    const t = this.entities.get(targetId); if (!t || t.dead || t.aboard || t.garrisoned || (t.kind === 'resource' && !t.live)) return false;
     const us = this._live(ids); let ok = false; const hl = [];
     for (const u of us) { if (u.type === 'healer') { if (this.isEnemy(u.owner, t.owner)) hl.push(u.id); continue; }   /* (a healer never attacks: she walks there) */
       if (!this._foe(u.owner, t) || UNITS[u.type].atk <= 0) continue; if (u.type === 'ram' && t.kind !== 'building') continue; if (t.naval && !(UNITS[u.type].range > 0)) continue; this._setOrder(u, { type: 'attack', targetId }, queue); ok = true; }
@@ -1316,43 +1319,151 @@ export class Game {
     c.fail = 0; c.sp = 0; c.so = 0; c.dadm = 0;
     return c;
   }
-  // Town bell (2026-11-26): first press recalls all villagers to shelter at the nearest own Town Center and saves
-  // their tasks; second press returns each sheltered villager to its previous task. MP-safe (owner forced in execCommand).
+  // Nearest own finished shelter building (Town Center, Castle, Tower) for a villager; ties broken by id.
+  _nearestShelter(u, roomOnly = false, planned = null) {
+    let best = null, bd = 1e18;
+    for (const b of this.buildings) {
+      const cap = SHELTER_CAP[b.type];
+      if (!cap || b.owner !== u.owner || b.dead || !b.done) continue;
+      if (roomOnly) {
+        const used = planned ? (planned.get(b.id) || 0) : (b.garrison ? b.garrison.length : 0);
+        if (used >= cap) continue;
+      }
+      const d = sq(b.x - u.x) + sq(b.z - u.z);
+      if (d < bd || (d === bd && best && b.id < best.id)) { bd = d; best = b; }
+    }
+    return best;
+  }
+  // Walkable exit tiles around a shelter building (front/door side first, deterministic).
+  _exitSpots(b, owner) {
+    const N = this.map.size, spots = [];
+    const fx = b.x, fz = b.z + b.size / 2 + 0.8;
+    const x0 = Math.max(1, b.tx - 2), x1 = Math.min(N - 2, b.tx + b.size + 1);
+    const z0 = Math.max(1, b.tz - 2), z1 = Math.min(N - 2, b.tz + b.size + 1);
+    for (let tz = z0; tz <= z1; tz++) for (let tx = x0; tx <= x1; tx++) {
+      if (!b.dead && tx >= b.tx && tx < b.tx + b.size && tz >= b.tz && tz < b.tz + b.size) continue;
+      if (!this._pass(tx, tz, owner)) continue;
+      const sx = tx + 0.5, sz = tz + 0.5;
+      spots.push({ x: sx, z: sz, d: sq(sx - fx) + sq(sz - fz), tx, tz });
+    }
+    spots.sort((a, c) => a.d - c.d || a.tz - c.tz || a.tx - c.tx);
+    return spots;
+  }
+  _resumeBellTask(u) {
+    const task = u.bellTask;
+    u.sheltered = 0; delete u.bellTask;
+    if (task && task.order) {
+      u.order = task.order; u.queue = Array.isArray(task.queue) ? task.queue : [];
+      u.targetId = u.order.targetId || null; u.path = null; u.pk = null; u.rpT = 0;
+    } else {
+      u.order = null; u.queue.length = 0; u.targetId = null; u.path = null; u.pk = null; u.state = 'idle'; u.anim = 'idle';
+    }
+  }
+  // Eject all villagers garrisoned inside building b, placing them next to b and resuming their saved task.
+  _ungarrison(b, resumeTask = true) {
+    if (!b || !b.garrison || !b.garrison.length) return [];
+    const ids = b.garrison.slice();
+    b.garrison = [];
+    const spots = this._exitSpots(b, b.owner);
+    const out = [];
+    let k = 0;
+    for (const id of ids) {
+      const u = this.entities.get(id);
+      if (!u || u.dead) continue;
+      u.garrisoned = 0; delete u.garrisoned;
+      if (spots.length) {
+        const s = spots[k % spots.length], ring = Math.floor(k / spots.length) * 0.25;
+        u.x = s.x + (ring ? dcos(k * 2.4) * ring : 0);
+        u.z = s.z + (ring ? dsin(k * 2.4) * ring : 0);
+      } else {
+        const f = this._freeNear(b.x, b.z + b.size / 2 + 0.8, u.owner);
+        u.x = f.x; u.z = f.z;
+      }
+      k++;
+      if (resumeTask) this._resumeBellTask(u);
+      else {
+        u.sheltered = 0; delete u.bellTask;
+        u.order = null; u.queue.length = 0; u.targetId = null; u.path = null; u.pk = null; u.state = 'idle'; u.anim = 'idle';
+      }
+      out.push(u);
+    }
+    if (out.length) this.events.emit('ungarrison', { building: b, units: out });
+    return out;
+  }
+  _uGarrison(u, o, dt) {
+    let b = o.targetId ? this.entities.get(o.targetId) : null;
+    const okShelter = s => !!s && !s.dead && s.done && s.owner === u.owner && SHELTER_CAP[s.type] > 0;
+    const hasRoom = s => okShelter(s) && (s.garrison ? s.garrison.length : 0) < SHELTER_CAP[s.type];
+    if (!okShelter(b)) {
+      b = this._nearestShelter(u, true) || this._nearestShelter(u, false);
+      if (!b) { this._resumeBellTask(u); return; }
+      o.targetId = b.id; u.targetId = b.id; u.sheltered = b.id; u.path = null; u.pk = null; o.fail = 0; o.wait = 0;
+    }
+    if (o.wait) {
+      u.state = 'idle'; u.anim = 'idle';
+      o.wt = (o.wt || 0) + dt;
+      if (o.wt < 1) return;
+      o.wt = 0;
+      const alt = this._nearestShelter(u, true);
+      if (alt) { o.targetId = alt.id; u.targetId = alt.id; u.sheltered = alt.id; u.path = null; u.pk = null; o.fail = 0; o.wait = 0; }
+      return;
+    }
+    if (!this._approach(u, b, dt, 1.4)) {
+      if ((o.fail || 0) >= 4) {
+        o.fail = 0;
+        const alt = this._nearestShelter(u, true);
+        if (alt && alt.id !== b.id) { o.targetId = alt.id; u.targetId = alt.id; u.sheltered = alt.id; u.path = null; u.pk = null; }
+        else { o.wait = 1; o.wt = 0; u.state = 'idle'; u.anim = 'idle'; }
+      }
+      return;
+    }
+    if (hasRoom(b)) {
+      if (!b.garrison) b.garrison = [];
+      b.garrison.push(u.id);
+      u.garrisoned = b.id;
+      u.sheltered = b.id;
+      u.x = b.x; u.z = b.z;
+      u.order = null; u.queue.length = 0; u.path = null; u.pk = null; u.targetId = null; u.state = 'idle'; u.anim = 'idle';
+      this.events.emit('garrison', { unit: u, building: b });
+      return;
+    }
+    const alt = this._nearestShelter(u, true);
+    if (alt) { o.targetId = alt.id; u.targetId = alt.id; u.sheltered = alt.id; u.path = null; u.pk = null; o.fail = 0; return; }
+    o.wait = 1; o.wt = 0; u.state = 'idle'; u.anim = 'idle';
+  }
+  // Town bell (2026-11-26; garrison inside 2026-11-27): first press sends all villagers to garrison inside the nearest
+  // own shelter building (Town Center, Castle, Tower) and saves their tasks; second press ungarrisons everyone next to
+  // their shelter and returns them to their previous task. MP-safe (owner forced in execCommand).
   cmdTownBell(owner) {
     const p = this.players[owner]; if (!p || p.defeated) return false;
-    const tcs = this.buildings.filter(b => b.owner === owner && !b.dead && b.done && b.type === 'towncenter');
     if (!p.bell) {
-      if (!tcs.length) return false;
+      const shelters = this.buildings.filter(b => b.owner === owner && !b.dead && b.done && SHELTER_CAP[b.type] > 0);
+      if (!shelters.length) return false;
       p.bell = true;
+      const planned = new Map();
+      for (const b of shelters) planned.set(b.id, b.garrison ? b.garrison.length : 0);
       for (const u of this.units) {
-        if (u.dead || u.aboard || u.owner !== owner || u.type !== 'villager') continue;
+        if (u.dead || u.aboard || u.garrisoned || u.owner !== owner || u.type !== 'villager') continue;
         const prev = u.order && !u.order.bell ? { order: this._cloneOrder(u.order), queue: (u.queue || []).map(q => this._cloneOrder(q)).filter(Boolean) } : null;
-        let tc = tcs[0], bd = sq(tc.x - u.x) + sq(tc.z - u.z);
-        for (let i = 1; i < tcs.length; i++) {
-          const d = sq(tcs[i].x - u.x) + sq(tcs[i].z - u.z);
-          if (d < bd || (d === bd && tcs[i].id < tc.id)) { bd = d; tc = tcs[i]; }
-        }
-        const sl = this._slotNear(tc.x, tc.z + tc.size / 2 + 1.2, u);
-        this._setOrder(u, { type: 'move', x: sl.x, z: sl.z, bell: 1 }, false);
-        u.sheltered = tc.id;
+        const b = this._nearestShelter(u, true, planned) || this._nearestShelter(u, false);
+        if (!b) continue;
+        planned.set(b.id, (planned.get(b.id) || 0) + 1);
+        this._setOrder(u, { type: 'garrison', targetId: b.id, bell: 1 }, false);
+        u.sheltered = b.id;
         if (prev) u.bellTask = prev; else delete u.bellTask;
       }
       this.events.emit('townBell', { owner, active: true });
       return true;
     }
     p.bell = false;
+    for (const b of this.buildings) {
+      if (b.owner === owner && !b.dead && b.garrison && b.garrison.length) this._ungarrison(b, true);
+    }
     for (const u of this.units) {
-      if (u.dead || u.aboard || u.owner !== owner || u.type !== 'villager' || !u.sheltered) continue;
+      if (u.dead || u.aboard || u.garrisoned || u.owner !== owner || u.type !== 'villager' || !u.sheltered) continue;
       const still = !u.order || !!u.order.bell;
-      const task = u.bellTask;
-      u.sheltered = 0; delete u.bellTask;
-      if (!still) continue;
-      if (task && task.order) {
-        u.order = task.order; u.queue = Array.isArray(task.queue) ? task.queue : [];
-        u.targetId = u.order.targetId || null; u.path = null; u.pk = null; u.rpT = 0;
-      } else {
-        u.order = null; u.queue.length = 0; u.targetId = null; u.path = null; u.pk = null; u.state = 'idle'; u.anim = 'idle';
-      }
+      if (still) this._resumeBellTask(u);
+      else { u.sheltered = 0; delete u.bellTask; }
     }
     this.events.emit('townBell', { owner, active: false });
     return true;
@@ -1784,7 +1895,7 @@ export class Game {
       return true;
     };
     for (const u of this.units) {
-      if (u.dead || u.naval || u.aboard || u.train || !u.path || u.pi >= u.path.length) continue;
+      if (u.dead || u.naval || u.aboard || u.garrisoned || u.train || !u.path || u.pi >= u.path.length) continue;
       let ax = u.x, az = u.z;
       for (let i = u.pi; i < u.path.length; i += 2) { if (hits(ax, az, u.path[i], u.path[i + 1])) { u.path = null; u.pk = null; break; } ax = u.path[i]; az = u.path[i + 1]; }
     }
@@ -1842,7 +1953,7 @@ export class Game {
     this.projectiles.push(p);
   }
   _applyDamage(target, dmg, killer, proj) {
-    if (!target || target.dead) return;
+    if (!target || target.dead || target.garrisoned) return;
     target.hp -= dmg; target.hitT = this.time;
     if (target.live && killer && !killer.dead && killer.id && killer.kind === 'unit' && killer.owner >= 0) { target.foe = killer.id; target.foeT = this.time; }   // (predator retaliation, see PRED_FOE_T)
     // view only: the attacker shows through the victim team's fog for a few seconds (read by isEntityVisible, never by the sim)
@@ -1879,7 +1990,7 @@ export class Game {
   _slotNear(x, z, self) {
     const sp = UNITS[self.type].cls === 'siege' ? 1.8 : 1.1, taken = [];
     for (const v of this.units) {
-      if (v === self || v.dead || v.owner !== self.owner || v.naval) continue;
+      if (v === self || v.dead || v.aboard || v.garrisoned || v.owner !== self.owner || v.naval) continue;
       const tx = v.order && v.order.type === 'move' ? v.order.x : v.x, tz = v.order && v.order.type === 'move' ? v.order.z : v.z;
       if (Math.abs(tx - x) < 12 && Math.abs(tz - z) < 12) taken.push(tx, tz);
     }
@@ -1894,7 +2005,7 @@ export class Game {
   _callHelp(victim, foe) {
     const HELP_R = 16, HELP_N = 10, cand = [];
     this._near(victim.x, victim.z, HELP_R, v => {
-      if (v.dead || v.kind !== 'unit' || v.aboard || v.order || (v.owner !== victim.owner && !this.isAlly(v.owner, victim.owner))) return;
+      if (v.dead || v.kind !== 'unit' || v.aboard || v.garrisoned || v.order || (v.owner !== victim.owner && !this.isAlly(v.owner, victim.owner))) return;
       if (!this._canEngage(v, foe) || this.time < (foe['nh' + v.owner] || 0)) return;
       const d = dhypot(v.x - victim.x, v.z - victim.z); if (d <= HELP_R) cand.push([d, v.id, v]);
     });
@@ -1940,12 +2051,15 @@ export class Game {
     const p = this.players[e.owner], kp = killer && killer.owner >= 0 && killer.owner !== e.owner ? this.players[killer.owner] : null;
     if (e.kind === 'unit') {
       if (e.order && e.order.type === 'gather') this._unhunt(e.order);
+      if (e.garrisoned) { const sb = this.entities.get(e.garrisoned); if (sb && sb.garrison) { const gi = sb.garrison.indexOf(e.id); if (gi >= 0) sb.garrison.splice(gi, 1); } e.garrisoned = 0; delete e.garrisoned; }
       e.state = 'dead'; e.anim = 'die'; e.deathTime = this.time; e.order = null; e.queue.length = 0; e.path = null;
       if (e.cargo && e.cargo.length) this._navSinkCargo(e, killer);
       p.pop -= UNITS[e.type].pop; p.stats.unitsLost++; if (kp) kp.stats.kills++;
       this.events.emit('death', { e, killer: killer || null });
     } else if (e.kind === 'building') {
       this._block(e, 0); this._bAtSet(e, null); this._bFogVer++;
+      if (e.garrison && e.garrison.length) this._ungarrison(e, true);
+      if (p && p.bell && !this.units.some(u => !u.dead && u.owner === e.owner && (u.garrisoned || u.sheltered))) { p.bell = false; this.events.emit('townBell', { owner: e.owner, active: false }); }
       const i = this.buildings.indexOf(e); if (i >= 0) this.buildings.splice(i, 1);
       for (const q of e.queue) if (q.kind === 'tech') { const k = p.pending.indexOf(q.id); if (k >= 0) p.pending.splice(k, 1); }
       p.stats.buildingsLost++; if (kp) kp.stats.razed++;
@@ -1963,13 +2077,13 @@ export class Game {
   _predTick(d, dt) {
     const q = PRED[d.type]; if (d.cd > 0) d.cd -= dt;
     const mad = d.foe && this.time - d.foeT < PRED_FOE_T;
-    if (mad && d.tid !== d.foe) { const f = this.entities.get(d.foe); if (f && !f.dead && !f.aboard && f.kind === 'unit') d.tid = d.foe; }
+    if (mad && d.tid !== d.foe) { const f = this.entities.get(d.foe); if (f && !f.dead && !f.aboard && !f.garrisoned && f.kind === 'unit') d.tid = d.foe; }
     let t = d.tid ? this.entities.get(d.tid) : null;
-    if (t && (t.dead || t.aboard || dhypot(t.x - d.hx, t.z - d.hz) > (mad && t.id === d.foe ? PRED_FOE_LEASH : q.leash))) { t = null; d.tid = 0; d.wx = d.hx; d.wz = d.hz; d.wt = this.time + 4; }
+    if (t && (t.dead || t.aboard || t.garrisoned || dhypot(t.x - d.hx, t.z - d.hz) > (mad && t.id === d.foe ? PRED_FOE_LEASH : q.leash))) { t = null; d.tid = 0; d.wx = d.hx; d.wz = d.hz; d.wt = this.time + 4; }
     d.st -= dt;
     if (!t && d.st <= 0) {
       d.st = 0.5; const r = this.time - (d.hitT == null ? -9 : d.hitT) < 3 ? 7 : q.aggro; let bd = r * r;
-      this._near(d.x, d.z, r, e => { if (e.dead || !(e.owner >= 0) || e.kind !== 'unit' || e.aboard || e.naval) return; const k = sq(e.x - d.x) + sq(e.z - d.z); if (k < bd || (k === bd && t && e.id < t.id)) { bd = k; t = e; } });
+      this._near(d.x, d.z, r, e => { if (e.dead || !(e.owner >= 0) || e.kind !== 'unit' || e.aboard || e.garrisoned || e.naval) return; const k = sq(e.x - d.x) + sq(e.z - d.z); if (k < bd || (k === bd && t && e.id < t.id)) { bd = k; t = e; } });
       if (t && dhypot(t.x - d.hx, t.z - d.hz) > q.leash) t = null;
       if (t) d.tid = t.id;
     }
@@ -1995,7 +2109,7 @@ export class Game {
   _bTargets(b, R, n, sea = 0) {
     const h = b.size / 2, out = [], RS = R + sea;
     this._near(b.x, b.z, RS + h + 1, e => {
-      if (e.dead || e.kind !== 'unit' || e.aboard || !this.isEnemy(b.owner, e.owner)) return;
+      if (e.dead || e.kind !== 'unit' || e.aboard || e.garrisoned || !this.isEnemy(b.owner, e.owner)) return;
       const dx = Math.max(Math.abs(e.x - b.x) - h, 0), dz = Math.max(Math.abs(e.z - b.z) - h, 0), d = dx * dx + dz * dz;
       if (d <= (e.naval ? RS * RS : R * R)) out.push([d, e.id, e]);
     });
@@ -2104,19 +2218,20 @@ export class Game {
       case 'return': this._uReturn(u, o, dt); break;
       case 'build': this._uBuild(u, o, dt); break;
       case 'trade': this._uTrade(u, o, dt); break;
+      case 'garrison': this._uGarrison(u, o, dt); break;
       default: this._next(u);
     }
   }
   // a wounded friendly living unit a healer may heal (not herself, no siege / ships / trains / buildings)
   _healable(h, e) {
-    if (e === h || e.dead || e.kind !== 'unit' || e.type === 'tradecart' || e.aboard || e.train || e.naval || !(e.hp < e.maxHp) || !this.isAlly(h.owner, e.owner)) return false;
+    if (e === h || e.dead || e.kind !== 'unit' || e.type === 'tradecart' || e.aboard || e.garrisoned || e.train || e.naval || !(e.hp < e.maxHp) || !this.isAlly(h.owner, e.owner)) return false;
     const c = UNITS[e.type].cls; return c !== 'siege' && c !== 'ship' && c !== 'train';
   }
   // once a second for every healer in entity order: each wounded friend within HEALER_R gets the first healer's heal only
   _healTick() {
     let done = null;
     for (const h of this.units) {
-      if (h.type !== 'healer' || h.dead || h.aboard) continue;
+      if (h.type !== 'healer' || h.dead || h.aboard || h.garrisoned) continue;
       const p = this.players[h.owner], st = healerStats(p ? p.age : 0), n = healerRate(p), R2 = st.r * st.r;
       this._healerBolt(h, p);
       let got = [];
@@ -2132,7 +2247,7 @@ export class Game {
   _healerBolt(h, p) {
     const b = healerBolt(p ? p.age : 0); if (!b || this.time < (h.boltT || 0)) return;
     let t = null, bd = b.r * b.r;
-    const look = e => { if (e.dead || e.aboard || e.kind !== 'unit' || !this.isEnemy(h.owner, e.owner)) return; const k = sq(e.x - h.x) + sq(e.z - h.z); if (k < bd || (k === bd && t && e.id < t.id)) { bd = k; t = e; } };
+    const look = e => { if (e.dead || e.aboard || e.garrisoned || e.kind !== 'unit' || !this.isEnemy(h.owner, e.owner)) return; const k = sq(e.x - h.x) + sq(e.z - h.z); if (k < bd || (k === bd && t && e.id < t.id)) { bd = k; t = e; } };
     this._near(h.x, h.z, b.r, look);
     for (const e of this._angry) { if (!e.live) continue; const k = sq(e.x - h.x) + sq(e.z - h.z); if (k < bd || (k === bd && t && e.id < t.id)) { bd = k; t = e; } }
     if (!t) return;
@@ -2164,7 +2279,7 @@ export class Game {
   }
   _uAttack(u, o, dt) {
     const t = this.entities.get(o.targetId), d = UNITS[u.type];
-    if (!t || t.dead || !this._foe(u.owner, t) || (t.kind === 'resource' && !t.live)) return this._autoEnd(u, o);
+    if (!t || t.dead || t.aboard || t.garrisoned || !this._foe(u.owner, t) || (t.kind === 'resource' && !t.live)) return this._autoEnd(u, o);
     const m = this.players[u.owner].mods;
     const leash = o.mv ? MOVE_LEASH : o.auto && u.stance === 'defensive' ? DEF_LEASH : (o.lr || d.los) + 5;
     if (o.auto && dhypot(u.x - o.ox, u.z - o.oz) > leash) return this._autoEnd(u, o);
@@ -2568,18 +2683,18 @@ export class Game {
     for (let i = 0; i < dirty.length; i++) cells[dirty[i]].length = 0;
     dirty.length = 0;
     for (let i = 0; i < units.length; i++) {
-      const u = units[i]; if (u.dead || u.aboard) continue;
+      const u = units[i]; if (u.dead || u.aboard || u.garrisoned) continue;
       const ci = Math.min(hc - 1, (u.z / CELL) | 0) * hc + Math.min(hc - 1, (u.x / CELL) | 0);
       const cell = cells[ci];
       if (cell.length === 0) dirty.push(ci);
       cell.push(u);
     }
-    for (let i = 0; i < units.length; i++) { const u = units[i]; if (u.dead || u.aboard) continue; if (u.naval || (u.order && u.order.type === 'board')) this._navUpdateUnit(u, dt); else this._updateUnit(u, dt); }
+    for (let i = 0; i < units.length; i++) { const u = units[i]; if (u.dead || u.aboard || u.garrisoned) continue; if (u.naval || (u.order && u.order.type === 'board')) this._navUpdateUnit(u, dt); else this._updateUnit(u, dt); }
     // separation for idle units. Each unit has a body radius (SEP_R by class): two units are pushed apart when they
     // are closer than the sum, so cannons and catapults no longer sit inside each other (2026-11-17 playtest: "the
     // cannons clump up and lock together"); siege engines are also spread while they fire (they stand still then).
     for (let i = 0; i < units.length; i++) {
-      const u = units[i]; if (u.dead || u.train || u.aboard) continue;
+      const u = units[i]; if (u.dead || u.train || u.aboard || u.garrisoned) continue;
       const ru = u.naval ? 0 : SEP_R[UNITS[u.type].cls] || SEP_R.other;
       if (u.order && u.state !== 'move' && !(u.state === 'attack' && ru === SEP_R.siege)) continue;
       const mv = !!u.order && u.state === 'move';   // (a walking unit keeps the old small gap: a bigger push stalls slow siege)
@@ -2615,12 +2730,12 @@ export class Game {
     const pr = this.projectiles;
     for (let i = pr.length - 1; i >= 0; i--) {
       const p = pr[i]; p.t += dt; const t = this.entities.get(p.targetId);
-      if (t && !t.dead) { p.tx = t.x; p.tz = t.z; }
+      if (t && !t.dead && !t.garrisoned && !t.aboard) { p.tx = t.x; p.tz = t.z; }
       const f = Math.min(1, p.t / p.dur);
       p.x = p.sx + (p.tx - p.sx) * f; p.z = p.sz + (p.tz - p.sz) * f; p.y = p.sy + (p.ty - p.sy) * f + (p.type === 'arrow' ? 4 * f * (1 - f) : dsin(f * Math.PI)) * p.arc;   // (arrows: a true parabola)
       if (f >= 1) {
         pr.splice(i, 1); const src = this.entities.get(p.srcId) || { owner: p.owner, dead: true, kind: 'unit', id: 0 };
-        if (t && !t.dead) this._applyDamage(t, p.dmg, src, p.type);
+        if (t && !t.dead && !t.garrisoned && !t.aboard) this._applyDamage(t, p.dmg, src, p.type);
         else this.events.emit('hit', { target: null, x: p.tx, y: p.ty, z: p.tz, dmg: 0, proj: p.type });
         if (p.spl) { const R = p.spl, hit = []; this._near(p.tx, p.tz, R, e => { if (!e.dead && e !== t && (this.isEnemy(p.owner, e.owner) || (e.live && e.foe === p.srcId)) && dhypot(e.x - p.tx, e.z - p.tz) < R) hit.push(e); }); for (const e of hit) this._applyDamage(e, Math.max(1, Math.round(p.dmg * 0.5)), src, p.type); }
         if (p.type === 'stone' || p.type === 'cannonball') { const hit = []; this._near(p.tx, p.tz, 1.6, e => { if (!e.dead && this.isEnemy(p.owner, e.owner) && e !== t && dhypot(e.x - p.tx, e.z - p.tz) < 1.6) hit.push(e); }); for (const e of hit) this._applyDamage(e, Math.max(1, Math.round(p.dmg * 0.4)), src, p.type); }
@@ -2688,7 +2803,7 @@ export class Game {
     // units: stamp discs inline (no per-unit closure)
     const units = this.units;
     for (let ui = 0; ui < units.length; ui++) {
-      const u = units[ui]; if (u.dead || !(u.owner >= 0)) continue;
+      const u = units[ui]; if (u.dead || u.garrisoned || !(u.owner >= 0)) continue;
       const gr = tv.get(this.teamOf(u.owner)); if (!gr) continue;
       const r = unitLos(u.type), r2 = r * r, ux = u.x, uz = u.z;
       const z0 = Math.max(0, Math.ceil(uz - 0.5 - r)), z1 = Math.min(N - 1, Math.floor(uz - 0.5 + r));

@@ -85,7 +85,7 @@ ok(S.cmdGroup(0, 5, sv), 'single player: cmdGroup direct call');
 const S2 = Game.deserialize(JSON.parse(JSON.stringify(S.serialize())));
 ok(JSON.stringify(S2.controlGroups(0)[5]) === JSON.stringify(sv), 'single player: group 5 back after load');
 
-// ---- 4) town bell (MP-safe sim command, shelter + resume previous task)
+// ---- 4) town bell (MP-safe sim command, garrison inside shelter + safe from attacks + resume previous task)
 console.log('Town bell');
 {
   ok(CMD_METHODS.includes('cmdTownBell'), 'cmdTownBell is a network command');
@@ -103,21 +103,61 @@ console.log('Town bell');
   ok(!A2.players[0].bell && !!A2.players[1].bell, 'forged owner ignored (player 1 rang own bell, not player 0)');
   // player 0 rings bell
   ok(both2(0, 'cmdTownBell', [0]) === true && A2.players[0].bell === true, 'player 0 rings town bell');
-  ok(vils.slice(0, 6).every(u => u.sheltered === tcA.id && u.order && u.order.type === 'move' && u.order.bell === 1), 'all working villagers head to nearest Town Center');
+  ok(vils.slice(0, 6).every(u => u.sheltered === tcA.id && u.order && u.order.type === 'garrison' && u.order.bell === 1), 'all working villagers get garrison order to nearest Town Center');
   // manually redirect villager 0 while bell is active: it should NOT be overwritten on resume
   both2(0, 'cmdMove', [[vils[0].id], tcA.x + 12, tcA.z]);
   ok(!vils[0].sheltered, 'manual order clears shelter flag on that villager');
-  run(A2, 6); run(B2, 6);
-  // save/load while bell is active preserves bell state and saved tasks
+  // run until sheltered villagers reach the TC and go INSIDE
+  run(A2, 25); run(B2, 25);
+  ok(vils.slice(1, 6).every(u => u.garrisoned === tcA.id), 'sheltered villagers entered INSIDE the Town Center');
+  ok(Array.isArray(tcA.garrison) && vils.slice(1, 6).every(u => tcA.garrison.includes(u.id)), 'Town Center garrison list contains the sheltered villagers');
+  // garrisoned villager cannot be targeted or damaged by enemy
+  const foeSp = A2.unitsOf(1).find(u => u.type === 'spearman');
+  const hpBefore = vils[1].hp;
+  ok(!A2.execCommand(1, 'cmdAttack', [[foeSp.id], vils[1].id]), 'enemy cannot cmdAttack a garrisoned villager');
+  A2._applyDamage(vils[1], 30, foeSp, null);
+  ok(vils[1].hp === hpBefore && !vils[1].dead, 'garrisoned villager is safe from damage');
+  ok(A2.hash() === B2.hash(), 'both clients stay in sync while villagers are garrisoned');
+  // save/load while villagers are garrisoned preserves bell state, garrison, and saved tasks
   const snap = Game.deserialize(JSON.parse(JSON.stringify(A2.serialize())), { me: 0 });
-  ok(snap.players[0].bell === true && snap.hash() === A2.hash(), 'town bell state survives save/load with same hash');
-  // second press: sheltered villagers return to their previous tree/gold tasks
+  ok(snap.players[0].bell === true && snap.hash() === A2.hash(), 'town bell garrison state survives save/load with same hash');
+  ok(snap.entities.get(vils[1].id).garrisoned === tcA.id && snap.entities.get(tcA.id).garrison.includes(vils[1].id), 'loaded save keeps garrisoned villager inside TC');
+  // second press: garrisoned villagers exit next to TC and return to their previous tree/gold tasks
   ok(both2(0, 'cmdTownBell', [0]) === true && A2.players[0].bell === false, 'second press turns town bell off');
+  ok(vils.slice(1, 6).every(u => !u.garrisoned) && tcA.garrison.length === 0, 'all garrisoned villagers exited the TC');
+  ok(vils.slice(1, 6).every(u => Math.hypot(u.x - tcA.x, u.z - tcA.z) >= tcA.size / 2 - 0.1), 'exited villagers are placed outside the TC footprint');
   ok(vils[1].order && (vils[1].order.type === 'gather' || vils[1].order.type === 'return'), 'tree villager resumed gathering');
   ok(vils[3].order && (vils[3].order.type === 'gather' || vils[3].order.type === 'return'), 'gold villager resumed gathering');
   ok(!vils[0].order || vils[0].order.type === 'move', 'manually redirected villager kept its manual order');
   run(A2, 4); run(B2, 4);
   ok(A2.hash() === B2.hash(), 'both clients stay in sync after town bell cycle');
+  // shelter capacity overflow + shelter destruction ejects villagers and resumes their task
+  const A2b = new Game(cfg(0)), B2b = new Game(cfg(1));
+  const both2b = (pid, m, a) => { const ra = A2b.execCommand(pid, m, JSON.parse(JSON.stringify(a))), rb = B2b.execCommand(pid, m, JSON.parse(JSON.stringify(a))); if (ra !== rb) fails.push('clients disagree on ' + m); return ra; };
+  const tc2 = A2b.buildingsOf(0).find(b => b.type === 'towncenter');
+  const tc2B = B2b.entities.get(tc2.id);
+  const tr2 = A2b.resourceNear(tc2.x, tc2.z, 30, 'tree');
+  const vs2 = A2b.unitsOf(0).filter(u => u.type === 'villager');
+  // add 3 extra villagers (>20 TC capacity) on both clients to verify overflow waits near shelter
+  for (let i = 0; i < 3; i++) {
+    const fA = A2b._freeNear(tc2.x + tc2.size / 2 + 1.5 + i * 0.5, tc2.z, 0);
+    const fB = B2b._freeNear(tc2B.x + tc2B.size / 2 + 1.5 + i * 0.5, tc2B.z, 0);
+    A2b._addUnit('villager', 0, fA.x, fA.z);
+    B2b._addUnit('villager', 0, fB.x, fB.z);
+  }
+  const allV2 = A2b.unitsOf(0).filter(u => u.type === 'villager');
+  both2b(0, 'cmdGather', [allV2.map(u => u.id), tr2.id]);
+  run(A2b, 2); run(B2b, 2);
+  ok(both2b(0, 'cmdTownBell', [0]) === true, 'ring bell with 23 villagers and 1 TC (cap 20)');
+  run(A2b, 25); run(B2b, 25);
+  ok((tc2.garrison || []).length === 20, `TC fills to capacity 20 (got ${(tc2.garrison || []).length})`);
+  ok(allV2.filter(u => !u.garrisoned).length === 3, '3 overflow villagers stay outside near the full TC');
+  ok(A2b.hash() === B2b.hash(), 'both clients stay in sync on full shelter overflow');
+  // destroy the TC while villagers are inside -> they exit safely and resume gathering
+  A2b._kill(tc2, null); B2b._kill(tc2B, null);
+  ok(allV2.every(u => !u.dead && !u.garrisoned), 'destroying TC releases all garrisoned villagers alive');
+  ok(allV2.filter(u => u.order && (u.order.type === 'gather' || u.order.type === 'return')).length >= 20, 'released villagers resume their previous gather task');
+  ok(A2b.hash() === B2b.hash(), 'both clients stay in sync after shelter destruction eject');
 }
 
 // ---- 5) drop-off return (right-click drop-off building with carrying villagers, MP-safe)

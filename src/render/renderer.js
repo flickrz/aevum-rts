@@ -1076,7 +1076,7 @@ export class Renderer {
       let n = 0;
       for (const t of targets) {
         if (n >= 6) break;
-        if (!t || t.dead || t.aboard || !g.isEntityVisible(t)) continue;
+        if (!t || t.dead || t.aboard || t.garrisoned || !g.isEntityVisible(t)) continue;
         this.fx.burst('heal', t.x, this.groundY(t.x, t.z) + 0.56, t.z); n++;
       }
     });
@@ -1247,7 +1247,7 @@ export class Renderer {
     const ax = Math.min(x0, x1), bx = Math.max(x0, x1), ay = Math.min(y0, y1), by = Math.max(y0, y1);
     const me = this.game.me ?? 0;
     for (const e of this.game.entities.values()) {
-      if (e.kind !== 'unit' || e.owner !== me || e.dead) continue;
+      if (e.kind !== 'unit' || e.owner !== me || e.dead || e.aboard || e.garrisoned) continue;
       const s = this.worldToScreen(e.x, this.groundY(e.x, e.z) + 0.5, e.z);
       if (s.visible && s.x >= ax && s.x <= bx && s.y >= ay && s.y <= by) out.push(e.id);
     }

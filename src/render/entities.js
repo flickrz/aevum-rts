@@ -2621,7 +2621,7 @@ export class EntityView {
     let v = this.views.get(e.id);
     if (!v) v = this._create(e);
     v.e = e; v.seen = f;
-    const vis = !!this.game.isEntityVisible(e) && !e.aboard;
+    const vis = !!this.game.isEntityVisible(e) && !e.aboard && !e.garrisoned;
     if (vis !== v.vis) { v.vis = vis; v.root.visible = vis; }
     const sel = this.selected.has(e.id);
     let y;
