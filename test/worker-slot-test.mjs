@@ -62,30 +62,63 @@ console.log('farm: called back on the way');
   ok(p.res.food === f1 && b.farm.w.every(x => !x) && (b.wk | 0) === 0, 'no food, no plots, no workers');
 }
 
-console.log('rally flag on full mine / tree redirects to nearest same-type resource');
+console.log('rally flag and overflow on full mine / tree obey explored + radius limit');
 {
-  const g = new Game({ mapSize: 128, enemies: 1, difficulty: 'easy', seed: 43, sandbox: true }); g.ais.length = 0;
-  const p = g.players[0];
+  // 1) dark map: unseen second gold mine within 16 tiles must NOT be redirected to; once explored it IS redirected to
+  const g = new Game({ mapSize: 128, enemies: 1, difficulty: 'easy', seed: 43, sandbox: true, fog: 'dark' }); g.ais.length = 0;
   const tc = g.buildingsOf(0).find(b => b.type === 'towncenter');
   g.cmdStop(g.unitsOf(0).map(u => u.id));
-  // fill a gold deposit to MINE_CAP (8)
   const gold = g.resourceNear(tc.x, tc.z, 30, 'gold');
   const dep1 = g._depOf(gold);
+  // find the nearest other gold deposit (seed 43 has one ~14.8 tiles away, initially unexplored)
+  let gold2 = null, bd2 = 1e9;
+  for (const e of g.entities.values()) {
+    if (e.kind !== 'resource' || e.type !== 'gold' || e.dead || g._depOf(e) === dep1) continue;
+    const d = Math.hypot(e.x - gold.x, e.z - gold.z); if (d < bd2) { bd2 = d; gold2 = e; }
+  }
+  ok(gold2 && bd2 <= 16 && !g._isExplored(0, gold2.x, gold2.z), `second gold deposit is nearby (${bd2.toFixed(1)} tiles) and unexplored`);
   const vils = g.unitsOf(0).filter(u => u.type === 'villager');
   g.cmdGather(vils.slice(0, 8).map(u => u.id), gold.id);
   step(g, 1);
   ok(g.mineLoad(dep1, 0) === 8, 'gold deposit filled to 8');
+  // overflow villager ordered to full gold must NOT walk to the unseen second mine
+  g.cmdGather([vils[8].id], gold.id);
+  step(g, 1);
+  ok(!vils[8].order || vils[8].order.type !== 'gather', 'overflow villager does not redirect to an unseen gold mine');
+  // rally on full gold must NOT redirect to the unseen second mine
   g.setRally(tc.id, gold.x, gold.z, gold.id);
-  const beforeIds = new Set(g.unitsOf(0).map(u => u.id));
-  ok(g.train(tc.id, 'villager'), 'train villager with rally on full gold');
+  const beforeUnseen = new Set(g.unitsOf(0).map(u => u.id));
+  ok(g.train(tc.id, 'villager'), 'train villager with rally on full gold (second mine unseen)');
   step(g, 20);
-  const nv = g.unitsOf(0).find(u => u.type === 'villager' && !beforeIds.has(u.id));
-  const nt = nv && nv.order && g.getEntity(nv.order.targetId);
-  ok(nv && nv.order && nv.order.type === 'gather' && nt && nt.type === 'gold' && g._depOf(nt) !== dep1, 'full mine rally -> new villager gathers another gold deposit instead of idling');
+  const nvU = g.unitsOf(0).find(u => u.type === 'villager' && !beforeUnseen.has(u.id));
+  ok(nvU && (!nvU.order || nvU.order.type !== 'gather'), 'rally on full gold does not send new villager to unseen mine');
 
-  // fill a single tree tile to its slot capacity (3)
+  // reveal gold2 via team vision -> now both overflow and rally redirect to nearby explored gold2
+  const tv0 = g._tv.get(g.teamOf(0));
+  tv0[(gold2.z | 0) * g.map.size + (gold2.x | 0)] = 1;
+  ok(g._isExplored(0, gold2.x, gold2.z), 'second gold deposit is now explored');
+  const beforeSeen = new Set(g.unitsOf(0).map(u => u.id));
+  ok(g.train(tc.id, 'villager'), 'train villager with rally on full gold (second mine explored & nearby)');
+  step(g, 20);
+  const nv = g.unitsOf(0).find(u => u.type === 'villager' && !beforeSeen.has(u.id));
+  const nt = nv && nv.order && g.getEntity(nv.order.targetId);
+  ok(nv && nv.order && nv.order.type === 'gather' && nt && nt.type === 'gold' && g._depOf(nt) !== dep1, 'full mine rally -> new villager gathers nearby explored gold deposit');
+
+  // 2) explored map: far second gold deposit (> 16 tiles) must NOT be redirected to
+  const gFar = new Game({ mapSize: 128, enemies: 1, difficulty: 'easy', seed: 11, sandbox: true, fog: 'explored' }); gFar.ais.length = 0;
+  const tcF = gFar.buildingsOf(0).find(b => b.type === 'towncenter');
+  gFar.cmdStop(gFar.unitsOf(0).map(u => u.id));
+  const gf1 = gFar.resourceNear(tcF.x, tcF.z, 30, 'gold'), depF1 = gFar._depOf(gf1);
+  const vF = gFar.unitsOf(0).filter(u => u.type === 'villager');
+  gFar.cmdGather(vF.slice(0, 8).map(u => u.id), gf1.id);
+  step(gFar, 1);
+  gFar.cmdGather([vF[8].id], gf1.id);
+  step(gFar, 1);
+  ok(!vF[8].order || vF[8].order.type !== 'gather', 'overflow villager does not redirect to a far (>16 tile) explored gold mine');
+
+  // 3) full tree rally still redirects to an adjacent explored tree
   const tree = g.resourceNear(tc.x, tc.z, 30, 'tree');
-  g.cmdGather(vils.slice(8, 11).map(u => u.id), tree.id);
+  g.cmdGather(vils.slice(9, 12).map(u => u.id), tree.id);
   step(g, 0.2);
   g.setRally(tc.id, tree.x, tree.z, tree.id);
   const before2 = new Set(g.unitsOf(0).map(u => u.id));
@@ -93,7 +126,7 @@ console.log('rally flag on full mine / tree redirects to nearest same-type resou
   step(g, 20);
   const nv2 = g.unitsOf(0).find(u => u.type === 'villager' && !before2.has(u.id));
   const nt2 = nv2 && nv2.order && g.getEntity(nv2.order.targetId);
-  ok(nv2 && nv2.order && nv2.order.type === 'gather' && nt2 && nt2.type === 'tree' && nt2.id !== tree.id, 'full tree rally -> new villager gathers another tree instead of idling');
+  ok(nv2 && nv2.order && nv2.order.type === 'gather' && nt2 && nt2.type === 'tree' && nt2.id !== tree.id, 'full tree rally -> new villager gathers another nearby explored tree');
 }
 
 console.log('determinism');

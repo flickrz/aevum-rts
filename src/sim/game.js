@@ -123,6 +123,8 @@ export const CASTLE_VOLLEY = 3, CASTLE_AGE_ATK = 4;
 export const TOWER_CANNON_AGE = 3;
 // a building queues as many units as the player can pay for (paid when queued); this only stops runaway queues
 export const TRAIN_QUEUE_MAX = 100;
+// garrison shelter capacity for the Town Bell (villagers hide inside and are safe from attacks)
+export const SHELTER_CAP = { towncenter: 20, castle: 15, tower: 5 };
 // wood in one tree (owner decision 2026-11-12: a tree is worth as much as a big mine)
 export const TREE_WOOD = 800;
 // towers see and shoot farther every age after the Bronze Age (+1 tile per age: 7 -> 10 in the Industrial Age)
@@ -254,8 +256,9 @@ export class Game {
       // exact team grids came with the save: only build the local view copy, the sim keeps its own cadence
       this._tvRestored = false;
       const N = this.map.size;
-      for (const p of this.players) if (!this._tv.has(p.team)) this._tv.set(p.team, new Uint8Array(N * N));
-      const mine = this._tv.get(this.teamOf(this.me)); if (mine) this.fog.set(mine);
+      for (const p of this.players) if (!p.spectator && !this._tv.has(p.team)) this._tv.set(p.team, new Uint8Array(N * N));
+      if (this.players[this.me] && this.players[this.me].spectator) this.fog.fill(2);
+      else { const mine = this._tv.get(this.teamOf(this.me)); if (mine) this.fog.set(mine); }
       this.fogVersion++;
     } else this._updateFog();
   }
@@ -269,13 +272,14 @@ export class Game {
     const cp = this._cfgPlayers();
     for (const p of this.players) {
       const c = cp && cp[p.id];
+      if (p.spectator || (c && c.spectator && !p.isAI)) { p.spectator = true; p.team = 0; }
       if (p.team == null) p.team = c && c.team != null ? Math.max(0, Math.min(15, c.team | 0)) : (p.isAI ? 2 : 1);
       if (!p.kind) p.kind = p.isAI ? 'ai' : 'human';
       if (p.name == null) p.name = (c && c.name) ? String(c.name).slice(0, 24) : (p.isAI ? 'Bilgisayar ' + p.id : 'Oyuncu ' + (p.id + 1));
       if (p.difficulty == null && c && c.difficulty) p.difficulty = c.difficulty;
     }
     this._tm = new Int16Array(Math.max(8, this.players.length)).fill(-1);
-    for (const p of this.players) this._tm[p.id] = p.team;
+    for (const p of this.players) this._tm[p.id] = p.spectator ? -1 : p.team;
     if (this.me >= this.players.length) this.me = 0;
   }
   teamOf(pid) { return pid >= 0 && pid < this._tm.length ? this._tm[pid] : -1; }
@@ -298,6 +302,7 @@ export class Game {
     for (const e of this.entities.values()) {
       mix(e.id); mix(strHash(e.type)); mix(e.owner); mix(Math.round(e.x * 100)); mix(Math.round(e.z * 100)); mix(Math.round((e.hp || 0) * 10));
       if (e.kind === 'resource') mix(Math.round((e.amount || 0) * 10)); else if (e.dead) mix(7);
+      if (e.garrisoned) mix(e.garrisoned);
     }
     for (const p of this.players) { mix(p.age); mix(p.pop); mix(p.defeated ? 1 : 0); mix(p.left ? 1 : 0); for (const k of ['food', 'wood', 'stone', 'gold']) mix(Math.round((p.res[k] || 0) * 10)); }
     for (const a of this.ais) mix(a.rs);
@@ -315,7 +320,7 @@ export class Game {
   // one whitelisted command on behalf of player pid; ids not owned by pid are dropped, owner args forced to pid
   execCommand(pid, method, args) {
     pid = pid | 0;
-    if (!CMD_SET.has(method) || !this.players[pid] || this.players[pid].left) return false;
+    if (!CMD_SET.has(method) || !this.players[pid] || this.players[pid].left || this.players[pid].spectator) return false;
     const a = Array.isArray(args) ? args.slice() : [];
     const own = id => { const e = this.entities.get(id); return !!e && e.owner === pid && !e.dead; };
     // (each id once: a repeated id queued the same order once per copy; the raw list is capped first, pop is 1000)
@@ -352,7 +357,7 @@ export class Game {
   // an AI takes over a human's civilization (continuing a saved match without that player); same on every client
   convertToAI(pid, difficulty = 'normal') {
     const p = this.players[pid];
-    if (!p || p.isAI) return false;
+    if (!p || p.isAI || p.spectator) return false;
     const d = ['easy', 'normal', 'hard'].includes(difficulty) ? difficulty : 'normal';
     p.isAI = true; p.kind = 'ai'; p.left = false; p.difficulty = d;
     const cp = this._cfgPlayers();
@@ -382,7 +387,14 @@ export class Game {
     const np = cp ? cp.length : 1 + Math.max(0, Math.min(3, cfg.enemies | 0));
     const fr = [[0.2, 0.2], [0.8, 0.8], [0.8, 0.2], [0.2, 0.8]];
     let starts = []; for (let i = 0; i < 4; i++) starts.push([Math.round(fr[i][0] * N), Math.round(fr[i][1] * N)]);
-    if (cp) starts = this._mpStarts(cp, N);
+    const startByPid = new Array(np);
+    if (cp) {
+      const activeIdx = [], activeCp = [];
+      for (let i = 0; i < np; i++) if (!(cp[i] && cp[i].spectator && cp[i].kind !== 'ai')) { activeIdx.push(i); activeCp.push(cp[i]); }
+      starts = activeCp.length ? this._mpStarts(activeCp, N) : [];
+      activeIdx.forEach((pid, k) => { startByPid[pid] = starts[k]; });
+    } else for (let i = 0; i < np; i++) startByPid[i] = starts[i];
+    const na = cp ? starts.length : np;
     const ph = (seed % 7);
     const rx = z => N / 2 + dsin(z * 0.07 + ph) * N * 0.07 + dsin(z * 0.023 + ph * 2) * N * 0.04;
     const sDist = (x, z) => { let m = 1e9; for (const s of starts) { const d = dhypot(x - s[0], z - s[1]); if (d < m) m = d; } return m; };
@@ -441,13 +453,13 @@ export class Game {
       heights[vz * V + vx] = h;
     }
     // (islands, owner 2026-11-25: no land link between players at all - war there is by ship only)
-    if (mt === 'islands') this._mapSeparate(heights, N, starts.slice(0, np), SEA);
-    else this._mapConnect(heights, N, starts.slice(0, np), seed, hsh);
+    if (mt === 'islands') this._mapSeparate(heights, N, starts.slice(0, na), SEA);
+    else this._mapConnect(heights, N, starts.slice(0, na), seed, hsh);
     // Forests take a fixed share (P.fs) of the open land on every seed: the fbm threshold is the matching quantile,
     // so one seed cannot bury the map in trees. Forest is held back from the starts (none within FC0 tiles, thinning
     // in up to FC1) so every player has room to build a town; the start's own wood cluster sits inside that ring.
     // (only the starts in use: single-player keeps 4 corner spots even with fewer players)
-    const live = starts.slice(0, np), aDist = (x, z) => { let m = 1e9; for (const s of live) { const d = dhypot(x - s[0], z - s[1]); if (d < m) m = d; } return m; };
+    const live = starts.slice(0, na), aDist = (x, z) => { let m = 1e9; for (const s of live) { const d = dhypot(x - s[0], z - s[1]); if (d < m) m = d; } return m; };
     const FC0 = 18, FC1 = 28, fv = new Float64Array(N * N).fill(-9), cand = [], grassV = new Uint8Array(N * N);
     for (let tz = 0; tz < N; tz++) for (let tx = 0; tx < N; tx++) {
       const i = tz * V + tx, ha = (heights[i] + heights[i + 1] + heights[i + V] + heights[i + V + 1]) / 4;
@@ -517,8 +529,11 @@ export class Game {
     // players
     const sr = cfg.sandbox ? { food: 99999, wood: 99999, stone: 99999, gold: 99999 } : cfg.startRes === 'low' ? { food: 200, wood: 200, stone: 100, gold: 0 } : cfg.startRes === 'high' ? { food: 900, wood: 900, stone: 450, gold: 300 } : { food: 300, wood: 300, stone: 150, gold: 100 };
     for (let i = 0; i < np; i++) {
-      const p = { id: i, isAI: cp ? (cp[i] && cp[i].kind) === 'ai' : i > 0, color: PLAYER_COLORS[i], res: (cfg.sandbox && i > 0) ? { food: 300, wood: 300, stone: 150, gold: 100 } : { ...sr }, age: Math.max(0, Math.min(4, cfg.startAge | 0)), pop: 0, popCap: 0, techs: new Set(), pending: [], defeated: false, startX: starts[i][0], startZ: starts[i][1], ageProgress: 0, ageAt: 0,
+      const isSpec = !!(cp && cp[i] && cp[i].spectator && cp[i].kind !== 'ai');
+      const stPos = isSpec ? [Math.round(N / 2), Math.round(N / 2)] : startByPid[i];
+      const p = { id: i, isAI: !isSpec && (cp ? (cp[i] && cp[i].kind) === 'ai' : i > 0), color: PLAYER_COLORS[i], res: isSpec ? { food: 0, wood: 0, stone: 0, gold: 0 } : (cfg.sandbox && i > 0) ? { food: 300, wood: 300, stone: 150, gold: 100 } : { ...sr }, age: Math.max(0, Math.min(4, cfg.startAge | 0)), pop: 0, popCap: 0, techs: new Set(), pending: [], defeated: false, startX: stPos[0], startZ: stPos[1], ageProgress: 0, ageAt: 0,
         stats: { gathered: { food: 0, wood: 0, stone: 0, gold: 0 }, unitsTrained: 0, unitsLost: 0, kills: 0, buildingsBuilt: 0, buildingsLost: 0, razed: 0, techs: 0 } };
+      if (isSpec) { p.spectator = true; p.team = 0; }
       this._mods(p); this.players.push(p);
     }
     // resources
@@ -600,7 +615,7 @@ export class Game {
       }
     }
     try { this._navGenFish(); } catch (err) { console.error('fish gen', err); }
-    if (this.cfg.mapType !== 'islands') this._ensureWalkable(starts.slice(0, this.players.length));
+    if (this.cfg.mapType !== 'islands') this._ensureWalkable(live);
     // no stray trees: a tree with fewer than two others touching it (left by a pass cut through a grove, or a start
     // clump squeezed by water) goes (2026-11-14, owner: no lone trees on open grass)
     for (const e of [...this.entities.values()]) {
@@ -611,6 +626,7 @@ export class Game {
     }
     // starting bases
     for (const p of this.players) {
+      if (p.spectator) continue;
       const ts = BUILDINGS.towncenter.size, h = ts / 2;   // (centred on the start)
       const b = this._addBuilding('towncenter', p.id, Math.round(p.startX - h), Math.round(p.startZ - h), true);
       // (owner 2026-11-20, like the capitol in Empire Earth: every side knows from the first second where each
@@ -885,7 +901,7 @@ export class Game {
   unitsOf(owner) { return this.units.filter(u => u.owner === owner && !u.dead); }
   buildingsOf(owner) { return this.buildings.filter(b => b.owner === owner && !b.dead); }
   isEntityVisible(e) {
-    if (!e) return false; if (this.reveal) return true; if (e.owner === this.me || this.isAlly(e.owner, this.me)) return true;
+    if (!e) return false; if (this.reveal || (this.players[this.me] && this.players[this.me].spectator)) return true; if (e.owner === this.me || this.isAlly(e.owner, this.me)) return true;
     if (e.revT !== undefined && this.time - e.revT < 4 && !e.dead && (e.revO === this.me || this.isAlly(e.revO, this.me))) return true;
     // (owner 2026-11-20) a rival's building plan - a foundation nobody has started on - is shown only to its own side
     if (e.kind === 'building' && !e.done && !(e.progress > 0)) return false;
@@ -1128,7 +1144,7 @@ export class Game {
     this.events.emit('buildingRot', { e: b });
     return true;
   }
-  _live(ids) { const out = []; for (const id of ids || []) { const u = this.entities.get(id); if (u && u.kind === 'unit' && !u.dead && !u.aboard && !u.train) out.push(u); } return out; }
+  _live(ids) { const out = []; for (const id of ids || []) { const u = this.entities.get(id); if (u && u.kind === 'unit' && !u.dead && !u.aboard && !u.garrisoned && !u.train) out.push(u); } return out; }
   // Explore: units wander toward unexplored tiles until they get any other order.
   cmdExplore(ids) { let n = 0; for (const u of this._live(ids)) { if (this._exploreStep(u)) n++; } return n > 0; }
   _exploreStep(u) {
@@ -1267,7 +1283,7 @@ export class Game {
     return out;
   }
   cmdAttack(ids, targetId, queue = false) {
-    const t = this.entities.get(targetId); if (!t || t.dead || (t.kind === 'resource' && !t.live)) return false;
+    const t = this.entities.get(targetId); if (!t || t.dead || t.aboard || t.garrisoned || (t.kind === 'resource' && !t.live)) return false;
     const us = this._live(ids); let ok = false; const hl = [];
     for (const u of us) { if (u.type === 'healer') { if (this.isEnemy(u.owner, t.owner)) hl.push(u.id); continue; }   /* (a healer never attacks: she walks there) */
       if (!this._foe(u.owner, t) || UNITS[u.type].atk <= 0) continue; if (u.type === 'ram' && t.kind !== 'building') continue; if (t.naval && !(UNITS[u.type].range > 0)) continue; this._setOrder(u, { type: 'attack', targetId }, queue); ok = true; }
@@ -1316,43 +1332,151 @@ export class Game {
     c.fail = 0; c.sp = 0; c.so = 0; c.dadm = 0;
     return c;
   }
-  // Town bell (2026-11-26): first press recalls all villagers to shelter at the nearest own Town Center and saves
-  // their tasks; second press returns each sheltered villager to its previous task. MP-safe (owner forced in execCommand).
+  // Nearest own finished shelter building (Town Center, Castle, Tower) for a villager; ties broken by id.
+  _nearestShelter(u, roomOnly = false, planned = null) {
+    let best = null, bd = 1e18;
+    for (const b of this.buildings) {
+      const cap = SHELTER_CAP[b.type];
+      if (!cap || b.owner !== u.owner || b.dead || !b.done) continue;
+      if (roomOnly) {
+        const used = planned ? (planned.get(b.id) || 0) : (b.garrison ? b.garrison.length : 0);
+        if (used >= cap) continue;
+      }
+      const d = sq(b.x - u.x) + sq(b.z - u.z);
+      if (d < bd || (d === bd && best && b.id < best.id)) { bd = d; best = b; }
+    }
+    return best;
+  }
+  // Walkable exit tiles around a shelter building (front/door side first, deterministic).
+  _exitSpots(b, owner) {
+    const N = this.map.size, spots = [];
+    const fx = b.x, fz = b.z + b.size / 2 + 0.8;
+    const x0 = Math.max(1, b.tx - 2), x1 = Math.min(N - 2, b.tx + b.size + 1);
+    const z0 = Math.max(1, b.tz - 2), z1 = Math.min(N - 2, b.tz + b.size + 1);
+    for (let tz = z0; tz <= z1; tz++) for (let tx = x0; tx <= x1; tx++) {
+      if (!b.dead && tx >= b.tx && tx < b.tx + b.size && tz >= b.tz && tz < b.tz + b.size) continue;
+      if (!this._pass(tx, tz, owner)) continue;
+      const sx = tx + 0.5, sz = tz + 0.5;
+      spots.push({ x: sx, z: sz, d: sq(sx - fx) + sq(sz - fz), tx, tz });
+    }
+    spots.sort((a, c) => a.d - c.d || a.tz - c.tz || a.tx - c.tx);
+    return spots;
+  }
+  _resumeBellTask(u) {
+    const task = u.bellTask;
+    u.sheltered = 0; delete u.bellTask;
+    if (task && task.order) {
+      u.order = task.order; u.queue = Array.isArray(task.queue) ? task.queue : [];
+      u.targetId = u.order.targetId || null; u.path = null; u.pk = null; u.rpT = 0;
+    } else {
+      u.order = null; u.queue.length = 0; u.targetId = null; u.path = null; u.pk = null; u.state = 'idle'; u.anim = 'idle';
+    }
+  }
+  // Eject all villagers garrisoned inside building b, placing them next to b and resuming their saved task.
+  _ungarrison(b, resumeTask = true) {
+    if (!b || !b.garrison || !b.garrison.length) return [];
+    const ids = b.garrison.slice();
+    b.garrison = [];
+    const spots = this._exitSpots(b, b.owner);
+    const out = [];
+    let k = 0;
+    for (const id of ids) {
+      const u = this.entities.get(id);
+      if (!u || u.dead) continue;
+      u.garrisoned = 0; delete u.garrisoned;
+      if (spots.length) {
+        const s = spots[k % spots.length], ring = Math.floor(k / spots.length) * 0.25;
+        u.x = s.x + (ring ? dcos(k * 2.4) * ring : 0);
+        u.z = s.z + (ring ? dsin(k * 2.4) * ring : 0);
+      } else {
+        const f = this._freeNear(b.x, b.z + b.size / 2 + 0.8, u.owner);
+        u.x = f.x; u.z = f.z;
+      }
+      k++;
+      if (resumeTask) this._resumeBellTask(u);
+      else {
+        u.sheltered = 0; delete u.bellTask;
+        u.order = null; u.queue.length = 0; u.targetId = null; u.path = null; u.pk = null; u.state = 'idle'; u.anim = 'idle';
+      }
+      out.push(u);
+    }
+    if (out.length) this.events.emit('ungarrison', { building: b, units: out });
+    return out;
+  }
+  _uGarrison(u, o, dt) {
+    let b = o.targetId ? this.entities.get(o.targetId) : null;
+    const okShelter = s => !!s && !s.dead && s.done && s.owner === u.owner && SHELTER_CAP[s.type] > 0;
+    const hasRoom = s => okShelter(s) && (s.garrison ? s.garrison.length : 0) < SHELTER_CAP[s.type];
+    if (!okShelter(b)) {
+      b = this._nearestShelter(u, true) || this._nearestShelter(u, false);
+      if (!b) { this._resumeBellTask(u); return; }
+      o.targetId = b.id; u.targetId = b.id; u.sheltered = b.id; u.path = null; u.pk = null; o.fail = 0; o.wait = 0;
+    }
+    if (o.wait) {
+      u.state = 'idle'; u.anim = 'idle';
+      o.wt = (o.wt || 0) + dt;
+      if (o.wt < 1) return;
+      o.wt = 0;
+      const alt = this._nearestShelter(u, true);
+      if (alt) { o.targetId = alt.id; u.targetId = alt.id; u.sheltered = alt.id; u.path = null; u.pk = null; o.fail = 0; o.wait = 0; }
+      return;
+    }
+    if (!this._approach(u, b, dt, 1.4)) {
+      if ((o.fail || 0) >= 4) {
+        o.fail = 0;
+        const alt = this._nearestShelter(u, true);
+        if (alt && alt.id !== b.id) { o.targetId = alt.id; u.targetId = alt.id; u.sheltered = alt.id; u.path = null; u.pk = null; }
+        else { o.wait = 1; o.wt = 0; u.state = 'idle'; u.anim = 'idle'; }
+      }
+      return;
+    }
+    if (hasRoom(b)) {
+      if (!b.garrison) b.garrison = [];
+      b.garrison.push(u.id);
+      u.garrisoned = b.id;
+      u.sheltered = b.id;
+      u.x = b.x; u.z = b.z;
+      u.order = null; u.queue.length = 0; u.path = null; u.pk = null; u.targetId = null; u.state = 'idle'; u.anim = 'idle';
+      this.events.emit('garrison', { unit: u, building: b });
+      return;
+    }
+    const alt = this._nearestShelter(u, true);
+    if (alt) { o.targetId = alt.id; u.targetId = alt.id; u.sheltered = alt.id; u.path = null; u.pk = null; o.fail = 0; return; }
+    o.wait = 1; o.wt = 0; u.state = 'idle'; u.anim = 'idle';
+  }
+  // Town bell (2026-11-26; garrison inside 2026-11-27): first press sends all villagers to garrison inside the nearest
+  // own shelter building (Town Center, Castle, Tower) and saves their tasks; second press ungarrisons everyone next to
+  // their shelter and returns them to their previous task. MP-safe (owner forced in execCommand).
   cmdTownBell(owner) {
     const p = this.players[owner]; if (!p || p.defeated) return false;
-    const tcs = this.buildings.filter(b => b.owner === owner && !b.dead && b.done && b.type === 'towncenter');
     if (!p.bell) {
-      if (!tcs.length) return false;
+      const shelters = this.buildings.filter(b => b.owner === owner && !b.dead && b.done && SHELTER_CAP[b.type] > 0);
+      if (!shelters.length) return false;
       p.bell = true;
+      const planned = new Map();
+      for (const b of shelters) planned.set(b.id, b.garrison ? b.garrison.length : 0);
       for (const u of this.units) {
-        if (u.dead || u.aboard || u.owner !== owner || u.type !== 'villager') continue;
+        if (u.dead || u.aboard || u.garrisoned || u.owner !== owner || u.type !== 'villager') continue;
         const prev = u.order && !u.order.bell ? { order: this._cloneOrder(u.order), queue: (u.queue || []).map(q => this._cloneOrder(q)).filter(Boolean) } : null;
-        let tc = tcs[0], bd = sq(tc.x - u.x) + sq(tc.z - u.z);
-        for (let i = 1; i < tcs.length; i++) {
-          const d = sq(tcs[i].x - u.x) + sq(tcs[i].z - u.z);
-          if (d < bd || (d === bd && tcs[i].id < tc.id)) { bd = d; tc = tcs[i]; }
-        }
-        const sl = this._slotNear(tc.x, tc.z + tc.size / 2 + 1.2, u);
-        this._setOrder(u, { type: 'move', x: sl.x, z: sl.z, bell: 1 }, false);
-        u.sheltered = tc.id;
+        const b = this._nearestShelter(u, true, planned) || this._nearestShelter(u, false);
+        if (!b) continue;
+        planned.set(b.id, (planned.get(b.id) || 0) + 1);
+        this._setOrder(u, { type: 'garrison', targetId: b.id, bell: 1 }, false);
+        u.sheltered = b.id;
         if (prev) u.bellTask = prev; else delete u.bellTask;
       }
       this.events.emit('townBell', { owner, active: true });
       return true;
     }
     p.bell = false;
+    for (const b of this.buildings) {
+      if (b.owner === owner && !b.dead && b.garrison && b.garrison.length) this._ungarrison(b, true);
+    }
     for (const u of this.units) {
-      if (u.dead || u.aboard || u.owner !== owner || u.type !== 'villager' || !u.sheltered) continue;
+      if (u.dead || u.aboard || u.garrisoned || u.owner !== owner || u.type !== 'villager' || !u.sheltered) continue;
       const still = !u.order || !!u.order.bell;
-      const task = u.bellTask;
-      u.sheltered = 0; delete u.bellTask;
-      if (!still) continue;
-      if (task && task.order) {
-        u.order = task.order; u.queue = Array.isArray(task.queue) ? task.queue : [];
-        u.targetId = u.order.targetId || null; u.path = null; u.pk = null; u.rpT = 0;
-      } else {
-        u.order = null; u.queue.length = 0; u.targetId = null; u.path = null; u.pk = null; u.state = 'idle'; u.anim = 'idle';
-      }
+      if (still) this._resumeBellTask(u);
+      else { u.sheltered = 0; delete u.bellTask; }
     }
     this.events.emit('townBell', { owner, active: false });
     return true;
@@ -1474,47 +1598,60 @@ export class Game {
     }
     return false;
   }
+  // true when tile (x, z) has been explored by owner's team (sim-side team grid, deterministic, never view fog)
+  _isExplored(owner, x, z) {
+    if (this.cfg.fog === 'explored') return true;
+    const g = this._tv && this._tv.get(this.teamOf(owner));
+    if (!g) return false;
+    const N = this.map.size, tx = Math.min(N - 1, Math.max(0, x | 0)), tz = Math.min(N - 1, Math.max(0, z | 0));
+    return g[tz * N + tx] > 0;
+  }
   // Where a freshly trained villager (or fishboat) should work when the rally flag sits on a resource / farm / pasture.
-  // If that target's slots are full, redirects to the nearest same-type resource with room instead of idling.
+  // If that target's slots are full, redirects only to an explored same-type resource with room within REDIRECT_R tiles;
+  // otherwise returns null so the villager walks to the rally point and waits near the target.
   _rallyWork(b) {
+    const REDIRECT_R = 16;
     const ra = b.rally; if (!ra) return null;
     const t = ra.tid != null ? this.entities.get(ra.tid) : null;
     if (t && !t.dead && t.kind === 'building') {
       if (t.type === 'farm' || t.type === 'pasture') {
         const cap = t.type === 'farm' ? FARM_SLOTS : 6;
         if (this._resWorkers(t.id, b.owner) < cap) return t;
-        let best = null, bd = 1e9;
+        let best = null, bd = REDIRECT_R;
         for (const o of this.buildings) {
           if (o === t || o.dead || !o.done || o.owner !== b.owner || o.type !== t.type) continue;
           if (this._resWorkers(o.id, b.owner) >= cap) continue;
-          const d = dhypot(o.x - t.x, o.z - t.z); if (d < bd) { bd = d; best = o; }
+          const d = dhypot(o.x - t.x, o.z - t.z); if (d <= bd) { bd = d; best = o; }
         }
         return best;
       }
-      // flag on a drop-off camp (lumber camp, mining camp, mill): work the nearest matching free resource around it
+      // flag on a drop-off camp (lumber camp, mining camp, mill): work the nearest matching free explored resource around it
       const bd0 = BUILDINGS[t.type], drop = bd0 && t.owner === b.owner && !(bd0.trains || []).length ? bd0.dropoff : null; if (!drop) return null;
       const mf = new Map();
-      let best = null, bd = 1e9, far = null, fd = 1e9;
+      let best = null, bd = REDIRECT_R;
       for (const e of this.entities.values()) {
         if (e.kind !== 'resource' || e.dead || !(e.amount > 0) || e.type === 'fish' || !drop.includes(RES_OF[e.type])) continue;
-        if (this._resFull(e, b.owner, mf)) continue;
+        if (!this._isExplored(b.owner, e.x, e.z)) continue;
         const d = dhypot(e.x - t.x, e.z - t.z);
-        if (d < 16 && d < bd) { bd = d; best = e; }
-        if (d < fd) { fd = d; far = e; }
+        if (d >= bd) continue;
+        if (this._resFull(e, b.owner, mf)) continue;
+        bd = d; best = e;
       }
-      return best || far;
+      return best;
     }
     const aliveRes = t && !t.dead && t.kind === 'resource' && t.amount > 0;
     if (aliveRes && (t.type === 'fish' || !this._resFull(t, b.owner))) return t;
     const want = aliveRes ? t.type : ra.rtype; if (!want) return null; // flag on plain ground: villager just walks there
     const mf = new Map();
     let best = null, bd = 1e9;
-    const maxD = want === 'fish' ? 20 : 1e9;
+    const maxD = want === 'fish' ? 20 : REDIRECT_R;
     for (const e of this.entities.values()) {
       if (e.kind !== 'resource' || e.dead || !(e.amount > 0) || e.type !== want) continue;
-      if (want !== 'fish' && this._resFull(e, b.owner, mf)) continue;
+      if (want !== 'fish' && !this._isExplored(b.owner, e.x, e.z)) continue;
       const d = dhypot(e.x - ra.x, e.z - ra.z);
-      if (d < maxD && d < bd) { bd = d; best = e; }
+      if (d > maxD || d >= bd) continue;
+      if (want !== 'fish' && this._resFull(e, b.owner, mf)) continue;
+      bd = d; best = e;
     }
     if (best && !aliveRes) ra.tid = best.id;
     return best;
@@ -1784,7 +1921,7 @@ export class Game {
       return true;
     };
     for (const u of this.units) {
-      if (u.dead || u.naval || u.aboard || u.train || !u.path || u.pi >= u.path.length) continue;
+      if (u.dead || u.naval || u.aboard || u.garrisoned || u.train || !u.path || u.pi >= u.path.length) continue;
       let ax = u.x, az = u.z;
       for (let i = u.pi; i < u.path.length; i += 2) { if (hits(ax, az, u.path[i], u.path[i + 1])) { u.path = null; u.pk = null; break; } ax = u.path[i]; az = u.path[i + 1]; }
     }
@@ -1842,7 +1979,7 @@ export class Game {
     this.projectiles.push(p);
   }
   _applyDamage(target, dmg, killer, proj) {
-    if (!target || target.dead) return;
+    if (!target || target.dead || target.garrisoned) return;
     target.hp -= dmg; target.hitT = this.time;
     if (target.live && killer && !killer.dead && killer.id && killer.kind === 'unit' && killer.owner >= 0) { target.foe = killer.id; target.foeT = this.time; }   // (predator retaliation, see PRED_FOE_T)
     // view only: the attacker shows through the victim team's fog for a few seconds (read by isEntityVisible, never by the sim)
@@ -1853,7 +1990,7 @@ export class Game {
     // under attack (view only, never read by the sim): once per fight (2026-11-17 playtest: "the constant 'you are under
     // attack' is annoying, once is enough") - again only after 30 s without any hit on us, or for a fight more than
     // 30 tiles from the last alert (at most every 15 s)
-    if (target.owner === this.me) {
+    if (target.owner === this.me && dmg > 0 && killer && killer.owner >= 0 && this.isEnemy(target.owner, killer.owner)) {
       const far = this._uaX == null || dhypot(target.x - this._uaX, target.z - this._uaZ) > 30;
       if (this.time - this._uaLast > 30 || (far && this.time > this._uaT)) { this._uaT = this.time + 15; this._uaX = target.x; this._uaZ = target.z; this.events.emit('underAttack', { x: target.x, z: target.z }); this.events.emit('notify', { text: tr('Saldırı altındasın!'), type: 'warn', x: target.x, z: target.z }); }
       this._uaLast = this.time;
@@ -1879,7 +2016,7 @@ export class Game {
   _slotNear(x, z, self) {
     const sp = UNITS[self.type].cls === 'siege' ? 1.8 : 1.1, taken = [];
     for (const v of this.units) {
-      if (v === self || v.dead || v.owner !== self.owner || v.naval) continue;
+      if (v === self || v.dead || v.aboard || v.garrisoned || v.owner !== self.owner || v.naval) continue;
       const tx = v.order && v.order.type === 'move' ? v.order.x : v.x, tz = v.order && v.order.type === 'move' ? v.order.z : v.z;
       if (Math.abs(tx - x) < 12 && Math.abs(tz - z) < 12) taken.push(tx, tz);
     }
@@ -1894,7 +2031,7 @@ export class Game {
   _callHelp(victim, foe) {
     const HELP_R = 16, HELP_N = 10, cand = [];
     this._near(victim.x, victim.z, HELP_R, v => {
-      if (v.dead || v.kind !== 'unit' || v.aboard || v.order || (v.owner !== victim.owner && !this.isAlly(v.owner, victim.owner))) return;
+      if (v.dead || v.kind !== 'unit' || v.aboard || v.garrisoned || v.order || (v.owner !== victim.owner && !this.isAlly(v.owner, victim.owner))) return;
       if (!this._canEngage(v, foe) || this.time < (foe['nh' + v.owner] || 0)) return;
       const d = dhypot(v.x - victim.x, v.z - victim.z); if (d <= HELP_R) cand.push([d, v.id, v]);
     });
@@ -1940,12 +2077,15 @@ export class Game {
     const p = this.players[e.owner], kp = killer && killer.owner >= 0 && killer.owner !== e.owner ? this.players[killer.owner] : null;
     if (e.kind === 'unit') {
       if (e.order && e.order.type === 'gather') this._unhunt(e.order);
+      if (e.garrisoned) { const sb = this.entities.get(e.garrisoned); if (sb && sb.garrison) { const gi = sb.garrison.indexOf(e.id); if (gi >= 0) sb.garrison.splice(gi, 1); } e.garrisoned = 0; delete e.garrisoned; }
       e.state = 'dead'; e.anim = 'die'; e.deathTime = this.time; e.order = null; e.queue.length = 0; e.path = null;
       if (e.cargo && e.cargo.length) this._navSinkCargo(e, killer);
       p.pop -= UNITS[e.type].pop; p.stats.unitsLost++; if (kp) kp.stats.kills++;
       this.events.emit('death', { e, killer: killer || null });
     } else if (e.kind === 'building') {
       this._block(e, 0); this._bAtSet(e, null); this._bFogVer++;
+      if (e.garrison && e.garrison.length) this._ungarrison(e, true);
+      if (p && p.bell && !this.units.some(u => !u.dead && u.owner === e.owner && (u.garrisoned || u.sheltered))) { p.bell = false; this.events.emit('townBell', { owner: e.owner, active: false }); }
       const i = this.buildings.indexOf(e); if (i >= 0) this.buildings.splice(i, 1);
       for (const q of e.queue) if (q.kind === 'tech') { const k = p.pending.indexOf(q.id); if (k >= 0) p.pending.splice(k, 1); }
       p.stats.buildingsLost++; if (kp) kp.stats.razed++;
@@ -1963,13 +2103,13 @@ export class Game {
   _predTick(d, dt) {
     const q = PRED[d.type]; if (d.cd > 0) d.cd -= dt;
     const mad = d.foe && this.time - d.foeT < PRED_FOE_T;
-    if (mad && d.tid !== d.foe) { const f = this.entities.get(d.foe); if (f && !f.dead && !f.aboard && f.kind === 'unit') d.tid = d.foe; }
+    if (mad && d.tid !== d.foe) { const f = this.entities.get(d.foe); if (f && !f.dead && !f.aboard && !f.garrisoned && f.kind === 'unit') d.tid = d.foe; }
     let t = d.tid ? this.entities.get(d.tid) : null;
-    if (t && (t.dead || t.aboard || dhypot(t.x - d.hx, t.z - d.hz) > (mad && t.id === d.foe ? PRED_FOE_LEASH : q.leash))) { t = null; d.tid = 0; d.wx = d.hx; d.wz = d.hz; d.wt = this.time + 4; }
+    if (t && (t.dead || t.aboard || t.garrisoned || dhypot(t.x - d.hx, t.z - d.hz) > (mad && t.id === d.foe ? PRED_FOE_LEASH : q.leash))) { t = null; d.tid = 0; d.wx = d.hx; d.wz = d.hz; d.wt = this.time + 4; }
     d.st -= dt;
     if (!t && d.st <= 0) {
       d.st = 0.5; const r = this.time - (d.hitT == null ? -9 : d.hitT) < 3 ? 7 : q.aggro; let bd = r * r;
-      this._near(d.x, d.z, r, e => { if (e.dead || !(e.owner >= 0) || e.kind !== 'unit' || e.aboard || e.naval) return; const k = sq(e.x - d.x) + sq(e.z - d.z); if (k < bd || (k === bd && t && e.id < t.id)) { bd = k; t = e; } });
+      this._near(d.x, d.z, r, e => { if (e.dead || !(e.owner >= 0) || e.kind !== 'unit' || e.aboard || e.garrisoned || e.naval) return; const k = sq(e.x - d.x) + sq(e.z - d.z); if (k < bd || (k === bd && t && e.id < t.id)) { bd = k; t = e; } });
       if (t && dhypot(t.x - d.hx, t.z - d.hz) > q.leash) t = null;
       if (t) d.tid = t.id;
     }
@@ -1995,7 +2135,7 @@ export class Game {
   _bTargets(b, R, n, sea = 0) {
     const h = b.size / 2, out = [], RS = R + sea;
     this._near(b.x, b.z, RS + h + 1, e => {
-      if (e.dead || e.kind !== 'unit' || e.aboard || !this.isEnemy(b.owner, e.owner)) return;
+      if (e.dead || e.kind !== 'unit' || e.aboard || e.garrisoned || !this.isEnemy(b.owner, e.owner)) return;
       const dx = Math.max(Math.abs(e.x - b.x) - h, 0), dz = Math.max(Math.abs(e.z - b.z) - h, 0), d = dx * dx + dz * dz;
       if (d <= (e.naval ? RS * RS : R * R)) out.push([d, e.id, e]);
     });
@@ -2104,19 +2244,20 @@ export class Game {
       case 'return': this._uReturn(u, o, dt); break;
       case 'build': this._uBuild(u, o, dt); break;
       case 'trade': this._uTrade(u, o, dt); break;
+      case 'garrison': this._uGarrison(u, o, dt); break;
       default: this._next(u);
     }
   }
   // a wounded friendly living unit a healer may heal (not herself, no siege / ships / trains / buildings)
   _healable(h, e) {
-    if (e === h || e.dead || e.kind !== 'unit' || e.type === 'tradecart' || e.aboard || e.train || e.naval || !(e.hp < e.maxHp) || !this.isAlly(h.owner, e.owner)) return false;
+    if (e === h || e.dead || e.kind !== 'unit' || e.type === 'tradecart' || e.aboard || e.garrisoned || e.train || e.naval || !(e.hp < e.maxHp) || !this.isAlly(h.owner, e.owner)) return false;
     const c = UNITS[e.type].cls; return c !== 'siege' && c !== 'ship' && c !== 'train';
   }
   // once a second for every healer in entity order: each wounded friend within HEALER_R gets the first healer's heal only
   _healTick() {
     let done = null;
     for (const h of this.units) {
-      if (h.type !== 'healer' || h.dead || h.aboard) continue;
+      if (h.type !== 'healer' || h.dead || h.aboard || h.garrisoned) continue;
       const p = this.players[h.owner], st = healerStats(p ? p.age : 0), n = healerRate(p), R2 = st.r * st.r;
       this._healerBolt(h, p);
       let got = [];
@@ -2132,7 +2273,7 @@ export class Game {
   _healerBolt(h, p) {
     const b = healerBolt(p ? p.age : 0); if (!b || this.time < (h.boltT || 0)) return;
     let t = null, bd = b.r * b.r;
-    const look = e => { if (e.dead || e.aboard || e.kind !== 'unit' || !this.isEnemy(h.owner, e.owner)) return; const k = sq(e.x - h.x) + sq(e.z - h.z); if (k < bd || (k === bd && t && e.id < t.id)) { bd = k; t = e; } };
+    const look = e => { if (e.dead || e.aboard || e.garrisoned || e.kind !== 'unit' || !this.isEnemy(h.owner, e.owner)) return; const k = sq(e.x - h.x) + sq(e.z - h.z); if (k < bd || (k === bd && t && e.id < t.id)) { bd = k; t = e; } };
     this._near(h.x, h.z, b.r, look);
     for (const e of this._angry) { if (!e.live) continue; const k = sq(e.x - h.x) + sq(e.z - h.z); if (k < bd || (k === bd && t && e.id < t.id)) { bd = k; t = e; } }
     if (!t) return;
@@ -2164,7 +2305,7 @@ export class Game {
   }
   _uAttack(u, o, dt) {
     const t = this.entities.get(o.targetId), d = UNITS[u.type];
-    if (!t || t.dead || !this._foe(u.owner, t) || (t.kind === 'resource' && !t.live)) return this._autoEnd(u, o);
+    if (!t || t.dead || t.aboard || t.garrisoned || !this._foe(u.owner, t) || (t.kind === 'resource' && !t.live)) return this._autoEnd(u, o);
     const m = this.players[u.owner].mods;
     const leash = o.mv ? MOVE_LEASH : o.auto && u.stance === 'defensive' ? DEF_LEASH : (o.lr || d.los) + 5;
     if (o.auto && dhypot(u.x - o.ox, u.z - o.oz) > leash) return this._autoEnd(u, o);
@@ -2337,15 +2478,17 @@ export class Game {
     }
     return n;
   }
-  // a villager starting on a mine takes a place at its deposit; when it is full he goes to the nearest other deposit
-  // of that kind with room, else he stops and his owner is told
+  // a villager starting on a mine takes a place at its deposit; when it is full he goes to the nearest other explored
+  // deposit of that kind with room within 16 tiles, else he stops and his owner is told
   _admitMine(u, o, t, dep) {
     if (this.mineLoad(dep, u.owner) < MINE_CAP) { o.dadm = dep; return true; }
-    let best = null, bd = 1e9;
+    const R = 16;
+    let best = null, bd = R * R;
     const full = new Map();
     for (const e of this.entities.values()) {
       if (e.kind !== 'resource' || e.type !== t.type || e.dead) continue;
-      const d = sq(e.x - u.x) + sq(e.z - u.z); if (d >= bd) continue;
+      const d = sq(e.x - t.x) + sq(e.z - t.z); if (d > bd) continue;
+      if (!this._isExplored(u.owner, e.x, e.z)) continue;
       const k = this._depOf(e); if (k === dep) continue;
       let f = full.get(k); if (f === undefined) { f = this.mineLoad(k, u.owner) - (o.dadm === k ? 1 : 0) >= MINE_CAP; full.set(k, f); }
       if (!f) { bd = d; best = e; }
@@ -2549,8 +2692,8 @@ export class Game {
       this.events.emit('ageUp', { owner: b.owner, age: p.age });
       if (b.owner === this.me) { const cnt = o => Object.values(o).filter(x => x.age === p.age && x.id !== 'house').length, nb = cnt(BUILDINGS), nu = cnt(UNITS), nt = cnt(TECHS);
         this.events.emit('notify', { text: tr('Yeni çağ: {0} bina, {1} birlik ve {2} teknoloji açıldı. Tüm binaların güçlendi!', nb, nu, nt), type: 'good' }); }
-      const mine = b.owner === this.me, ally = !mine && this.isAlly(b.owner, this.me);
-      this.events.emit('notify', { text: mine ? tr('{0} başladı!', tr(AGES[p.age].name)) : tr(ally ? 'Bir müttefik {0} seviyesine ulaştı' : 'Bir rakip {0} seviyesine ulaştı', tr(AGES[p.age].name)), type: mine || ally ? 'good' : 'warn' });
+      const mine = b.owner === this.me, ally = !mine && this.isAlly(b.owner, this.me), spec = !!(this.players[this.me] && this.players[this.me].spectator);
+      this.events.emit('notify', { text: mine ? tr('{0} başladı!', tr(AGES[p.age].name)) : spec ? tr('{0} {1} seviyesine ulaştı', p.name, tr(AGES[p.age].name)) : tr(ally ? 'Bir müttefik {0} seviyesine ulaştı' : 'Bir rakip {0} seviyesine ulaştı', tr(AGES[p.age].name)), type: mine || ally ? 'good' : spec ? 'info' : 'warn' });
     }
   }
 
@@ -2568,18 +2711,18 @@ export class Game {
     for (let i = 0; i < dirty.length; i++) cells[dirty[i]].length = 0;
     dirty.length = 0;
     for (let i = 0; i < units.length; i++) {
-      const u = units[i]; if (u.dead || u.aboard) continue;
+      const u = units[i]; if (u.dead || u.aboard || u.garrisoned) continue;
       const ci = Math.min(hc - 1, (u.z / CELL) | 0) * hc + Math.min(hc - 1, (u.x / CELL) | 0);
       const cell = cells[ci];
       if (cell.length === 0) dirty.push(ci);
       cell.push(u);
     }
-    for (let i = 0; i < units.length; i++) { const u = units[i]; if (u.dead || u.aboard) continue; if (u.naval || (u.order && u.order.type === 'board')) this._navUpdateUnit(u, dt); else this._updateUnit(u, dt); }
+    for (let i = 0; i < units.length; i++) { const u = units[i]; if (u.dead || u.aboard || u.garrisoned) continue; if (u.naval || (u.order && u.order.type === 'board')) this._navUpdateUnit(u, dt); else this._updateUnit(u, dt); }
     // separation for idle units. Each unit has a body radius (SEP_R by class): two units are pushed apart when they
     // are closer than the sum, so cannons and catapults no longer sit inside each other (2026-11-17 playtest: "the
     // cannons clump up and lock together"); siege engines are also spread while they fire (they stand still then).
     for (let i = 0; i < units.length; i++) {
-      const u = units[i]; if (u.dead || u.train || u.aboard) continue;
+      const u = units[i]; if (u.dead || u.train || u.aboard || u.garrisoned) continue;
       const ru = u.naval ? 0 : SEP_R[UNITS[u.type].cls] || SEP_R.other;
       if (u.order && u.state !== 'move' && !(u.state === 'attack' && ru === SEP_R.siege)) continue;
       const mv = !!u.order && u.state === 'move';   // (a walking unit keeps the old small gap: a bigger push stalls slow siege)
@@ -2615,12 +2758,12 @@ export class Game {
     const pr = this.projectiles;
     for (let i = pr.length - 1; i >= 0; i--) {
       const p = pr[i]; p.t += dt; const t = this.entities.get(p.targetId);
-      if (t && !t.dead) { p.tx = t.x; p.tz = t.z; }
+      if (t && !t.dead && !t.garrisoned && !t.aboard) { p.tx = t.x; p.tz = t.z; }
       const f = Math.min(1, p.t / p.dur);
       p.x = p.sx + (p.tx - p.sx) * f; p.z = p.sz + (p.tz - p.sz) * f; p.y = p.sy + (p.ty - p.sy) * f + (p.type === 'arrow' ? 4 * f * (1 - f) : dsin(f * Math.PI)) * p.arc;   // (arrows: a true parabola)
       if (f >= 1) {
         pr.splice(i, 1); const src = this.entities.get(p.srcId) || { owner: p.owner, dead: true, kind: 'unit', id: 0 };
-        if (t && !t.dead) this._applyDamage(t, p.dmg, src, p.type);
+        if (t && !t.dead && !t.garrisoned && !t.aboard) this._applyDamage(t, p.dmg, src, p.type);
         else this.events.emit('hit', { target: null, x: p.tx, y: p.ty, z: p.tz, dmg: 0, proj: p.type });
         if (p.spl) { const R = p.spl, hit = []; this._near(p.tx, p.tz, R, e => { if (!e.dead && e !== t && (this.isEnemy(p.owner, e.owner) || (e.live && e.foe === p.srcId)) && dhypot(e.x - p.tx, e.z - p.tz) < R) hit.push(e); }); for (const e of hit) this._applyDamage(e, Math.max(1, Math.round(p.dmg * 0.5)), src, p.type); }
         if (p.type === 'stone' || p.type === 'cannonball') { const hit = []; this._near(p.tx, p.tz, 1.6, e => { if (!e.dead && this.isEnemy(p.owner, e.owner) && e !== t && dhypot(e.x - p.tx, e.z - p.tz) < 1.6) hit.push(e); }); for (const e of hit) this._applyDamage(e, Math.max(1, Math.round(p.dmg * 0.4)), src, p.type); }
@@ -2666,13 +2809,13 @@ export class Game {
   _knownStarts(g) {
     // (round the town centre's middle: an odd-sized one, 9x9 since 2026-11-20, stands half a tile off the start point)
     const N = this.map.size, h = BUILDINGS.towncenter.size / 2, r = h - 0.25, mid = v => Math.round(v - h) + h;
-    for (const q of this.players) if (q.startX != null) forDisc(N, mid(q.startX), mid(q.startZ), r, (a, b) => { for (let i = a; i < b; i++) if (!g[i]) g[i] = 1; });
+    for (const q of this.players) if (!q.spectator && q.startX != null) forDisc(N, mid(q.startX), mid(q.startZ), r, (a, b) => { for (let i = a; i < b; i++) if (!g[i]) g[i] = 1; });
   }
   _updateFog() {
     const N = this.map.size, NN = N * N, fog = this.fog;
     if (!this._tv) this._tv = new Map();
     const tv = this._tv;
-    for (const p of this.players) if (!tv.has(p.team)) { const g = new Uint8Array(NN); if (this.cfg.fog === 'explored') g.fill(1); else this._knownStarts(g); if (this._fogSeed && p.team === this.teamOf(this.me)) g.set(this._fogSeed); tv.set(p.team, g); this._bFogVer++; }
+    for (const p of this.players) if (!p.spectator && !tv.has(p.team)) { const g = new Uint8Array(NN); if (this.cfg.fog === 'explored') g.fill(1); else this._knownStarts(g); if (this._fogSeed && p.team === this.teamOf(this.me)) g.set(this._fogSeed); tv.set(p.team, g); this._bFogVer++; }
     this._fogSeed = null;
     for (const g of tv.values()) {
       if ((g.length & 3) === 0 && (g.byteOffset & 3) === 0) {
@@ -2688,7 +2831,7 @@ export class Game {
     // units: stamp discs inline (no per-unit closure)
     const units = this.units;
     for (let ui = 0; ui < units.length; ui++) {
-      const u = units[ui]; if (u.dead || !(u.owner >= 0)) continue;
+      const u = units[ui]; if (u.dead || u.garrisoned || !(u.owner >= 0)) continue;
       const gr = tv.get(this.teamOf(u.owner)); if (!gr) continue;
       const r = unitLos(u.type), r2 = r * r, ux = u.x, uz = u.z;
       const z0 = Math.max(0, Math.ceil(uz - 0.5 - r)), z1 = Math.min(N - 1, Math.floor(uz - 0.5 + r));
@@ -2743,8 +2886,9 @@ export class Game {
       if (b.dead) continue; const i = Math.min(N - 1, Math.max(0, b.z | 0)) * N + Math.min(N - 1, Math.max(0, b.x | 0));
       for (const [team, g] of tv) if (g[i] === 2) b.sv = (b.sv | 0) | (1 << (team & 31));
     }
+    const meP = this.players[this.me];
     const mine = tv.get(this.teamOf(this.me));
-    if (this.reveal) fog.fill(2); // view only: spectators (defeated or finished) see everything live
+    if (this.reveal || (meP && meP.spectator)) fog.fill(2); // view only: spectators (lobby, defeated or finished) see everything live
     else if (mine) fog.set(mine);
     this.fogVersion++;
   }
@@ -2755,10 +2899,11 @@ export class Game {
     return n;
   }
   _checkWin() {
-    if (this.cfg.sandbox || this.cfg.tutorial || this.players.length < 2) return;   // (the tutorial ends the match itself)
-    const myTeam = this.teamOf(this.me);
+    if (this.cfg.sandbox || this.cfg.tutorial) return;   // (the tutorial ends the match itself)
+    if (this.players.filter(p => !p.spectator).length < 2) return;
+    const myTeam = this.teamOf(this.me), meSpec = !!(this.players[this.me] && this.players[this.me].spectator);
     for (const p of this.players) {
-      if (p.defeated) continue;
+      if (p.defeated || p.spectator) continue;
       // (owner 2026-11-20) a player is out when every building that trains units is gone - town centers, barracks,
       // archery ranges, stables, siege workshops, factories, docks; a foundation counts once work on it has started.
       // Units left over do not keep a player in: a villager or a scout hidden somewhere no longer stops the match.
@@ -2770,15 +2915,15 @@ export class Game {
       if (!prod && this.units.some(u => u.owner === p.id && !u.dead && u.type === 'villager')) { p.prodLeft = 0; continue; }
       if (!prod) {
         p.defeated = true;
-        if (p.id !== this.me) this.events.emit('notify', this.isAlly(p.id, this.me) ? { text: tr('Bir müttefik uygarlık yıkıldı!'), type: 'warn' } : { text: tr('Bir rakip uygarlık yıkıldı!'), type: 'good' });
+        if (p.id !== this.me) this.events.emit('notify', meSpec ? { text: tr('{0} uygarlığı yıkıldı!', p.name), type: 'info' } : this.isAlly(p.id, this.me) ? { text: tr('Bir müttefik uygarlık yıkıldı!'), type: 'warn' } : { text: tr('Bir rakip uygarlık yıkıldı!'), type: 'good' });
         if (p.id === this.me) this.reveal = true;
         this.events.emit('playerDefeated', { id: p.id, team: p.team });
       }
     }
     // a team is out when none of its players has a building that trains units; the match ends when one team remains
-    const alive = new Set(); for (const p of this.players) if (!p.defeated) alive.add(p.team);
-    if (alive.size <= 1) { const winnerTeam = alive.size ? [...alive][0] : -1; this.over = { won: winnerTeam === myTeam, winnerTeam }; }
-    else if (!this.mp && this.players.every(p => p.isAI || p.defeated)) this.over = { won: false, winnerTeam: -1 }; // single player: the human lost
+    const alive = new Set(); for (const p of this.players) if (!p.defeated && !p.spectator) alive.add(p.team);
+    if (alive.size <= 1) { const winnerTeam = alive.size ? [...alive][0] : -1; this.over = { won: myTeam >= 0 && winnerTeam === myTeam, winnerTeam }; }
+    else if (!this.mp && this.players.every(p => p.isAI || p.defeated || p.spectator)) this.over = { won: false, winnerTeam: -1 }; // single player: the human lost
     if (this.over && !this._overSent) { this._overSent = true; this.reveal = true; this._updateFog(); this.events.emit('gameOver', { won: this.over.won, winnerTeam: this.over.winnerTeam }); }
   }
 
@@ -3243,6 +3388,7 @@ export class Game {
     const want = Math.max(16, Math.min(110, Math.round(pool.length / 18)));
     for (const c of pool) { if (placed.length >= want) break; if (ok(c, 5)) put(c); }
     for (const p of this.players) {
+      if (p.spectator) continue;
       const all = deep.concat(shallow).filter(c => { const d = dhypot(c[0] + 0.5 - p.startX, c[1] + 0.5 - p.startZ); return d >= 7 && d <= 25 && free(c[0], c[1]); });
       if (!all.length) continue;
       all.sort((a, b) => (dhypot(a[0] - p.startX, a[1] - p.startZ) + (T[a[1] * N + a[0]] === 4 ? 0 : 4)) - (dhypot(b[0] - p.startX, b[1] - p.startZ) + (T[b[1] * N + b[0]] === 4 ? 0 : 4)));

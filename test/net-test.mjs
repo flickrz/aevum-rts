@@ -392,6 +392,57 @@ console.log('Protocol optimizations (reliable no-redundancy, micro-stall, no 90m
       '2-client lossy MemTransport stays in sync with identical hashes (' + G2[0].hash() + ' / ' + G2[1].hash() + ', ' + iss2 + ' cmds, tick ' + tgt2 + ')');
     S2.forEach(s => s.close());
   }
+
+  // 6. Lobby spectator slot ("İzle"): 2 active players + 1 spectator over lossy MemTransport stay in sync
+  {
+    const waitFor = async (fn, ms = 8000) => { const end = clock.t + ms; while (clock.t < end && !fn()) { clock.t += 20; hub.deliver(); clock.fire(); await flush(); } };
+    const T3 = ['spec0', 'spec1', 'spec2'].map(id => new MemTransport(id));
+    const S3 = T3.map((t, i) => new NetSession(t, { clock: makeClock(t.id), name: ['Ali', 'Veli', 'Izleyici'][i] }));
+    const cfgs3 = [null, null, null], desync3 = [0, 0, 0];
+    S3.forEach((s, i) => { s.on('start', d => { cfgs3[i] = d.cfg; }); s.on('desync', () => { desync3[i]++; }); });
+    const code3 = await S3[0].host();
+    let j1 = false, j2 = false;
+    S3[1].join(code3).then(() => { j1 = true; });
+    S3[2].join(code3).then(() => { j2 = true; });
+    await waitFor(() => j1 && j2 && S3[0].state.slots.length === 3);
+    // 1 active + 2 spectators cannot start; 2 active on same team + 1 spectator cannot start
+    S3[1].setTeam(0); S3[2].setTeam(0); S3[1].setReady(true); S3[2].setReady(true);
+    await waitFor(() => S3[0].state.slots.filter(s => s.spectator).length === 2 && S3[0].state.slots.every(s => s.ready));
+    ok(!S3[0].canStart().ok, 'cannot start with only 1 active player + 2 spectators');
+    // move peer 1 to team 2, keep peer 2 as spectator -> canStart ok
+    S3[1].setTeam(2);
+    S3[0].setSettings({ mapSize: 160, seed: 51515, fog: 'dark' });
+    await waitFor(() => S3[0].canStart().ok);
+    const spSlot = S3[0].state.slots.find(s => s.peer === 'spec2');
+    ok(spSlot && spSlot.spectator === true && S3[0].state.slots.filter(s => s.spectator).length === 1, 'lobby setTeam(0) marks human spectator and setTeam(2) clears it');
+    await S3[0].start();
+    await waitFor(() => cfgs3.every(Boolean));
+    const G3 = cfgs3.map(c => new G.Game(Object.assign({}, c)));
+    const specIdx = cfgs3.findIndex(c => c.players[c.me].spectator);
+    ok(specIdx === 2 && G3[specIdx].fog.every(v => v === 2) && G3[specIdx].unitsOf(cfgs3[specIdx].me).length === 0, 'spectator client starts with full map vision and 0 units');
+    ok(S3[specIdx].issue('cmdTownBell', [cfgs3[specIdx].me]) === false && S3[specIdx].flare(50, 50) === false && S3[specIdx].requestPause(true) === false && S3[specIdx].requestSave(false) === null, 'spectator session refuses commands/flare/pause/save');
+    const sr3 = mulberry(5151);
+    let iss3 = 0;
+    await runFor(25000, 1000 / 60, dt => {
+      for (let i = 0; i < 3; i++) {
+        if (i !== specIdx && sr3() < 0.04) {
+          const me = cfgs3[i].me, mine = G3[i].units.filter(u => u.owner === me && !u.dead);
+          if (mine.length) { S3[i].issue('cmdMove', [mine.slice(0, 4).map(u => u.id), 30 + sr3() * 90, 30 + sr3() * 90, false]); iss3++; }
+        }
+        S3[i].advance(G3[i], dt);
+      }
+    });
+    const tgt3 = Math.max(...S3.map(s => s.tick)) + 20 * TURN_TICKS;
+    for (let k = 0; k < 10000 && S3.some(s => s.tick < tgt3); k++) {
+      clock.t += 5; hub.deliver(); clock.fire();
+      for (let i = 0; i < 3; i++) if (S3[i].tick < tgt3) { S3[i]._acc = 0; S3[i]._slow = false; S3[i].advance(G3[i], STEP); }
+      await flush();
+    }
+    const H3 = G3.map(g => g.hash());
+    ok(S3.every(s => s.tick === tgt3) && H3[0] === H3[1] && H3[0] === H3[2] && desync3.every(d => d === 0) && S3.every(s => s.execCount === iss3),
+      '3-client match (2 active + 1 spectator) stays in lockstep sync (' + H3.join(' / ') + ', ' + iss3 + ' cmds, tick ' + tgt3 + ')');
+    S3.forEach(s => s.close());
+  }
 }
 
 console.log(`(${((Date.now() - t0) / 1000).toFixed(1)} s wall time)`);

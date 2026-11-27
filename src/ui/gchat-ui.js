@@ -5,14 +5,15 @@
 // "Arkadaş Ekle" and "Davet Et". Every name and line goes in via textContent.
 import { avatarEl } from './cloud-ui.js';
 import { levelOf } from '../rank.js';
-import { logChat } from '../chatlog.js';
+import { logChat, clipChat, FB_MAX } from '../chatlog.js';
+import { withMention, hasClaude } from './mention.js';
 import { tr, pn } from '../i18n.js';
 
 const h = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
 const safe = (fn, fb) => { try { return fn(); } catch (e) { console.warn(e); return fb; } };
 const errText = (e) => (e && e.message) || String(e || tr('Hata'));
 const RULES_KEY = 'aevum.gchatRules';
-const MAX = 80, LEN = 200;
+const MAX = 80;
 
 // the lines seen so far (kept while the page is open, shared by every panel) and the open panels' redraw functions
 const lines = [];
@@ -127,20 +128,41 @@ export function gchatPanel(ui) {
   const list = h('div', 'gc-list');
   list.addEventListener('wheel', (ev) => ev.stopPropagation(), { passive: true });
   const form = h('form', 'gc-form');
-  const inp = h('input', 'mpinput gc-inp'); inp.maxLength = LEN; inp.placeholder = tr('Herkese yaz...'); inp.setAttribute('aria-label', tr('Genel sohbete yaz'));
+  const inp = h('input', 'mpinput gc-inp');
+  inp.maxLength = FB_MAX;
+  inp.autocomplete = 'off';
+  inp.spellcheck = false;
+  inp.placeholder = tr('Herkese yaz… (@claude: hata / öneri)');
+  inp.setAttribute('aria-label', tr('Genel sohbete yaz'));
   inp.onkeydown = (ev) => ev.stopPropagation();
   inp.onkeyup = (ev) => ev.stopPropagation();
   const go = h('button', 'mbtn small primary gc-go', tr('Gönder')); go.type = 'submit';
   const msg = h('div', 'gc-msg hidden');
-  form.append(inp, go);
+  form.append(withMention(inp), go);
   wrap.append(head, list, msg, form);
   if (!cloud || !cloud.loggedIn) {
     list.append(h('div', 'prof-dim gc-empty', tr('Sohbet için giriş yap.')));
     form.classList.add('hidden');
     return wrap;
   }
-  const say = (t) => { msg.textContent = t || ''; msg.className = 'gc-msg' + (t ? '' : ' hidden'); };
+  let msgT = 0;
+  const say = (t, ok = false) => {
+    clearTimeout(msgT);
+    msg.textContent = t || '';
+    msg.className = 'gc-msg' + (ok ? ' prof-ok' : '') + (t ? '' : ' hidden');
+    if (t && ok) msgT = setTimeout(() => { msg.textContent = ''; msg.className = 'gc-msg hidden'; }, 4000);
+  };
   const fmt = (t) => { const d = new Date(t); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+  const renderText = (s) => {
+    const sp = h('span', 'gc-text');
+    const parts = String(s || '').split(/(@claude)/gi);
+    for (const pt of parts) {
+      if (!pt) continue;
+      if (/^@claude$/i.test(pt)) sp.append(h('span', 'cmention', pt));
+      else sp.append(document.createTextNode(pt));
+    }
+    return sp;
+  };
   const draw = () => {
     if (!wrap.isConnected) { if (wrap._shown) views.delete(draw); return; }   // (not on the page yet: drawn once it is)
     wrap._shown = true;
@@ -155,7 +177,7 @@ export function gchatPanel(ui) {
       n.onclick = () => showPlayer(ui, m);
       r.append(n);
       if (m.own) r.append(h('span', 'gc-own', tr('Geliştirici')));
-      r.append(h('span', 'gc-text', m.text));
+      r.append(renderText(m.text));
       list.append(r);
     }
     if (end) list.scrollTop = list.scrollHeight;
@@ -167,14 +189,17 @@ export function gchatPanel(ui) {
   // (a line the inbox missed, e.g. during a reconnect) a light check every 20 s while the panel is shown
   const timer = setInterval(() => { if (wrap._shown && !wrap.isConnected) { clearInterval(timer); views.delete(draw); return; } if (!document.hidden) load(); }, 20000);
   const send = async () => {
-    const text = inp.value.replace(/\s+/g, ' ').trim();
+    const text = clipChat(inp.value.replace(/\s+/g, ' ').trim());
     if (!text) return;
+    const fb = hasClaude(text);
     go.disabled = true; say('');
     try {
       const m = await cloud.gchatSend(text);
       inp.value = '';
       if (m) add([m]);
-      safe(() => logChat({ room: 'GENEL', name: m ? m.name : '?', text, mine: true }));
+      const name = (m && m.name) || safe(() => ui.app.getProfile()?.name, '') || '?';
+      safe(() => logChat({ room: 'GENEL', name, text, mine: true }));
+      if (fb) say(tr('✔ Geri bildirimin geliştiriciye iletildi, teşekkürler!'), true);
       list.scrollTop = list.scrollHeight;
     } catch (e) { say(errText(e)); }
     go.disabled = false; inp.focus();

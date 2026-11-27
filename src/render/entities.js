@@ -1692,13 +1692,13 @@ function makeUnitRaw(type, color, age) {
   } else if (SEA_UNITS[type]) {
     const r = makeSeaUnit(type, color, A, root, inner, P); rig = r.rig; h = r.h; pw = r.pw; pd = r.pd;
   } else if (type === 'deer') {
-    rig = 'deer'; h = .6; pw = .4; pd = .7;
+    rig = 'deer'; h = .6; pw = .85; pd = 1.0;
     makeHorse(inner, 0xa5713f, P, .5);
   } else if (type === 'wolf') {   // (the wild predators reuse the deer rig: same quadruped, other size and coat)
-    rig = 'deer'; h = .5; pw = .35; pd = .6;
+    rig = 'deer'; h = .5; pw = .8; pd = .95;
     makeHorse(inner, 0x6e6964, P, .4);
   } else if (type === 'bear') {
-    rig = 'deer'; h = .8; pw = .6; pd = .9;
+    rig = 'deer'; h = .8; pw = .95; pd = 1.15;
     makeBear(inner, P, .75);
   } else { makeHuman(inner, color, KIT.villager, P, A); inner.scale.setScalar(.72); }
   inner.scale.multiplyScalar(USCALE); h *= USCALE; pw *= USCALE; pd *= USCALE;
@@ -2050,7 +2050,7 @@ export class EntityView {
       v.slots = ms.map(o => { const p = o.parent; p.remove(o); return { p, g: o.geometry }; });
       u.root.matrixWorldAutoUpdate = false;
     }
-    this._proxy(v, u.pw, u.h, u.pd);
+    this._proxy(v, u.pw, Math.max(u.h, .75), u.pd);
     v.root.visible = v.vis !== false;
     this.scene.add(v.root);
   }
@@ -2621,7 +2621,7 @@ export class EntityView {
     let v = this.views.get(e.id);
     if (!v) v = this._create(e);
     v.e = e; v.seen = f;
-    const vis = !!this.game.isEntityVisible(e) && !e.aboard;
+    const vis = !!this.game.isEntityVisible(e) && !e.aboard && !e.garrisoned;
     if (vis !== v.vis) { v.vis = vis; v.root.visible = vis; }
     const sel = this.selected.has(e.id);
     let y;
@@ -2676,7 +2676,7 @@ export class EntityView {
       const freeze = !!(((v.sb && v.sb.c.built) || U.fishInst) && !(v.ring && v.ring.visible) && !(U.spin && U.spin.visible) && !U.live && !(v.repRig && v.repRig.visible));
       if (v.root.matrixWorldAutoUpdate === freeze) v.root.matrixWorldAutoUpdate = !freeze;
     }
-    const showHp = vis && !e.dead && e.maxHp > 0 && !(e.kind === 'building' && this._fogged(e)) && (sel ? e.kind !== 'resource' || e.type === 'deer' || !!e.live : ((e.kind !== 'resource' || e.live) && e.hp < e.maxHp));
+    const showHp = vis && !e.dead && e.maxHp > 0 && !(e.kind === 'building' && this._fogged(e)) && (sel ? e.kind !== 'resource' || !!e.alive || !!e.live : ((e.kind !== 'resource' || e.live) && e.hp < e.maxHp));
     if (showHp) this._hp(v, e, true, y);
     if (v.slots && v.root.visible) this._emit(v);
   }

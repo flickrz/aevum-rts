@@ -218,7 +218,7 @@ export class AIController {
     const g = this.game, me = this.me();
     const units = g.unitsOf(this.pid);
     const blds = g.buildingsOf(this.pid);
-    const vills = units.filter(u => u.type === 'villager' && !u.aboard);
+    const vills = units.filter(u => u.type === 'villager' && !u.aboard && !u.garrisoned);
     const mil = units.filter(u => this.isMil(u));
     const tcs = blds.filter(b => b.type === 'towncenter');
     const tc = tcs.find(b => b.done) || tcs[0] || null;
@@ -245,10 +245,10 @@ export class AIController {
     const st = ++this.vstamp, vis = this.vis, exp = this.exp;
     // (the same sight as the fog: soldiers see past the longest weapon range, an unfinished foundation sees nothing)
     const span = (a, b) => { vis.fill(st, a, b); exp.fill(1, a, b); };
-    for (const u of c.units) if (!u.aboard) forDisc(N, u.x, u.z, unitLos(u.type), span);
+    for (const u of c.units) if (!u.aboard && !u.garrisoned) forDisc(N, u.x, u.z, unitLos(u.type), span);
     for (const b of c.blds) if (b.done) forDisc(N, b.x, b.z, buildingLos(b, c.me), span);
     for (const u of g.units) {
-      if (u.dead || !this.foe(u.owner) || u.aboard || u.train) continue;
+      if (u.dead || !this.foe(u.owner) || u.aboard || u.garrisoned || u.train) continue;
       if (vis[this.tile(u.x, u.z)] === st) this._see(u);
     }
     for (const b of g.buildings) {
@@ -1940,7 +1940,7 @@ export class AIController {
     const g = this.game, melee = !(UNITS[u.type].range > 0);
     let best = null, bs = Infinity;
     g._near(u.x, u.z, r, e => {
-      if (e.dead || !this.foe(e.owner) || e.aboard || e.train) return;
+      if (e.dead || !this.foe(e.owner) || e.aboard || e.garrisoned || e.train) return;
       if (!this.visible(e.x, e.z)) return; // only what our units / buildings see now
       if (melee && e.naval) return;
       const dd = d2(e.x, e.z, u.x, u.z); if (dd > r * r) return;

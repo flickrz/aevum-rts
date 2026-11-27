@@ -1,5 +1,6 @@
 // Teams: node test/team-test.mjs
 import { Game } from '../src/sim/game.js';
+import { resultOf, buildRecord } from '../src/profile.js';
 
 const fails = [];
 const ok = (c, m) => { if (!c) fails.push(m); console.log((c ? '  ok ' : '  FAIL ') + m); return !!c; };
@@ -60,5 +61,39 @@ const Ls = Game.deserialize(JSON.parse(JSON.stringify(L.serialize())));
 ok(Ls.teamOf(2) === 2 && Ls.players[0].name === L.players[0].name, 'save/load keeps teams');
 const old = L.serialize(); for (const p of old.players) { delete p.team; delete p.kind; delete p.name; }
 const Lo = Game.deserialize(old); ok(Lo.teamOf(0) === 1 && Lo.teamOf(1) === 2 && Lo.players[1].kind === 'ai', 'old save without teams loads');
+// 8) spectator slot: no units/buildings, full vision, cannot command, ignored for victory/defeat & starts
+{
+  const pl = [
+    { kind: 'human', team: 1, name: 'A' },
+    { kind: 'human', team: 2, name: 'B' },
+    { kind: 'human', team: 1, name: 'Spec', spectator: true },
+  ];
+  const base2 = new Game({ mapSize: 96, seed: 42, mp: true, me: 0, fog: 'dark', players: pl.slice(0, 2) });
+  const gs = new Game({ mapSize: 96, seed: 42, mp: true, me: 2, fog: 'dark', players: pl });
+  const ga = new Game({ mapSize: 96, seed: 42, mp: true, me: 0, fog: 'dark', players: pl });
+  ok(gs.players[2].spectator === true && gs.teamOf(2) === -1 && !gs.isEnemy(0, 2) && !gs.isAlly(0, 2), 'spectator teamOf=-1, neither enemy nor ally');
+  ok(gs.unitsOf(2).length === 0 && gs.buildingsOf(2).length === 0, 'spectator spawns with 0 units and 0 buildings');
+  ok(gs.players[0].startX === base2.players[0].startX && gs.players[1].startX === base2.players[1].startX, 'active players keep symmetric 2-player starts when a spectator is present');
+  ok(gs.fog.every(v => v === 2), 'spectator sees the whole map (dark fog -> all 2)');
+  ok(gs.isEntityVisible(gs.unitsOf(0)[0]) && gs.isEntityVisible(gs.unitsOf(1)[0]), 'spectator sees units of all teams');
+  ok(!ga.isEntityVisible(ga.unitsOf(1)[0]), 'active player still has normal fog');
+  ok(gs.hash() === ga.hash(), 'spectator and active player start with identical hash');
+  ok(gs.execCommand(2, 'placeBuilding', [2, 'house', 40, 40, [], false]) === false && gs.execCommand(2, 'trade', [2, 'wood', 'gold']) === false && gs.execCommand(2, 'cmdTownBell', [2]) === false, 'spectator execCommand is rejected');
+  // serialize / deserialize round-trip with different me (spectator vs active)
+  const raw = JSON.parse(JSON.stringify(ga.serialize()));
+  const dSpec = Game.deserialize(raw, { me: 2 }), dAct = Game.deserialize(raw, { me: 0 });
+  ok(dSpec.players[2].spectator === true && dSpec.fog.every(v => v === 2) && !dAct.fog.every(v => v === 2) && dSpec.hash() === dAct.hash(), 'deserialize preserves spectator vision & equal hash');
+  // profile resultOf / buildRecord ignores spectator
+  const gLeft = Game.deserialize(raw, { me: 0 });
+  gLeft.markLeft(1);
+  ok(resultOf(gLeft, 0) === 'won', 'profile.resultOf ignores spectator when opponent leaves');
+  const rec = buildRecord(gLeft, { mode: 'mp', id: 'mp-test', uids: ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'cccccccccccccccccccccccccccccccc'], myUid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', myName: 'A' });
+  ok(rec.players.length === 2 && rec.me === 0, 'profile.buildRecord excludes spectator from match record players');
+  // victory fires when one active team is wiped, spectator stays undefeated and over.won is false for spectator
+  let ovS = null; gs.events.on('gameOver', p => { ovS = p; });
+  for (const e of [...gs.entities.values()]) if (e.owner === 1 && !e.dead) gs._kill(e, null);
+  run(gs, 2);
+  ok(ovS && ovS.winnerTeam === 1 && ovS.won === false && !gs.players[2].defeated && gs.players[1].defeated, 'victory triggers cleanly with spectator present');
+}
 console.log(fails.length ? 'FAILED: ' + fails.length : 'ALL OK');
 process.exit(fails.length ? 1 : 0);

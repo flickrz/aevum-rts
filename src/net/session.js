@@ -51,7 +51,7 @@ export function desyncVerdict(me, mine, hashes, authority) {
 }
 export const LOBBY_GONE_MS = 8000;    // lobby: a peer the relay reports gone is removed only if it stays gone this long
 export const METHODS = ['cmdMove', 'cmdAttack', 'cmdGather', 'cmdBuild', 'cmdStop', 'cmdExplore', 'cmdBoard', 'cmdUnload',
-  'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol', 'cmdRotateBuilding'];
+  'cmdReturn', 'placeBuilding', 'placeLine', 'train', 'research', 'ageUp', 'cancelQueue', 'setRally', 'trade', 'deleteEntity', 'cmdOpenGate', 'cmdTribute', 'cmdGroup', 'cmdStance', 'cmdFormation', 'cmdAttackMove', 'cmdPatrol', 'cmdRotateBuilding', 'cmdTownBell'];
 // session-level commands: travel and execute in lockstep like game commands, but are handled by the session
 export const SESSION_CMDS = ['@save', '@pause'];
 const METHOD_SET = new Set(METHODS);
@@ -99,6 +99,7 @@ function cleanLobby(st) {
   for (const s of st.slots) {
     if (s.name != null) s.name = String(s.name).slice(0, 20);
     if (!Number.isInteger(s.team) || s.team < 1 || s.team > MAX_PLAYERS) s.team = Math.max(1, Math.min(4, s.team | 0));
+    if (s.spectator != null) { if (s.spectator && s.kind === 'human') s.spectator = true; else delete s.spectator; }
     if (s.difficulty != null && !DIFFS.includes(s.difficulty)) delete s.difficulty;
     if (s.mode != null && !MODES.includes(s.mode)) delete s.mode;
     for (const k of ['uid', 'savedUid']) if (s[k] != null) s[k] = cleanUid(s[k]);
@@ -368,7 +369,7 @@ export class NetSession {
         const s = this.state.slots.find(x => x.peer === from); if (!s) return;
         if (!this.verified && !s.uid && who.uid) s.uid = who.uid;
         if (d.op === 'setName') { if (!this.verified) s.name = String(d.v || '').slice(0, 20) || s.name; }   // (verified: the account's name)
-        else if (d.op === 'setTeam') { const t = d.v | 0; if (t >= 1 && t <= 4) s.team = t; }
+        else if (d.op === 'setTeam') { const t = d.v | 0; if (t === 0 && s.kind === 'human') s.spectator = true; else if (t >= 1 && t <= 4) { s.team = t; delete s.spectator; } }
         else if (d.op === 'setReady') s.ready = !!d.v;
         this._broadcastLobby();
       } else if (d.k === 'ack') {
@@ -425,6 +426,7 @@ export class NetSession {
     const slots = players.map((p, i) => {
       const ai = p.isAI || p.kind === 'ai';
       const s = { kind: ai ? 'ai' : 'human', name: String(p.name || (ai ? 'Yapay Zekâ' : 'Oyuncu ' + (i + 1))).slice(0, 20), team: p.team | 0 || 1, saved: true };
+      if (!ai && p.spectator) s.spectator = true;
       if (ai) { s.difficulty = p.difficulty || 'normal'; s.ready = true; } else {
         s.peer = null; s.mode = 'idle'; s.ready = false; s.wasLeft = !!p.left;
         // savedUid: who played this slot when it was saved (used for matching); uid: who plays it now
@@ -516,6 +518,7 @@ export class NetSession {
     this._hostOnly();
     const s = this.state.slots[i];
     if (!this.state.resume || !s || s.kind !== 'human' || s.peer || !['idle', 'ai'].includes(mode)) return false;
+    if (s.spectator && mode === 'ai') return false;
     s.mode = mode; if (mode === 'ai' && !s.difficulty) s.difficulty = 'normal';
     this._broadcastLobby(); return true;
   }
@@ -580,7 +583,7 @@ export class NetSession {
       const s = this.state.slots.find(x => x.peer === this.t.id) || this.state.slots[0];
       if (this.state.resume && op !== 'setReady') return;   // names and teams come from the save
       if (op === 'setName') { if (!this.verified) s.name = String(v || '').slice(0, 20) || s.name; }
-      else if (op === 'setTeam') { const t = v | 0; if (t >= 1 && t <= 4) s.team = t; }
+      else if (op === 'setTeam') { const t = v | 0; if (t === 0 && s.kind === 'human') s.spectator = true; else if (t >= 1 && t <= 4) { s.team = t; delete s.spectator; } }
       else if (op === 'setReady') s.ready = !!v;
       this._broadcastLobby();
     } else {
@@ -595,7 +598,7 @@ export class NetSession {
     const s = this.state.slots.find(x => x.peer === this.t.id); if (!s) return;
     const now = this.clock.now();
     if (now - (this._lastWant || -1e9) < 300) return;
-    const cur = { setName: s.name, setTeam: s.team, setReady: s.ready };
+    const cur = { setName: s.name, setTeam: s.spectator ? 0 : s.team, setReady: s.ready };
     for (const op in this._want) {
       const v = this._want[op];
       if (op === 'setReady' ? cur[op] === !!v : op === 'setTeam' ? cur[op] === (v | 0) : cur[op] === String(v).slice(0, 20)) delete this._want[op];
@@ -662,8 +665,9 @@ export class NetSession {
       if (nr.length) return { ok: false, reason: tr('Hazır olmayan: {0}', nr.map(s => s.name).join(', ')) };
       return { ok: true };
     }
-    if (sl.length < 2) return { ok: false, reason: tr('En az 2 oyuncu gerekli.') };
-    if (new Set(sl.map(s => s.team)).size < 2) return { ok: false, reason: tr('En az iki farklı takım olmalı.') };
+    const active = sl.filter(s => !s.spectator);
+    if (active.length < 2) return { ok: false, reason: tr('En az 2 oyuncu gerekli.') };
+    if (new Set(active.map(s => s.team)).size < 2) return { ok: false, reason: tr('En az iki farklı takım olmalı.') };
     const nr = sl.filter((s, i) => i > 0 && s.kind === 'human' && !s.ready);
     if (nr.length) return { ok: false, reason: tr('Hazır olmayan: {0}', nr.map(s => s.name).join(', ')) };
     return { ok: true };
@@ -679,8 +683,9 @@ export class NetSession {
     this._beginGame(this._startMsg);
   }
 
+  _isSpectator(pid = this.me) { return !!(this.cfg && this.cfg.players && this.cfg.players[pid] && this.cfg.players[pid].spectator); }
   flare(x, z) {
-    if (this.phase !== 'game' || !Number.isFinite(x) || !Number.isFinite(z)) return false;
+    if (this.phase !== 'game' || this._isSpectator() || !Number.isFinite(x) || !Number.isFinite(z)) return false;
     const now = this.clock.now();
     if (now - (this._flareOut || -1e9) < 500) return false;
     this._flareOut = now;
@@ -701,14 +706,16 @@ export class NetSession {
     const players = start.slots.map(s => {
       const p = { kind: s.kind === 'ai' || s.mode === 'ai' ? 'ai' : 'human', team: s.team | 0 || 1, name: s.name };
       if (p.kind === 'ai') p.difficulty = s.difficulty || 'normal';
+      else if (s.spectator) p.spectator = true;
       return p;
     });
     const me = Math.max(0, start.slots.findIndex(s => s.kind === 'human' && s.peer === myPeer));
+    const activeN = players.filter(p => !p.spectator).length;
     const cfg = {
       mp: true, players, me, seed: start.seed | 0,
       mapSize: st.mapSize || 320, mapType: MAP_TYPES.includes(st.mapType) ? st.mapType : 'river', climate: CLIMATES.includes(st.climate) ? st.climate : 'random',
       startRes: st.startRes || 'normal', startAge: st.startAge | 0, fog: st.fog === 'dark' ? 'dark' : (st.fog === 'explored' ? 'explored' : undefined),
-      difficulty: 'normal', sandbox: false, enemies: Math.max(1, players.length - 1),
+      difficulty: 'normal', sandbox: false, enemies: Math.max(1, activeN - 1),
     };
     if (start.resume) {
       // what the app does to the loaded save before the first turn (identical on every client)
@@ -775,7 +782,7 @@ export class NetSession {
   // each client then gets a 'save' event {id, auto, by, turn, hash, game} at the same tick
   // pause / resume the match for everybody (a lockstep session command: every client stops at the same turn)
   requestPause(on) {
-    if (this.phase !== 'game') return false;
+    if (this.phase !== 'game' || this._isSpectator()) return false;
     this.pending.push(['@pause', [on ? 1 : 0]]);
     return true;
   }
@@ -789,14 +796,14 @@ export class NetSession {
   }
 
   requestSave(auto = false) {
-    if (this.phase !== 'game') return null;
+    if (this.phase !== 'game' || this._isSpectator()) return null;
     const id = String(this.t.id).slice(0, 8) + '-' + (++this._saveSeq);
     this.pending.push(['@save', [id, auto ? 1 : 0]]);
     return id;
   }
 
   issue(method, args) {
-    if (this.phase !== 'game' || !METHOD_SET.has(method)) return false;
+    if (this.phase !== 'game' || this._isSpectator() || !METHOD_SET.has(method)) return false;
     if (this.paused) return false;   // (no orders while the match is paused)
     let a;
     try { a = JSON.parse(JSON.stringify(Array.isArray(args) ? args : [])); } catch { return false; }
@@ -1249,7 +1256,7 @@ export class NetSession {
     for (const pid of this.humans) {
       if (!this._isActive(pid, turn)) continue;
       for (const [method, args] of this._cmdsFor(pid, turn) || []) {
-        if (!SESSION_SET.has(method)) continue;
+        if (!SESSION_SET.has(method) || this._isSpectator(pid)) continue;
         this._mix(turn, pid, method, args);
         if (method === '@save') this._execSave(game, turn, pid, args);
         else if (method === '@pause') this._execPause(turn, pid, args);

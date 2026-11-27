@@ -1,7 +1,7 @@
 // Aevum UI: main menu, HUD, minimap, tooltips, overlays. DOM only, no three.js.
 import { TEST_MODE } from '../testmode.js';
 import { AGES, UNITS, BUILDINGS, TECHS, PLAYER_COLORS } from '../data.js';
-import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS, MINE_CAP, healerStats, healerRate, healerBolt, PROD_B, PASTURE_IDLE_RATE, NO_ROTATE } from '../sim/game.js';
+import { BUILD_TIME_MUL, QUEUE_TIME_MUL, TOWER_AGE_ATK, towerAgeBonus, FORMATIONS, MINE_CAP, SHELTER_CAP, healerStats, healerRate, healerBolt, PROD_B, PASTURE_IDLE_RATE, NO_ROTATE } from '../sim/game.js';
 import { firstLaunch, menuProfile } from './profile-ui.js';
 import { levelOf } from '../rank.js';
 import { menuHud, saveBadge, saveBadgeTitle, confirmDeleteSave, loginScreen, avatarEl, tpText } from './cloud-ui.js';
@@ -172,7 +172,7 @@ export class UI {
       top.append(b); return b;
     };
     this.homeBtn = tb(ico('b-towncenter'), tr('Şehir Merkezine Git'), tr('Kamerayı Şehir Merkezine götür; tekrar basınca diğer Şehir Merkezleri arasında geçiş yapar. Kısayol: H / Home'), () => this.app.input?.goHome());
-    tb(ico('x-tech'), tr('Teknoloji'), tr('Teknoloji ağacı: tüm çağların araştırmaları. Uygun olanı tıklayıp araştır.'), () => this.showTech());
+    this.techBtn = tb(ico('x-tech'), tr('Teknoloji'), tr('Teknoloji ağacı: tüm çağların araştırmaları. Uygun olanı tıklayıp araştır.'), () => this.showTech());
     tb(ico('x-stats'), tr('İstatistik'), tr('Oyun istatistikleri ve skor.'), () => this.showStats());
     this.flareBtn = tb(ico('x-flare'), tr('İşaret Ver'), tr('Haritaya işaret bırak: takım arkadaşın mini haritada ve oyunda görür. Butona bas, sonra haritaya ya da mini haritaya tıkla. Kısayol: Alt + tık'), () => this.app.input?.armFlare());
     this.tribBtn = tb(ico('x-ally'), tr('Müttefike Kaynak Gönder'), tr('Takım arkadaşına yiyecek, odun, taş ya da altın gönder (kesinti yok).'), () => this.showTribute());
@@ -214,9 +214,10 @@ export class UI {
     // resources: idle villagers + population on top, then one row per resource (amount, income / min, workers)
     this.resPanel = el('div', 'respanel panel');
     const rtop = el('div', 'rtop');
-    this.idleEl = el('button', 'tbtn idlebtn', ico('u-villager') + '<b>0</b>');
+    this.idleEl = el('button', 'tbtn idlebtn hidden', ico('u-villager') + '<b>0</b>');
+    this.idleEl.type = 'button';
     this._idleBEl = this.idleEl.querySelector('b');
-    this.idleEl.onclick = (ev) => { this._click(); safe(() => this.app.input?.nextIdleVillager(!!ev?.shiftKey)); };
+    this.idleEl.onclick = (ev) => { this._click(); safe(() => this.app.input?.nextIdleVillager(!!ev?.shiftKey)); this.slowT = -99; };
     this._tip(this.idleEl, () => ({ name: tr('Boşta köylüler'), desc: tr('Sıradaki boşta köylüyü seç ve ona git. Kısayol: Tab veya nokta (.). Shift ile: tüm boştaki köylüleri seç.') }));
     this.bellBtn = el('button', 'tbtn bellbtn', BELL_ICO);
     this.bellBtn.onclick = () => { this._click(); safe(() => this.game?.cmdTownBell?.(this._me())); };
@@ -402,7 +403,7 @@ export class UI {
     // a multiplayer match an update cut (within 30 minutes): "Kesilen maça devam et" right under it (src/ui/notice-ui.js)
     safe(() => interruptedEntry(this, box, multi));
     item('u-villager', tr('Arkadaşlar'), null, () => import('./friends-ui.js').then((m) => m.menuFriends(this)));
-    item('x-build', tr('Sandbox'), tr('serbest kur'), () => this.app.newGame({ mapSize: 256, enemies: 1, difficulty: 'normal', startRes: 'high', startAge: 0, sandbox: true, seed: (Math.random() * 1e9) | 0 }));
+    item('x-build', tr('Sandbox'), tr('serbest kur'), () => this._menuSetup(true));
     const cont = item('x-explore', tr('Devam Et'), '', () => Promise.resolve(safe(() => this.app.continueLast(), false)).then((ok) => { if (!ok && this.app.lastLoadError && this.mode === 'menu') this._menuSaves(this.app.lastLoadError); }).catch(() => {}));
     const saves = item('x-save', tr('Kayıtlı Oyunlar'), '', () => this._menuSaves());
     cont.disabled = true;
@@ -470,10 +471,12 @@ export class UI {
   // "Yeni Oyun" (owner 2026-11-20: "buttons jump around while picking a map, and you can't tell what map you get"):
   // the map types as cards with a real picture each (src/ui/map-preview.js), the chosen one large with a line on what
   // it plays like, and every other setting in fixed-width rows on the right, so nothing moves when something is picked
-  _menuSetup() {
-    const box = this._menuBox('<h2>' + tr('Yeni Oyun') + '</h2>');
+  _menuSetup(sandbox = false) {
+    const box = this._menuBox('<h2>' + tr(sandbox ? 'Sandbox' : 'Yeni Oyun') + '</h2>');
     box.classList.add('setup');
+    if (sandbox) box.classList.add('sandbox-setup');
     const S = this.setup;
+    if (!sandbox && !(S.enemies >= 1)) S.enemies = 1;
     const grid = el('div', 'su-grid'); box.append(grid);
     // ---- left: the map ----
     const left = el('section', 'su-left'); grid.append(left);
@@ -531,7 +534,7 @@ export class UI {
     const redraw = () => { drawBig(); drawCards(); };
     row(tr('Harita Boyutu'), 'mapSize', [[192, tr('Minik')], [256, tr('Küçük')], [320, tr('Orta')], [384, tr('Büyük')], [448, tr('Çok Büyük')], [512, tr('Dev')]]);
     row(tr('İklim'), 'climate', CLIMATE_OPTS, redraw);
-    row(tr('Düşman Sayısı'), 'enemies', [[1, '1'], [2, '2'], [3, '3']], redraw);
+    row(tr('Düşman Sayısı'), 'enemies', sandbox ? [[0, '0'], [1, '1'], [2, '2'], [3, '3']] : [[1, '1'], [2, '2'], [3, '3']], redraw);
     row(tr('Zorluk'), 'difficulty', [['easy', tr('Kolay')], ['normal', tr('Normal')], ['hard', tr('Zor')]]);
     row(tr('Başlangıç Kaynakları'), 'startRes', [['low', tr('Düşük')], ['normal', tr('Normal')], ['high', tr('Yüksek')]]);
     row(tr('Başlangıç Çağı'), 'startAge', AGES.map((a, i) => [i, tr(a.name).split(' ')[0]]));
@@ -549,7 +552,7 @@ export class UI {
     this._mbtn(acts, tr('Geri'), () => this._menuMain());
     this._mbtn(acts, tr('Başla'), () => {
       const d = !!this.devOn && !dev.classList.contains('hidden');
-      this.app.newGame({ ...this.setup, sandbox: d, dev: d, seed: (Math.random() * 1e9) | 0 });
+      this.app.newGame({ ...this.setup, sandbox: !!sandbox || d, dev: d, seed: (Math.random() * 1e9) | 0 });
     }, 'primary');
     redraw();
   }
@@ -717,6 +720,7 @@ export class UI {
     this.lastRes = {}; this.pings = []; this.questDoneAt = new Map(); this.gameOverShown = false;
     this.hintAt = {}; this.rateSamples = []; this.slowT = -99; this.orphanSince = new Map(); this.objSig = null;
     this.mmTerrain = null; this.mmFog = null; this.mmFogVer = -1;
+    if (this.idleEl) { this.idleEl.classList.add('hidden'); this.idleEl.classList.remove('has'); }
     this.toastsEl.innerHTML = ''; this._closeModal(true);
     this._applySettings();
     const ev = game?.events; if (!ev) return;
@@ -729,6 +733,11 @@ export class UI {
       this._trainsSeen.add(trn.id); this.toast(ico('u-train') + tr(' Demir yolu bağlandı!'), 'good', trn.x, trn.z); this.cardSig = null; this.selSig = null;
     });
     on('board', (p) => { if (p.transport?.owner === this._me()) { this.cardSig = null; this.selSig = null; } });
+    on('garrison', (p) => {
+      if (p.unit && Array.isArray(this.app.selection) && this.app.selection.includes(p.unit.id)) this.app.select(this.app.selection.filter(id => id !== p.unit.id));
+      if (p.building?.owner === this._me()) { this.cardSig = null; this.selSig = null; }
+    });
+    on('ungarrison', (p) => { if (p.building?.owner === this._me()) { this.cardSig = null; this.selSig = null; } });
     on('unload', (p) => {
       if (p.transport?.owner === this._me()) { this.cardSig = null; this.selSig = null; }
       const t = p.transport; if (!t || t.owner !== this._me() || game.time - this._unloadT < 3) return;
@@ -736,7 +745,7 @@ export class UI {
     });
     on('trained', (p) => { if (p.e?.owner === this._me()) this.toast(`${UNITS[p.e.type]?.icon || ''} ${tr('{0} hazır', tr(UNITS[p.e.type]?.name) || p.e.type)}`, 'info', p.e.x, p.e.z); });
     on('researched', (p) => { if (p.owner === this._me()) { const t = typeof p.tech === 'string' ? TECHS[p.tech] : p.tech; this.toast(`${t?.icon || ico('x-tech')} ${tr('Araştırma tamamlandı: {0}', tr(t?.name) || p.tech)}`, 'good'); this.cardSig = null; } });
-    on('buildComplete', (p) => { if (p.e?.owner === this._me() && p.e.type !== 'rail') this.toast(`${BUILDINGS[p.e.type]?.icon || ico('b-house')} ${tr('{0} tamamlandı', tr(BUILDINGS[p.e.type]?.name) || p.e.type)}`, 'good', p.e.x, p.e.z); });
+    on('buildComplete', (p) => { if (p.e?.owner === this._me()) { this.cardSig = null; this.selSig = null; if (p.e.type !== 'rail') this.toast(`${BUILDINGS[p.e.type]?.icon || ico('b-house')} ${tr('{0} tamamlandı', tr(BUILDINGS[p.e.type]?.name) || p.e.type)}`, 'good', p.e.x, p.e.z); } });
     on('questDone', (p) => {
       const q = p.quest || {}; this.questDoneAt.set(q.id, performance.now()); this.questSig = null;
       this.toast(`✔ ${tr('Görev tamamlandı: {0}', tr(q.title || ''))}${q.reward ? ' (' + this._rewardText(q.reward) + ')' : ''}`, 'good');
@@ -765,11 +774,17 @@ export class UI {
       this.toast(p.active ? tr('Şehir zili çaldı: köylüler Şehir Merkezi\'ne sığınıyor') : tr('Köylüler işlerine geri dönüyor'), p.active ? 'warn' : 'good');
       this.cardSig = null;
     });
-    if (this.tribBtn) this.tribBtn.style.display = this._allies().length ? '' : 'none';
+    const isSpec = !!(game.players && game.players[this._me()] && game.players[this._me()].spectator);
+    this.hudEl.classList.toggle('spectator-hud', isSpec);
+    if (this.homeBtn) this.homeBtn.style.display = isSpec ? 'none' : '';
+    if (this.techBtn) this.techBtn.style.display = isSpec ? 'none' : '';
+    if (this.flareBtn) this.flareBtn.style.display = isSpec ? 'none' : '';
+    if (this.tribBtn) this.tribBtn.style.display = !isSpec && this._allies().length ? '' : 'none';
     const mp = !!this.app.net;
     for (const b of [this.pauseBtn]) if (b) b.style.display = mp ? 'none' : '';
-    if (this.saveBtn) { this.saveBtn.style.display = ''; this.saveBtn.title = mp ? tr('Maçı kaydet: herkes aynı anda kaydeder (Çok Oyunculu → Kayıtlı Maça Devam Et)') : this.saveBtn.title; }
+    if (this.saveBtn) { this.saveBtn.style.display = isSpec ? 'none' : ''; this.saveBtn.title = mp ? tr('Maçı kaydet: herkes aynı anda kaydeder (Çok Oyunculu → Kayıtlı Maça Devam Et)') : this.saveBtn.title; }
     if (this.chatBtn) this.chatBtn.style.display = mp ? '' : 'none';
+    if (isSpec) this.toast(tr('👁 İzleme modu: tüm harita görünür.'), 'info');
     // tutorial mode: the guide's panel and highlights; no saving there (main.js saveGame)
     if (this.tut) { safe(() => this.tut.destroy()); this.tut = null; }
     if (game.cfg?.tutorial && game.quests?.tutorial) {
@@ -912,7 +927,7 @@ export class UI {
     let idle = 0; const building = new Set();
     for (const u of units) {
       if (u.dead || u.type !== 'villager') continue;
-      if (u.state === 'idle' && !u.sheltered) idle++;
+      if (u.state === 'idle' && !u.sheltered && !u.aboard && !u.garrisoned) idle++;
       if (u.order && u.order.type === 'build') building.add(u.order.targetId);
       if (u.state === 'build' && u.order && u.order.targetId != null) building.add(u.order.targetId);
     }
@@ -930,6 +945,7 @@ export class UI {
       const h = wk[r] ? ico('u-villager') + wk[r] : '';
       if (n._h !== h) { n._h = h; n.innerHTML = h; }
     }
+    this.idleEl.classList.toggle('hidden', idle === 0);
     this.idleEl.classList.toggle('has', idle > 0);
     if (this.bellBtn) this.bellBtn.classList.toggle('on', !!p.bell);
     const demo = !!this.app.demo;
@@ -1181,6 +1197,17 @@ export class UI {
 
   _refreshTop() {
     const g = this.game, p = g.players[this._me()]; if (!p) return;
+    if (p.spectator) {
+      const an = tr('👁 İzleme Modu');
+      const n = this._ageNameEl || this.ageEl.querySelector('.n'); if (n.textContent !== an) n.textContent = an;
+      if (this._ageBarW !== '0%') { this._ageBarW = '0%'; (this._ageBarEl || this.ageEl.querySelector('i')).style.width = '0%'; }
+      const ct = fmtTime(g.time || 0);
+      if (this._clockTxt !== ct) { this._clockTxt = ct; this.clockEl.textContent = ct; }
+      if (!this.objEl.classList.contains('hidden')) { this.objEl.classList.add('hidden'); this._clearDirty = true; }
+      if (!this.stepsEl.classList.contains('hidden')) { this.stepsEl.classList.add('hidden'); this._clearDirty = true; }
+      if (this.idleEl && !this.idleEl.classList.contains('hidden')) this.idleEl.classList.add('hidden');
+      return;
+    }
     for (const r of RES_LIST) {
       const v = Math.floor(p.res[r] || 0), d = this.resEls[r];
       if (this.lastRes[r] !== v) {
@@ -1238,7 +1265,7 @@ export class UI {
       // stone and gold mines never run out (src/sim/game.js): no misleading "350 / 350"
       const endless = e.kind === 'resource' && (e.type === 'stone' || e.type === 'gold');
       if (ht) {
-        const txt = fog ? tr('Sisin içinde') : endless ? `∞ ${tr('Sınırsız {0}', RES_NAME[NATURE[e.type]?.res] || '')}` : e.kind === 'resource' ? `${Math.ceil(e.amount)} /${Math.ceil(e.maxAmount || e.amount)} ${RES_NAME[NATURE[e.type]?.res] || ''}` : tr('{0} / {1} can', Math.ceil(e.hp), Math.ceil(e.maxHp));
+        const txt = fog ? tr('Sisin içinde') : endless ? `∞ ${tr('Sınırsız {0}', RES_NAME[NATURE[e.type]?.res] || '')}` : e.kind === 'resource' ? `${Math.ceil(e.amount)} / ${Math.ceil(e.maxAmount || e.amount)} ${RES_NAME[NATURE[e.type]?.res] || ''}` : tr('{0} / {1} can', Math.ceil(e.hp), Math.ceil(e.maxHp));
         if (ht.textContent !== txt) ht.textContent = txt;
       }
       const st = this._selStats;
@@ -1280,6 +1307,7 @@ export class UI {
         s.push(`<span>${ico('x-atk')} <b>${atk}</b></span>`, `<span>${ico('x-range')} <b>${(d.range || 0) + (m.towerRange || 0) + towerAgeBonus(e.type, op?.age)}</b></span>`);
       }
       if (d.popCap) s.push(`<span>${ico('x-pop')} <b>+${d.popCap}</b></span>`);
+      if (e.done && SHELTER_CAP[e.type]) s.push(`<span>${ico('u-villager')} <b>${(e.garrison || []).length}/${SHELTER_CAP[e.type]}</b></span>`);
       if (e.type === 'farm' && e.farm && Array.isArray(e.farm.plots)) s.push(`<span>Ekili parsel: <b>${e.farm.plots.filter((q) => q.s > 0).length}/8</b></span>`, `<span>Olgun: <b>${e.farm.plots.filter((q) => q.s === 5).length}</b></span>`);
       else if (e.type === 'farm' && e.farm) s.push(`<span>${tr('Tarla:')} <b>${[tr('Boş'), tr('Sürülü'), tr('Ekili'), tr('Büyüyor'), tr('Olgun'), tr('Hasat')][e.farm.stage] || '-'}</b></span>`);
       if (e.done) s.push(...safe(() => this._extraStats(e), []));
@@ -1288,6 +1316,9 @@ export class UI {
       // (owner 2026-11-20) at most MINE_CAP villagers on one deposit
       const n = safe(() => this.game.mineLoad(this.game._depOf(e), this._me()), 0);
       s.push(`<span>${ico('u-villager')} ${tr('<b>{0}/{1}</b> işçin bu maden öbeğinde', n, MINE_CAP)}</span>`);
+    } else if (e.kind === 'resource' && (e.type === 'deer' || e.type === 'wolf' || e.type === 'bear')) {
+      const status = e.live ? tr('Vahşi') : e.alive ? tr('Avlanabilir') : tr('Avlandı');
+      s.push(`<span>${RES_ICON.food} <b>${Math.ceil(e.amount)}</b> ${RES_NAME.food}</span>`, `<span>${tr('Durum')}: <b>${status}</b></span>`);
     }
     return s.join('');
   }
@@ -1432,10 +1463,9 @@ export class UI {
   // ------------------------------------------------------------------ command card
   _refreshCard() {
     const g = this.game, p = g.players[this._me()], ents = this._ents();
-    let sig = this.page + '|' + (p?.age ?? 0) + '|' + (p?.techs?.size ?? 0) + '|' + ents.length + '|';
+    let sig = this.page + '|' + (p?.age ?? 0) + '|' + (p?.techs?.size ?? 0) + '|' + (p?.bell ? 1 : 0) + '|' + ents.length + '|';
     if (ents.length) {
-      const e = ents[0];
-      sig += e.id + e.type + (e.done ? 'd' : 'u') + (e.queue ? e.queue.map((q) => q.kind + q.id).join(';') : '') + ents.some((x) => x.type === 'villager') + (ents.length > 1 ? ents.map((x) => x.type + (x.done ? 'd' : 'u')).join(',') : '') + ents.map((x) => x.form || '').join('');
+      sig += ents.map((x) => x.id + ':' + x.type + (x.done ? 'd' : 'u') + (x.queue ? x.queue.map((q) => q.kind + q.id).join(';') : '') + (x.form || '')).join(',');
     }
     if (sig !== this.cardSig) { this.cardSig = sig; this._renderCard(ents); if (this.tut) safe(() => this.tut.applyHl()); }
     for (const b of this.buttons) {
@@ -1576,7 +1606,13 @@ export class UI {
           if (p.pop + (u.pop ?? 1) > p.popCap) return { ok: false, reason: tr('Nüfus sınırı dolu (1000)') };
           return { ok: true };
         },
-        run: () => { let ok = false; for (let i = many(); i > 0; i--) for (const b of pool) if (safe(() => g.train(b.id, uid), false)) ok = true; return ok; },
+        run: () => {
+          let ok = false;
+          const load = (b) => ((b.queue || []).some((q) => q.kind === 'age') ? 1000 : 0) + (b.queue ? b.queue.length : 0);
+          const ord = pool.length > 1 ? pool.slice().sort((a, b) => load(a) - load(b) || a.id - b.id) : pool;
+          for (let i = many(); i > 0; i--) for (const b of ord) if (safe(() => g.train(b.id, uid), false)) ok = true;
+          return ok;
+        },
       });
     }
     const queuedTech = new Set();
@@ -1838,7 +1874,7 @@ export class UI {
     for (let i = 0; i < mmE.length; i++) {
       const e = mmE[i];
       if (e.known && e.owner !== me && !e.dead) known.m.set(e.id, e);
-      if (e.dead || e.kind === 'resource' || e.aboard != null || (e.kind === 'building' && e.type === 'rail')) continue;
+      if (e.dead || e.kind === 'resource' || e.aboard != null || e.garrisoned || (e.kind === 'building' && e.type === 'rail')) continue;
       if (e.owner !== me && hasVis && !g.isEntityVisible(e)) continue;
       ctx.fillStyle = pHex(e.owner);
       if (e.train) { ctx.fillStyle = '#fff6a8'; ctx.beginPath(); ctx.arc(e.x * k, e.z * k, 2.2, 0, Math.PI * 2); ctx.fill(); continue; }
@@ -1940,19 +1976,20 @@ export class UI {
   _buildPause() {
     this.pauseEl.innerHTML = '';
     const net = this.app.net, mpPaused = !!(net && net.paused);
+    const isSpec = !!(this.game && this.game.players && this.game.players[this._me()] && this.game.players[this._me()].spectator);
     const title = !net ? tr('Duraklatıldı') : mpPaused ? tr('Oyun Duraklatıldı') : tr('Menü');
     const m = el('div', 'modal panel', `<h2>${title}</h2>`);
     m.style.width = 'min(420px, 92vw)';
-    if (net) m.append(el('div', 'pause-info', esc(mpPaused ? (net.pausedBy || tr('Bir oyuncu')) + tr(' oyunu herkes için duraklattı.') : tr('Çok oyunculu maç sürüyor; duraklatırsan herkes için durur.'))));
+    if (net) m.append(el('div', 'pause-info', esc(mpPaused ? (net.pausedBy || tr('Bir oyuncu')) + tr(' oyunu herkes için duraklattı.') : isSpec ? tr('İzleme modu: maç sürüyor.') : tr('Çok oyunculu maç sürüyor; duraklatırsan herkes için durur.'))));
     this.pauseInfoEl = el('div', 'pause-info'); m.append(this.pauseInfoEl);
     const btn = (t, fn, cls = '') => { const b = el('button', 'mbtn ' + cls, t); b.onclick = () => { this._click(); fn(); }; m.append(b); };
     if (!net) btn(tr('Devam Et'), () => this.app.setPaused?.(false), 'primary');
-    else if (mpPaused) btn(tr('Oyunu Devam Ettir (herkes için)'), () => { net.requestPause(false); }, 'primary');
+    else if (mpPaused && !isSpec) btn(tr('Oyunu Devam Ettir (herkes için)'), () => { net.requestPause(false); }, 'primary');
     else {
       btn(tr('Oyuna Dön'), () => this.toggleGameMenu(false), 'primary');
-      btn(tr('Oyunu Duraklat (herkes için)'), () => { net.requestPause(true); });
+      if (!isSpec) btn(tr('Oyunu Duraklat (herkes için)'), () => { net.requestPause(true); });
     }
-    btn(tr('Kaydet'), () => this._save());
+    if (!isSpec) btn(tr('Kaydet'), () => this._save());
     btn(tr('İstatistik'), () => this.showStats());
     const sbox = el('div'); sbox.style.margin = '14px 0';
     this._settingsBody(sbox); m.append(sbox);
@@ -2002,7 +2039,7 @@ export class UI {
   _score(p) {
     return playerScore(p);
   }
-  _statsPlayers(showAll) { const g = this.game; return g.players.filter((p) => showAll || p.id === this._me() || this._ally(this._me(), p.id) || g.over || this._enemyKnown(p)); }
+  _statsPlayers(showAll) { const g = this.game, me = this._me(), isSpec = !!g.players?.[me]?.spectator; return g.players.filter((p) => !p.spectator && (showAll || isSpec || p.id === me || this._ally(me, p.id) || g.over || this._enemyKnown(p))); }
   _statsName(p) { return p.id === this._me() ? tr('Sen') : this.game?.mp ? this._pname(p.id) : tr('Rakip ') + p.id; }
   _graphs(m, showAll) { safe(() => m.append(graphPanel(this.game, this._statsPlayers(showAll).map((p) => ({ id: p.id, name: this._statsName(p) })))), null); }
   _statsTable(showAll) {
@@ -2114,8 +2151,12 @@ export class UI {
     this.modalEl.innerHTML = '';
     if (this.tut && this.game.cfg?.tutorial) { const tm = safe(() => this.tut.gameOver(won), null); if (tm) { this.modalEl.append(tm); this.modalEl.classList.remove('hidden'); return; } }
     if (this.game.mp) won = this._mpWon(won);
+    const isSpec = !!(this.game.players && this.game.players[this._me()] && this.game.players[this._me()].spectator);
     const wt = this.game.mp ? this._winTeam() : null, wtxt = wt != null ? tr('Takım {0} kazandı! ', wt) : '';
-    const m = el('div', 'modal panel', `<h1 class="${won ? 'win' : 'lose'}">${won ? tr('ZAFER') : tr('YENİLGİ')}</h1><div style="color:var(--dim)">${wtxt}${won ? (this.game.mp ? tr('Takımın tüm rakipleri alt etti.') : tr('Tüm rakiplerini alt ettin. Uygarlığın çağlara damga vurdu.')) : tr('Uygarlığın tarihe karıştı.')} · ${tr('Süre: {0}', fmtTime(this.game.time || 0))}</div>${this._statsTable(true)}`);
+    const headHtml = isSpec
+      ? `<h1 class="win">${tr('MAÇ BİTTİ')}</h1><div style="color:var(--dim)">${wtxt}${tr('Süre: {0}', fmtTime(this.game.time || 0))}</div>`
+      : `<h1 class="${won ? 'win' : 'lose'}">${won ? tr('ZAFER') : tr('YENİLGİ')}</h1><div style="color:var(--dim)">${wtxt}${won ? (this.game.mp ? tr('Takımın tüm rakipleri alt etti.') : tr('Tüm rakiplerini alt ettin. Uygarlığın çağlara damga vurdu.')) : tr('Uygarlığın tarihe karıştı.')} · ${tr('Süre: {0}', fmtTime(this.game.time || 0))}</div>`;
+    const m = el('div', 'modal panel', `${headHtml}${this._statsTable(true)}`);
     this._graphs(m, true);
     const btn = (t, fn, cls = '') => { const b = el('button', 'mbtn small ' + cls, t); b.onclick = () => { this._click(); fn(); }; m.append(b); };
     const cfg = this.game.cfg;
@@ -2252,7 +2293,7 @@ export class UI {
     const g = this.game; if (!g) return null;
     const ov = g.over || {}; const t = ov.winnerTeam ?? ov.winningTeam ?? ov.team;
     if (t != null) return t;
-    const alive = new Set((g.players || []).map((p, i) => (p.defeated || p.left ? null : this._teamOf(p.id ?? i))).filter((x) => x != null));
+    const alive = new Set((g.players || []).map((p, i) => (p.defeated || p.left || p.spectator ? null : this._teamOf(p.id ?? i))).filter((x) => x != null && x >= 0));
     return alive.size === 1 ? [...alive][0] : null;
   }
   _mpWon(fallback) {
@@ -2399,6 +2440,7 @@ export class UI {
       s.onchange = () => onch(s.value); s.onkeydown = (ev) => ev.stopPropagation(); return s;
     };
     const TEAMS = [1, 2, 3, 4].map((t) => [t, tr('Takım ') + t]);
+    const TEAMS_H = [...TEAMS, [0, tr('İzle')]];
     const DIFF = [['easy', tr('Kolay')], ['normal', tr('Normal')], ['hard', tr('Zor')]];
     const cloud = this.app.cloud, friendFbs = new Set();
     // the host re-broadcasts the lobby every 2 s: only rebuild when it changed, and keep the
@@ -2418,16 +2460,16 @@ export class UI {
       const list = el('div', 'lb-slots');
       slots.forEach((s, i) => {
         const mine = s.kind === 'human' && s.peer != null && s.peer === me;
-        const row = el('div', 'lb-slot team' + (s.team || 1) + (mine ? ' mine' : ''));
+        const row = el('div', 'lb-slot ' + (s.spectator ? 'spectator' : 'team' + (s.team || 1)) + (mine ? ' mine' : ''));
         row.append(el('span', 'lb-sw', ''));
-        row.lastChild.style.background = hex(PLAYER_COLORS[i] ?? 0xffffff);
+        row.lastChild.style.background = s.spectator ? '#9ab0c8' : hex(PLAYER_COLORS[i] ?? 0xffffff);
         if (s.kind === 'human') row.append(avatarEl(s.av, s.uid, 'av-sm'));
         row.append(el('span', 'lb-name', esc(pn(s.name) || (s.kind === 'ai' ? tr('Yapay Zekâ') : tr('Oyuncu'))) + (s.peer && s.peer === st.hostPeer ? ' <small>' + ico('x-crown') + '</small>' : '') + (mine ? ' <small>' + tr('(sen)') + '</small>' : '')));
         if (s.kind === 'human' && s.tp != null) row.append(el('span', 'lb-tp', tr('Sv ') + levelOf(s.tp).level + ' · ' + esc(tpText(s.tp))));
         row.append(el('span', 'lb-kind ' + s.kind, s.kind === 'ai' ? tr('Yapay Zekâ') : tr('İnsan')));
         const canTeam = mine || (host && s.kind === 'ai');
-        if (canTeam) row.append(sel(TEAMS, s.team || 1, (v) => (mine ? call('setTeam', +v) : call('setSlot', i, { team: +v })), 'lb-team'));
-        else row.append(el('span', 'lb-teamtag', tr('Takım ') + esc(s.team || 1)));
+        if (canTeam) row.append(sel(s.kind === 'human' ? TEAMS_H : TEAMS, s.spectator ? 0 : (s.team || 1), (v) => (mine ? call('setTeam', +v) : call('setSlot', i, { team: +v })), 'lb-team'));
+        else row.append(el('span', 'lb-teamtag', s.spectator ? tr('İzle') : tr('Takım ') + esc(s.team || 1)));
         if (s.kind === 'ai') {
           if (host) row.append(sel(DIFF, s.difficulty || 'normal', (v) => call('setSlot', i, { difficulty: v })));
           else row.append(el('span', 'lb-teamtag', (DIFF.find((d) => d[0] === s.difficulty) || DIFF[1])[1]));
@@ -2458,7 +2500,8 @@ export class UI {
         const ab = el('button', 'mbtn small', tr('+ Ekle')); ab.disabled = slots.length >= 8;
         ab.onclick = () => call('addAI', aTeam, aDiff); add.append(ab); body.append(add);
         const sets = st.settings || {}, sg = el('div', 'lb-settings');
-        body.append(this._lobbyMap(sets, slots.length, (t) => call('setSettings', { mapType: t })));
+        const activeN = slots.filter((s) => !s.spectator).length;
+        body.append(this._lobbyMap(sets, activeN, (t) => call('setSettings', { mapType: t })));
         const srow = (lab, node) => { const r = el('div', 'frow', `<label>${lab}</label>`); r.append(node); sg.append(r); };
         srow(tr('Harita Boyutu'), sel([[192, tr('Minik')], [256, tr('Küçük')], [320, tr('Orta')], [384, tr('Büyük')], [448, tr('Çok Büyük')], [512, tr('Dev')]], sets.mapSize ?? 320, (v) => call('setSettings', { mapSize: +v })));
         srow(tr('İklim'), sel(CLIMATE_OPTS, sets.climate ?? 'random', (v) => call('setSettings', { climate: v })));
@@ -2468,8 +2511,8 @@ export class UI {
         srow(tr('Oda Listesi'), sel([['1', tr('Herkese açık')], ['0', tr('Sadece davetle')]], st.listed === false ? '0' : '1', (v) => call('setListed', v === '1')));
         body.append(sg);
       } else {
-        const sets = st.settings || {};
-        body.append(this._lobbyMap(sets, slots.length, null));
+        const sets = st.settings || {}, activeN = slots.filter((s) => !s.spectator).length;
+        body.append(this._lobbyMap(sets, activeN, null));
         body.append(el('div', 'lb-hint', `${tr('Harita:')} ${esc(({ 192: tr('Minik'), 256: tr('Küçük'), 320: tr('Orta'), 384: tr('Büyük'), 448: tr('Çok Büyük'), 512: tr('Dev') })[sets.mapSize] || sets.mapSize || '-')} · ${tr('Tür:')} ${MAP_TYPE_TR[sets.mapType || 'river'] || '-'} · ${tr('İklim:')} ${(CLIMATE_OPTS.find((c) => c[0] === (sets.climate || 'random')) || CLIMATE_OPTS[0])[1]} · ${tr('Kaynak:')} ${({ low: tr('Düşük'), normal: tr('Normal'), high: tr('Yüksek') })[sets.startRes] || '-'} · ${tr('Çağ:')} ${tr(AGES[sets.startAge ?? 0]?.name) || '-'}`));
       }
       foot.innerHTML = '';
@@ -2486,8 +2529,8 @@ export class UI {
       const rd = el('button', 'mbtn small' + (mySlot?.ready ? ' on' : ''), mySlot?.ready ? tr('✔ Hazırım') : tr('Hazırım'));
       rd.onclick = () => call('setReady', !mySlot?.ready); foot.append(rd);
       if (host) {
-        const humans = slots.filter((s) => s.kind === 'human'), teams = new Set(slots.map((s) => s.team || 1));
-        const okStart = humans.length > 0 && humans.every((s) => s.ready) && teams.size >= 2;
+        const humans = slots.filter((s) => s.kind === 'human'), activeSlots = slots.filter((s) => !s.spectator), teams = new Set(activeSlots.map((s) => s.team || 1));
+        const okStart = humans.length > 0 && humans.every((s) => s.ready) && activeSlots.length >= 2 && teams.size >= 2;
         const sb = el('button', 'mbtn small primary', tr('Başlat')); sb.disabled = !okStart;
         sb.title = okStart ? '' : tr('Herkes hazır olmalı ve en az iki farklı takım bulunmalı');
         sb.onclick = () => call('start'); foot.append(sb);
@@ -2709,12 +2752,12 @@ export class UI {
     if (!this.app.net || !g?.mp) { if (this.scoreEl && !this.scoreEl.classList.contains('hidden')) { this.scoreEl.classList.add('hidden'); this._chatPosDirty = true; } return; }
     if (!this.scoreEl) { this.scoreEl = el('div', 'scoreboard panel'); this.hudEl.append(this.scoreEl); this._chatPosDirty = true; }
     if (this.scoreEl.classList.contains('hidden')) { this.scoreEl.classList.remove('hidden'); this._chatPosDirty = true; }
-    const me = this._me();
-    const rows = (g.players || []).map((p, i) => ({ p, id: p.id ?? i })).sort((a, b) => this._teamOf(a.id) - this._teamOf(b.id) || a.id - b.id);
+    const me = this._me(), isSpec = !!g.players?.[me]?.spectator;
+    const rows = (g.players || []).map((p, i) => ({ p, id: p.id ?? i })).filter(({ p }) => !p.spectator).sort((a, b) => this._teamOf(a.id) - this._teamOf(b.id) || a.id - b.id);
     let h = '';
     for (const { p, id } of rows) {
       const ally = this._ally(me, id), you = id === me;
-      const res = ally && !you ? `<span class="sbres">${RES_LIST.map((r) => `${RES_ICON[r]}${Math.floor(p.res?.[r] || 0)}`).join(' ')}</span>` : '';
+      const res = ((ally && !you) || isSpec) ? `<span class="sbres">${RES_LIST.map((r) => `${RES_ICON[r]}${Math.floor(p.res?.[r] || 0)}`).join(' ')}</span>` : '';
       h += `<div class="sbrow${you ? ' you' : ally ? ' ally' : ''}${p.defeated || p.left ? ' out' : ''}"><span class="dot" style="background:${pHex(id)}"></span><span class="sbn">${esc(this._pname(id))}${p.kind === 'ai' ? ' 🤖' : ''}${p.defeated ? ' ☠' : p.left ? ' ⏏' : ''}</span><span class="sbt team${this._teamOf(id)}">T${this._teamOf(id)}</span><span class="sba">${esc((tr(AGES[p.age]?.name) || '').split(' ')[0])}</span>${res}</div>`;
     }
     if (h !== this.scoreSig) { this.scoreSig = h; this.scoreEl.innerHTML = h; this._chatPosDirty = true; }
