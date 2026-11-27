@@ -71,6 +71,19 @@ try {
   const rAfter = await send(ta2, 'yeniden basladi');
   const mAfter = (await rAfter.json()).m;
   ok(rAfter.status === 200 && mAfter && mAfter.id > lastBefore.id, 'new line after restart has strictly higher id');
+  // @claude line in general chat passes through server intact and through chatlog sink
+  await wait(2100);
+  const rc = await send(ta2, '@claude genel sohbet testi');
+  const mc = (await rc.json()).m;
+  ok(rc.status === 200 && mc && mc.text === '@claude genel sohbet testi', '@claude line accepted by /mp/gchat intact');
+  const { setChatSink, logChat } = await import('../src/chatlog.js');
+  const gotSink = [];
+  setChatSink((e) => gotSink.push(e));
+  logChat({ room: 'GENEL', name: mc.name, text: mc.text, mine: true });
+  setChatSink(null);
+  ok(gotSink.length === 1 && gotSink[0].room === 'GENEL' && /@claude/i.test(gotSink[0].text), '@claude general chat line reaches chat sink with room GENEL');
+  const gchatSrc = fs.readFileSync(path.join(ROOT, 'src/ui/gchat-ui.js'), 'utf8');
+  ok(gchatSrc.includes('withMention(inp)') && gchatSrc.includes('FB_MAX'), 'gchat-ui attaches withMention autocomplete and FB_MAX to input');
 } catch (e) { fails++; console.log('  FAIL ' + (e && e.stack || e)); }
 try { srv.kill(); } catch { /* ignore */ }
 await wait(100);
