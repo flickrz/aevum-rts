@@ -1964,7 +1964,7 @@ export class Game {
     // under attack (view only, never read by the sim): once per fight (2026-11-17 playtest: "the constant 'you are under
     // attack' is annoying, once is enough") - again only after 30 s without any hit on us, or for a fight more than
     // 30 tiles from the last alert (at most every 15 s)
-    if (target.owner === this.me) {
+    if (target.owner === this.me && dmg > 0 && killer && killer.owner >= 0 && this.isEnemy(target.owner, killer.owner)) {
       const far = this._uaX == null || dhypot(target.x - this._uaX, target.z - this._uaZ) > 30;
       if (this.time - this._uaLast > 30 || (far && this.time > this._uaT)) { this._uaT = this.time + 15; this._uaX = target.x; this._uaZ = target.z; this.events.emit('underAttack', { x: target.x, z: target.z }); this.events.emit('notify', { text: tr('Saldırı altındasın!'), type: 'warn', x: target.x, z: target.z }); }
       this._uaLast = this.time;

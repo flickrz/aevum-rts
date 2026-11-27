@@ -80,5 +80,21 @@ for (const type of ['bear', 'wolf']) {
   ok(a.hp < a.maxHp && a.foe === ar.id, `${type}: hit by an archer outside its aggro radius, marks it as foe`);
   step(g, 6); ok(ar.hp < h0 || ar.dead || !a.live, `${type}: fights back (archer hp ${ar.hp}/${h0}, ${type} hp ${a.hp})`);
 }
+// 10) false "under attack" alerts: predators / non-enemies must not emit underAttack, real enemies must
+{
+  const g = mk(); g.me = 0; let alerts = 0; g.events.on('underAttack', () => alerts++);
+  const wolf = g._addRes('wolf', CX, CZ, PRED.wolf.food);
+  const v = g._addUnit('villager', 0, CX + 1.5, CZ);
+  step(g, 5);
+  ok(v.hp < v.maxHp || v.dead, 'wolf bit player 0 villager');
+  ok(alerts === 0, 'wild predator bite does not raise underAttack (' + alerts + ')');
+  const own = g._addUnit('spearman', 0, CX + 5, CZ);
+  g._applyDamage(own, 5, null, null);
+  g._applyDamage(own, 5, own, null);
+  ok(alerts === 0, 'null / self damage does not raise underAttack (' + alerts + ')');
+  const foe = g._addUnit('spearman', 1, CX + 6, CZ);
+  g._applyDamage(own, 5, foe, null);
+  ok(alerts === 1, 'real enemy attack raises underAttack (' + alerts + ')');
+}
 console.log(fails.length ? `\n${fails.length} FAIL` : '\nALL OK');
 process.exit(fails.length ? 1 : 0);
