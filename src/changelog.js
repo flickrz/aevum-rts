@@ -2,6 +2,22 @@
 // release (Turkish, player-facing: what changed in the game, not how). Shown by src/ui/updates-ui.js.
 export const CHANGELOG = [
   {
+    v: '0.9.13', date: '2026-11-27', title: 'Zil, Sandbox ve İzleyici',
+    items: [
+      'Zile basınca köylüler artık Şehir Merkezinin içine girip korunuyor; zile tekrar basınca çıkıp kaldıkları işe dönüyorlar.',
+      'Zil çok oyunculu oyunda çalışmıyordu, düzeltildi.',
+      'Genel Sohbette @claude yazınca geri bildirim artık geliştiriciye ulaşıyor; yazarken @claude önerisi de çıkıyor.',
+      'Sandbox artık Yeni Oyun ekranıyla açılıyor: harita türü, boyutu, iklim, düşman sayısı, zorluk ve başlangıç çağı seçilebiliyor.',
+      'İkinci Şehir Merkezlerinde köylü üretilemiyordu, düzeltildi.',
+      'Ortada düşman yokken çıkan yanlış saldırı altındasın uyarıları kaldırıldı.',
+      'Dolu bir kaynağa gönderilen köylüler artık uzaktaki ya da görmediğin bir madene gitmiyor; sadece yakındaki ve keşfedilmiş aynı kaynağa geçiyorlar.',
+      'Boşta köylü düğmesi boşta köylü yokken gizleniyor ve köylüleri sırayla seçiyor.',
+      'Ana menünün arkasındaki köylüler artık boş durmuyor: odun kesiyor, taş ve altın kazıyor, yiyecek topluyor.',
+      'Avlanan hayvanlar tıklanabiliyor; seçince ne kadar yiyecek verdiği görünüyor.',
+      'Lobide yeni İzle seçeneği: izleyici birimi ve binası olmadan bütün haritayı görerek maçı izleyebiliyor.',
+    ],
+  },
+  {
     v: '0.9.12', date: '2026-11-26', title: 'Zil, balıkçılar ve lobi',
     items: [
       'Genel Sohbet geçmişi artık güncellemelerde silinmiyor.',
