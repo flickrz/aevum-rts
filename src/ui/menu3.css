@@ -7,22 +7,7 @@
 .menu:has(.m3-root) { display: block; background: transparent; overflow: hidden; animation: none; }
 
 .m3-root {
-  /* 1 design px: 1920x1080 -> 1px, 1366x768 -> 0.71px */
-  --p: calc(min(1vh, 0.5625vw) / 10.8);
-  --frame-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='78' height='78'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23202123'/%3E%3Cstop offset='1' stop-color='%23131415'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M13 1.5H65V4a9 9 0 0 0 9 9H76.5V65H74a9 9 0 0 0-9 9V76.5H13V74a9 9 0 0 0-9-9H1.5V13H4a9 9 0 0 0 9-9Z' fill='url(%23g)' stroke='%237d6130' stroke-width='1.2'/%3E%3Cpath d='M17 5.5H61a13 13 0 0 0 11.5 11.5V61a13 13 0 0 0-11.5 11.5H17a13 13 0 0 0-11.5-11.5V17a13 13 0 0 0 11.5-11.5Z' fill='none' stroke='%23c7a05a' stroke-width='1.2' opacity='.85'/%3E%3C/svg%3E");
-  --gold-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='78' height='78'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffe7a0'/%3E%3Cstop offset='.16' stop-color='%23f4c95f'/%3E%3Cstop offset='.62' stop-color='%23e0a63b'/%3E%3Cstop offset='.9' stop-color='%23bd8324'/%3E%3Cstop offset='1' stop-color='%238c5a12'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M13 1.5H65V4a9 9 0 0 0 9 9H76.5V65H74a9 9 0 0 0-9 9V76.5H13V74a9 9 0 0 0-9-9H1.5V13H4a9 9 0 0 0 9-9Z' fill='url(%23g)' stroke='%233a2406' stroke-width='1.6'/%3E%3Cpath d='M17 5.5H61a13 13 0 0 0 11.5 11.5V61a13 13 0 0 0-11.5 11.5H17a13 13 0 0 0-11.5-11.5V17a13 13 0 0 0 11.5-11.5Z' fill='none' stroke='%23fff3c4' stroke-width='1.2' opacity='.7'/%3E%3C/svg%3E");
-  --gold-hot-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='78' height='78'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23fff1bd'/%3E%3Cstop offset='.16' stop-color='%23fbd676'/%3E%3Cstop offset='.62' stop-color='%23ebb448'/%3E%3Cstop offset='.9' stop-color='%23bd8324'/%3E%3Cstop offset='1' stop-color='%238c5a12'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M13 1.5H65V4a9 9 0 0 0 9 9H76.5V65H74a9 9 0 0 0-9 9V76.5H13V74a9 9 0 0 0-9-9H1.5V13H4a9 9 0 0 0 9-9Z' fill='url(%23g)' stroke='%233a2406' stroke-width='1.6'/%3E%3Cpath d='M17 5.5H61a13 13 0 0 0 11.5 11.5V61a13 13 0 0 0-11.5 11.5H17a13 13 0 0 0-11.5-11.5V17a13 13 0 0 0 11.5-11.5Z' fill='none' stroke='%23fff3c4' stroke-width='1.2' opacity='.7'/%3E%3C/svg%3E");
-  --inset: #1b1c1e;
-  --edge: #8c6b33;
-  --edge-hi: #d3aa5c;
-  --gold: #f2c552;
-  --gold-hi: #ffe08a;
-  --ink: #f4eedf;
-  --dim: #b9b2a2;
-  --muted: #8a8475;
-  --serif: "Alegreya", Georgia, "Times New Roman", serif;
-  --caps: "Cinzel", "Trajan Pro", Georgia, serif;
-  --sans: "Nunito", "Segoe UI", system-ui, sans-serif;
+  /* --p (1 design px), the frame images, colours and faces come from theme3.css (html.theme3) */
   --gap: calc(22 * var(--p));
   --top-h: calc(102 * var(--p));
   --fb: calc(26 * var(--p));
@@ -61,7 +46,7 @@
 /* ---------- the shared frame: a dark plaque, double gold line, notched corners ---------- */
 .m3-root .m3-frame, .m3-tabs {
   position: relative; box-sizing: border-box; isolation: isolate;
-  background: none; border: 0; border-radius: 0; box-shadow: none;
+  background: none; border: 0; border-image: none; border-radius: 0; box-shadow: none;
   backdrop-filter: none; -webkit-backdrop-filter: none;
 }
 .m3-root .m3-frame::before, .m3-tabs::before {
@@ -174,7 +159,7 @@
 
 /* Duyurular */
 .m3-root .m3-news.news-wrap { position: relative; inset: auto; right: auto; top: auto; z-index: auto; width: auto; padding: calc(15 * var(--p)) calc(18 * var(--p)) calc(12 * var(--p)); animation: none; }
-.m3-news .news-box.panel { width: auto; padding: 0; background: none; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.m3-news .news-box.panel { width: auto; padding: 0; background: none; border: 0; border-image: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
 .m3-news .news-head { display: flex; align-items: center; gap: calc(12 * var(--p)); margin: 0 0 calc(9 * var(--p)) calc(8 * var(--p)); }
 .m3-news .news-lbl { font-family: var(--sans); font-weight: 800; font-size: max(10px, calc(16 * var(--p))); letter-spacing: calc(3 * var(--p)); color: var(--ink); text-transform: uppercase; }
 .m3-news .news-dot { width: calc(8 * var(--p)); height: calc(8 * var(--p)); }
